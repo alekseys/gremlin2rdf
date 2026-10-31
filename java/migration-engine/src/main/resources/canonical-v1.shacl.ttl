@@ -1,0 +1,32 @@
+@prefix gm: <urn:gremlin2rdf:canonical:v1:> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+gm:VertexShape a sh:NodeShape ;
+    sh:targetClass gm:Vertex ; sh:nodeKind sh:IRI ;
+    sh:property [ sh:path gm:label ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path gm:id ; sh:minCount 1 ; sh:maxCount 1 ] ;
+    sh:property [ sh:path gm:partition ; sh:minCount 1 ; sh:maxCount 1 ] ;
+    sh:property [ sh:path gm:sourceScope ; sh:minCount 1 ; sh:maxCount 1 ] ;
+    sh:property [ sh:path gm:property ; sh:class gm:Property ] .
+
+gm:EdgeShape a sh:NodeShape ;
+    sh:targetClass gm:Edge ; sh:nodeKind sh:IRI ;
+    sh:property [ sh:path gm:label ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path gm:id ; sh:minCount 1 ; sh:maxCount 1 ] ;
+    sh:property [ sh:path gm:source ; sh:minCount 1 ; sh:maxCount 1 ; sh:class gm:Vertex ] ;
+    sh:property [ sh:path gm:destination ; sh:minCount 1 ; sh:maxCount 1 ; sh:class gm:Vertex ] ;
+    sh:property [ sh:path gm:property ; sh:class gm:Property ] .
+
+gm:PropertyShape a sh:NodeShape ;
+    sh:targetClass gm:Property ; sh:nodeKind sh:IRI ;
+    sh:property [ sh:path gm:owner ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ;
+    sh:property [ sh:path gm:key ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path gm:value ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:Literal ] ;
+    sh:property [ sh:path gm:metaProperty ; sh:class gm:MetaProperty ] .
+
+gm:MetaPropertyShape a sh:NodeShape ;
+    sh:targetClass gm:MetaProperty ; sh:nodeKind sh:IRI ;
+    sh:property [ sh:path gm:owner ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] ;
+    sh:property [ sh:path gm:key ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path gm:value ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:Literal ] .

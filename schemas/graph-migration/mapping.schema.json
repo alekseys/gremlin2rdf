@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "baseIri": {
+      "type": "string"
+    },
+    "vocabulary": {
+      "type": "string"
+    },
+    "labels": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "properties": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "edges": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "exclusions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "derivedRelationships": {
+      "type": "boolean"
+    },
+    "provenance": {
+      "type": "boolean"
+    },
+    "fidelity": {
+      "type": "string",
+      "enum": ["strict", "reduced"]
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "baseIri",
+    "vocabulary",
+    "labels",
+    "properties",
+    "edges",
+    "exclusions",
+    "derivedRelationships",
+    "provenance",
+    "fidelity"
+  ],
+  "additionalProperties": false,
+  "$id": "urn:gremlin2rdf:schema:v1:mapping"
+}

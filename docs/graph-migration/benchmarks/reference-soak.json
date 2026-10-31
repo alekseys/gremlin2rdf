@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "mode": "soak",
+  "profile": "semantic",
+  "seed": 42,
+  "warmups": 1,
+  "repetitions": 3,
+  "soakDurationMillis": 7200000,
+  "batchRecords": 100,
+  "batchBytes": 1048576,
+  "queueCapacity": 100,
+  "minimumFreeDiskBytes": 1073741824
+}

@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "status": "blocked",
+  "scope": "integrated offline finalization; not release or live acceptance",
+  "recoveryIterationsUsed": 4,
+  "recoveryIterationLimit": 4,
+  "additionalRecoveryAuthorization": "User explicitly approved one additional iteration after the original three; fourth integrated run passed.",
+  "checks": [
+    {
+      "commands": ["npm run prettier-fix", "npm run lint", "npm run build", "npm run vitest"],
+      "exitCodes": [0, 0, 0, 0],
+      "buildTargets": 3,
+      "vitestFiles": 251,
+      "vitestPassed": 5963,
+      "vitestSkipped": 4,
+      "standaloneSkillExitCode": 0,
+      "shell": "graph-finalize-recovery-four",
+      "scope": "integrated current source; no waived baseline assertions"
+    },
+    { "command": "node scripts/generate-graph-schemas.mjs", "exitCode": 0, "shell": "graph-finalize-localization" },
+    { "command": "npm run l10n", "exitCode": 0, "shell": "graph-finalize-localization" },
+    { "command": "npm run prettier-fix", "exitCode": 0, "shell": "graph-finalize-recovery-two" },
+    { "command": "npm run lint", "exitCode": 0, "shell": "graph-finalize-recovery-two" },
+    { "command": "npm run build", "exitCode": 0, "targets": 3, "shell": "graph-finalize-recovery-two" },
+    {
+      "command": "node scripts/run-reference-graph-benchmark.mjs smoke",
+      "exitCode": 0,
+      "shell": "graph-finalize-current-tdb2",
+      "testkitSha256": "095401a89d07dc7a5fb469ad6c1e598daec51b52cd9be100a3f396d1a3a12136",
+      "configurationSha256": "2c1dc946132b9595ec0ad847a08f36f7b4f8d955577b5bed494eb9636549e043",
+      "report": "docs/graph-migration/evidence/raw/tdb2-current.json",
+      "reportSha256": "8fbe73265fbe96db46577bd756122f45c42f69b9462b1697597723665593fd7a",
+      "scope": "current immutable private TDB2 smoke, not full load or two-hour acceptance"
+    },
+    {
+      "command": "node scripts/benchmark-graph-paths.mjs --private-fixture-confirmed",
+      "exitCode": 0,
+      "shell": "graph-finalize-current-paths",
+      "report": "docs/graph-migration/evidence/raw/paths-current.json",
+      "reportSha256": "2097ba5ce0e5b40d691f226146d7eeb0cb2b2e83c44e23a9182095ec84282a0a",
+      "scope": "current mapping, pre-serialized loading and actual typed query/CRUD paths"
+    },
+    {
+      "command": "npm run vitest",
+      "exitCode": 1,
+      "passed": 5942,
+      "failed": 21,
+      "skipped": 4,
+      "shell": "graph-finalize-recovery-two",
+      "historical": true
+    },
+    {
+      "command": "npm run graph:test",
+      "exitCode": 0,
+      "suites": 26,
+      "tests": 96,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "shell": "graph-finalize-java-tests"
+    },
+    {
+      "command": "npx vitest run MigrationProjectService.test.ts migrationSkillDispatcher.test.ts migrationStateSync.test.ts --reporter=dot",
+      "exitCode": 1,
+      "failed": 21,
+      "passed": 146,
+      "shell": "graph-baseline-windows-probe",
+      "scope": "unchanged baseline files only; no graph test imports",
+      "historical": true
+    },
+    {
+      "command": "npm run vitest",
+      "exitCode": 1,
+      "vitestExitCode": 0,
+      "vitestPassed": 5963,
+      "vitestSkipped": 4,
+      "standaloneSkillExitCode": 1,
+      "shell": "graph-finalize-recovery-three",
+      "remainingFailure": "standalone skipped-0 assertion encounters another output-file symlink test skipped on Windows"
+    },
+    {
+      "command": "node scripts/prepare-graph-worker.mjs (twice), then node scripts/smoke-graph-worker.mjs",
+      "exitCode": 0,
+      "shell": "graph-finalize-package-repro",
+      "workerSha256": "ce0e4ad25c770924eb3f3bd2799d416fd248c23dc48c7687f51f455bf8877b61",
+      "sourceSha256": "1849bced67392d71ae241d6bab4d96edc4567c6b314f2109a58918c7686bb5ae",
+      "testkitSha256": "095401a89d07dc7a5fb469ad6c1e598daec51b52cd9be100a3f396d1a3a12136",
+      "allThreeHashesMatchAcrossConsecutiveBuilds": true
+    }
+  ],
+  "correctedGraphFailures": [
+    "Graph-only inline type import style and semantic output status element",
+    "JSON-compatible completion fixture and complete current SecretStorage test interface",
+    "User-approved native Windows fixture paths and canonical VS Code URI expectations",
+    "Existing-artifact mock normalization and legal quoted path components",
+    "Freshness and editor confinement tests now exercise Windows directory junctions instead of skipping",
+    "Pinned Maven JAR forceCreation prevents incremental re-shading of previous shaded output"
+  ],
+  "remainingBlockers": [
+    "Current immutable full-load and two-hour-soak snapshots are executing; neither has passed.",
+    "Dependency review and live compatibility remain explicitly blocked.",
+    "No commit, push or PR has been performed."
+  ],
+  "historicalReferenceRuns": {
+    "status": "cancelled-superseded",
+    "processTreeTerminationConfirmed": true,
+    "partialArtifactsPreserved": true,
+    "testkitSha256": "e5317bd57192e192f5189196060918cc4c05f63408e08df816df7b339810a8a2",
+    "snapshots": ["reference-load-yMygc7", "reference-soak-lKrCFP"],
+    "acceptance": "not-passed"
+  },
+  "currentReferenceRuns": {
+    "status": "running",
+    "testkitSha256": "095401a89d07dc7a5fb469ad6c1e598daec51b52cd9be100a3f396d1a3a12136",
+    "loadSnapshot": "reference-load-B7bHBf",
+    "soakSnapshot": "reference-soak-vikhQ8",
+    "acceptance": "not-passed"
+  },
+  "runtimeExecutionApprovalPending": false
+}

@@ -19,5 +19,7 @@ export const WebviewRegistry = {
     cosmosDbDataModeling: () => import('./cosmosdb/DataModeling/DataModelingWizard').then((m) => m.DataModelingWizard),
     cosmosDbDocument: () => import('./cosmosdb/Document/Document').then((m) => m.Document),
     cosmosDbMigration: () => import('./cosmosdb/Migration/MigrationAssistant').then((m) => m.MigrationAssistant),
+    cosmosDbGraphMigration: () =>
+        import('./cosmosdb/GraphMigration/GraphMigrationWorkbench').then((m) => m.GraphMigrationWorkbench),
     cosmosDbQuery: () => import('./cosmosdb/QueryEditor/QueryEditor').then((m) => m.QueryEditor),
 } as const satisfies Record<string, () => Promise<ComponentType>>;

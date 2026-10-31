@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>io.github.alekseys.gremlin2rdf</groupId>
+  <artifactId>migration-parent</artifactId>
+  <version>0.1.0</version>
+  <packaging>pom</packaging>
+  <name>Experimental Gremlin to RDF migration</name>
+  <licenses><license><name>MIT</name><url>https://opensource.org/license/mit</url></license></licenses>
+  <modules><module>migration-model</module><module>migration-engine</module><module>cosmos-gremlin-source</module>
+    <module>examples-before</module><module>examples-after</module><module>graph-testkit</module></modules>
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.build.outputTimestamp>2026-10-31T00:00:00Z</project.build.outputTimestamp>
+    <maven.compiler.release>21</maven.compiler.release>
+    <jena.version>6.2.0</jena.version>
+    <junit.version>5.13.4</junit.version>
+    <jackson.version>2.20.0</jackson.version>
+  </properties>
+  <build>
+    <pluginManagement><plugins>
+      <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.14.1</version></plugin>
+      <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><version>3.5.4</version></plugin>
+      <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-jar-plugin</artifactId><version>3.4.2</version>
+        <configuration><forceCreation>true</forceCreation></configuration>
+      </plugin>
+      <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-shade-plugin</artifactId><version>3.6.1</version></plugin>
+    </plugins></pluginManagement>
+    <plugins>
+      <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId></plugin>
+      <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId></plugin>
+    </plugins>
+  </build>
+  <profiles>
+    <profile><id>reports</id><build><plugins>
+      <plugin><groupId>org.cyclonedx</groupId><artifactId>cyclonedx-maven-plugin</artifactId><version>2.9.1</version>
+        <executions><execution><phase>verify</phase><goals><goal>makeAggregateBom</goal></goals></execution></executions>
+      </plugin>
+      <plugin><groupId>org.codehaus.mojo</groupId><artifactId>license-maven-plugin</artifactId><version>2.7.0</version>
+        <executions><execution><phase>verify</phase><goals><goal>aggregate-add-third-party</goal></goals></execution></executions>
+      </plugin>
+    </plugins></build></profile>
+  </profiles>
+</project>

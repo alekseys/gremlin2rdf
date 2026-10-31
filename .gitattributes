@@ -1,6 +1,13 @@
 # Normalize all text files to LF on checkout (cross-platform consistency)
 * text=auto eol=lf
 
+# Preserve producer checksums and byte-sensitive Maven archive inputs across checkouts.
+docs/graph-migration/evidence/raw/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+docs/graph-migration/release/*.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+docs/graph-migration/release/*.txt -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+java/**/*.xml -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+java/**/*.ttl -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+
 # Binary files — no line ending conversion
 *.png binary
 *.jpg binary

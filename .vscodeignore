@@ -13,6 +13,9 @@ grammar/*.md
 node_modules/**
 out/**
 src/**
+java/**
+schemas/**
+docs/graph-migration/evidence/**
 test/**
 testOutput/**
 testWorkspace/**

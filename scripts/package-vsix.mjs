@@ -82,6 +82,7 @@ function main() {
     console.log(`Version: ${version}`);
     console.log(`Preview: ${isPreview ? 'Yes' : 'No'}`);
 
+    executeCommand('npm run graph:prepare', 'Preparing isolated Java graph workers');
     // Step 1: Build the extension
     executeCommand('npm run vite-prod', 'Building extension');
 

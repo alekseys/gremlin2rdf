@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "sourcePath": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "graph": {
+      "type": "string"
+    },
+    "output": {
+      "type": "string",
+      "maxLength": 1048576
+    },
+    "findings": {
+      "maxItems": 10000,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string"
+          },
+          "startLine": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "endLine": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "status": {
+            "type": "string"
+          },
+          "remediation": {
+            "type": "string"
+          }
+        },
+        "required": ["symbol", "startLine", "endLine", "fingerprint", "status", "remediation"],
+        "additionalProperties": false
+      }
+    },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "sensitiveArtifact": {
+      "type": "boolean",
+      "const": true
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "sourcePath",
+    "sourceHash",
+    "graph",
+    "output",
+    "findings",
+    "blockers",
+    "sensitiveArtifact"
+  ],
+  "additionalProperties": false,
+  "$id": "urn:gremlin2rdf:schema:v1:java-rewrite-plan"
+}

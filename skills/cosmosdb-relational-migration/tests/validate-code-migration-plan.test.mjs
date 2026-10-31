@@ -545,22 +545,18 @@ test('rejects malformed best-practice concern records', () => {
     }
 });
 
-test('rejects output symlinks that escape the workspace', (context) => {
+test('rejects output symlinks that escape the workspace', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'code-symlink-'));
     const workspace = path.join(root, 'workspace');
-    const outsidePath = path.join(root, 'outside.ts');
-    const symlinkPath = path.join(workspace, 'src', 'linked.ts');
+    const outsideDirectory = path.join(root, 'outside');
+    const outsidePath = path.join(outsideDirectory, 'output.ts');
+    const symlinkPath = path.join(workspace, 'src', 'linked');
     fs.mkdirSync(path.dirname(symlinkPath), { recursive: true });
+    fs.mkdirSync(outsideDirectory);
     fs.writeFileSync(outsidePath, 'outside\n');
     try {
-        fs.symlinkSync(outsidePath, symlinkPath);
-    } catch {
-        fs.rmSync(root, { recursive: true });
-        context.skip('symlinks are unavailable');
-        return;
-    }
-    try {
-        const relativePath = 'src/linked.ts';
+        fs.symlinkSync(outsideDirectory, symlinkPath, process.platform === 'win32' ? 'junction' : 'dir');
+        const relativePath = 'src/linked/output.ts';
         const migrateManifest = manifest('migrate', {
             outputFiles: [{ path: relativePath, sha256: fileSha256(outsidePath) }],
             validation: [passedCheck()],

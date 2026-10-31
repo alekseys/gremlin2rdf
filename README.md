@@ -1,5 +1,16 @@
 # Azure Cosmos DB for VS Code
 
+## Experimental Gremlin-to-RDF fork
+
+This `alekseys/gremlin2rdf` fork adds the separately gated `cosmos-gremlin-to-jena` workbench. Enable
+`cosmosDB.experimental.graphMigration.enabled` and open `cosmosDB.graphMigration.open` in a trusted workspace.
+The existing NoSQL and relational workflows remain separate. This is not a Microsoft Marketplace release.
+
+Start with [graph usage and architecture](docs/graph-migration/README.md), [canonical mapping](docs/graph-migration/mapping.md),
+[source compatibility](docs/graph-migration/compatibility.md), [recovery](docs/graph-migration/recovery.md), and
+[performance evidence](docs/graph-migration/performance.md). Live compatibility, scoped mutations and release readiness
+are never inferred from local fixtures, compilation or a short smoke.
+
 <!-- region exclude-from-marketplace -->
 
 [![Build Status](https://dev.azure.com/msdata/CosmosDB/_apis/build/status%2FVSCode%20Extensions%2Fvscode-cosmosdb?repoName=microsoft%2Fvscode-cosmosdb&branchName=main)](https://dev.azure.com/msdata/CosmosDB/_build/latest?definitionId=51963&repoName=microsoft%2Fvscode-cosmosdb&branchName=main)

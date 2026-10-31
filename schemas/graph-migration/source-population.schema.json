@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,80}$"
+    },
+    "inputHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "containerIdentity": {
+      "type": "string",
+      "minLength": 1
+    },
+    "runPrefix": {
+      "type": "string",
+      "minLength": 1
+    },
+    "recordsPath": {
+      "type": "string",
+      "minLength": 1
+    },
+    "recordsSha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "vertices": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "edges": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "estimatedWrites": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "maximumWrites": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "ruBudget": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "runId",
+    "inputHash",
+    "containerIdentity",
+    "runPrefix",
+    "recordsPath",
+    "recordsSha256",
+    "vertices",
+    "edges",
+    "estimatedWrites",
+    "maximumWrites",
+    "ruBudget"
+  ],
+  "additionalProperties": false,
+  "$id": "urn:gremlin2rdf:schema:v1:source-population"
+}

@@ -48,7 +48,7 @@ describe('normalizeMigrationProject', () => {
 
 describe('MigrationProjectService paths', () => {
     it('serializes the workspace root as a portable relative path', () => {
-        const workspacePath = path.join(path.sep, 'workspace', 'app');
+        const workspacePath = path.resolve(path.sep, 'workspace', 'app');
         const service = new MigrationProjectService(workspacePath);
 
         expect(service.getRelativePath(workspacePath)).toBe('.');
@@ -56,9 +56,9 @@ describe('MigrationProjectService paths', () => {
     });
 
     it('merges newly selected files with existing files without duplicates', () => {
-        const workspacePath = path.join(path.sep, 'workspace', 'app');
-        const existingPath = path.join(workspacePath, 'schema', 'existing.sql');
-        const newPath = path.join(workspacePath, 'schema', 'new.sql');
+        const workspacePath = path.resolve(path.sep, 'workspace', 'app');
+        const existingPath = vscode.Uri.file(path.join(workspacePath, 'schema', 'existing.sql')).fsPath;
+        const newPath = vscode.Uri.file(path.join(workspacePath, 'schema', 'new.sql')).fsPath;
 
         expect(
             MigrationProjectService.mergeFileUris(
@@ -152,7 +152,7 @@ describe('MigrationProjectService default input selections', () => {
     });
 
     it('normalizes old projects in memory without saving during read-only observation', async () => {
-        const service = new MigrationProjectService(path.join(path.sep, 'workspace', 'app'));
+        const service = new MigrationProjectService(path.resolve(path.sep, 'workspace', 'app'));
         const project = service.createDefaultProject('app');
         delete project.sessionId;
         project.phases.discovery.schemaInventory = { path: '.', includedFiles: ['schema.sql'] };
@@ -165,7 +165,7 @@ describe('MigrationProjectService default input selections', () => {
     });
 
     it('leaves implicit and exclusion-only sources dynamic when loading selections', async () => {
-        const service = new MigrationProjectService(path.join(path.sep, 'workspace', 'app'));
+        const service = new MigrationProjectService(path.resolve(path.sep, 'workspace', 'app'));
         const project = service.createDefaultProject('app');
         const excluded = { excludedFiles: ['phases/1-discovery/volumetrics/ignored.csv'] };
         project.phases.discovery.volumetrics = excluded;
@@ -177,7 +177,7 @@ describe('MigrationProjectService default input selections', () => {
     });
 
     it('rebases old default-folder exclusions without making their selection explicit', async () => {
-        const service = new MigrationProjectService(path.join(path.sep, 'workspace', 'app'));
+        const service = new MigrationProjectService(path.resolve(path.sep, 'workspace', 'app'));
         const project = service.createDefaultProject('app');
         project.phases.discovery.volumetrics = { excludedFiles: ['nested/ignored.csv'] };
         const list = vi.spyOn(service, 'listFiles').mockResolvedValue([]);
@@ -190,7 +190,7 @@ describe('MigrationProjectService default input selections', () => {
     });
 
     it('excludes and restores copied inputs without deleting files or freezing the default folder', async () => {
-        const service = new MigrationProjectService(path.join(path.sep, 'workspace', 'app'));
+        const service = new MigrationProjectService(path.resolve(path.sep, 'workspace', 'app'));
         const project = service.createDefaultProject('app');
         const base = service.getDefaultSubfolderPath('volumetrics');
         const copied = path.join(base, 'workload.csv');
@@ -212,7 +212,7 @@ describe('MigrationProjectService default input selections', () => {
     });
 
     it('excludes referenced and copied files identically while preserving an explicit file list', async () => {
-        const workspace = path.join(path.sep, 'workspace', 'app');
+        const workspace = path.resolve(path.sep, 'workspace', 'app');
         const service = new MigrationProjectService(workspace);
         const project = service.createDefaultProject('app');
         const referenced = path.join(workspace, 'schema.sql');
@@ -234,7 +234,7 @@ describe('MigrationProjectService default input selections', () => {
     it.each(['schema-ddl', 'volumetrics', 'access-patterns'] as const)(
         'records copied %s files without turning them into workspace references',
         async (subfolder) => {
-            const service = new MigrationProjectService(path.join(path.sep, 'workspace', 'app'));
+            const service = new MigrationProjectService(path.resolve(path.sep, 'workspace', 'app'));
             const project = service.createDefaultProject('app');
             const base = service.getDefaultSubfolderPath(subfolder);
             const files = [path.join(base, 'second.csv'), path.join(base, 'nested', 'first.csv')];
@@ -259,7 +259,7 @@ describe('MigrationProjectService default input selections', () => {
     );
 
     it('retains unknown source properties and updates the copied file list after removal', async () => {
-        const service = new MigrationProjectService(path.join(path.sep, 'workspace', 'app'));
+        const service = new MigrationProjectService(path.resolve(path.sep, 'workspace', 'app'));
         const project = service.createDefaultProject('app');
         const source = { path: 'inputs', includedFiles: ['old.csv'], excludedFiles: ['other.csv'], custom: true };
         project.phases.discovery.volumetrics = source;
@@ -277,7 +277,7 @@ describe('MigrationProjectService default input selections', () => {
     });
 
     it('preserves the selection when source enumeration fails', async () => {
-        const service = new MigrationProjectService(path.join(path.sep, 'workspace', 'app'));
+        const service = new MigrationProjectService(path.resolve(path.sep, 'workspace', 'app'));
         const project = service.createDefaultProject('app');
         const source = { includedFiles: ['keep.csv'] };
         project.phases.discovery.volumetrics = source;
@@ -287,7 +287,7 @@ describe('MigrationProjectService default input selections', () => {
     });
 
     it('converts existing copied and workspace selections without changing their targets', async () => {
-        const workspace = path.join(path.sep, 'workspace', 'app');
+        const workspace = path.resolve(path.sep, 'workspace', 'app');
         const service = new MigrationProjectService(workspace);
         const project = service.createDefaultProject('app');
         project.phases.discovery.schemaInventory = { path: '.', includedFiles: ['schema.sql'] };
@@ -302,7 +302,7 @@ describe('MigrationProjectService default input selections', () => {
     });
 
     it('resolves mixed selections and classifies removal per file rather than per source', async () => {
-        const workspace = path.join(path.sep, 'workspace', 'app');
+        const workspace = path.resolve(path.sep, 'workspace', 'app');
         const service = new MigrationProjectService(workspace);
         const project = service.createDefaultProject('app');
         const referenced = path.join(workspace, 'db', 'schema.sql');
@@ -316,13 +316,13 @@ describe('MigrationProjectService default input selections', () => {
         expect(service.isWorkspaceReferenced(project, 'schema-ddl', copied)).toBe(false);
         expect(service.getDiscoveryInputFolders(project)).toContain(path.dirname(referenced));
         expect(() =>
-            service.recordInputFiles(project, 'schema-ddl', [path.join(path.sep, 'elsewhere', 'schema.sql')]),
+            service.recordInputFiles(project, 'schema-ddl', [path.resolve(path.sep, 'elsewhere', 'schema.sql')]),
         ).toThrow('Copy external');
         expect(() => service.resolveInputFile('../../outside.sql')).toThrow('remain inside the workspace');
     });
 
     it('converts folder exclusions and preserves them for restoration with a migration-relative base', async () => {
-        const workspace = path.join(path.sep, 'workspace', 'app');
+        const workspace = path.resolve(path.sep, 'workspace', 'app');
         const service = new MigrationProjectService(workspace);
         const project = service.createDefaultProject('app');
         const kept = path.join(workspace, 'inputs', 'kept.sql');
@@ -350,8 +350,8 @@ describe('MigrationProjectService.copyFilesToSubfolder', () => {
     });
 
     it('preserves nested folder paths for same-named external files', async () => {
-        const service = new MigrationProjectService(path.join(path.sep, 'workspace', 'app'));
-        const external = path.join(path.sep, 'external');
+        const service = new MigrationProjectService(path.resolve(path.sep, 'workspace', 'app'));
+        const external = path.resolve(path.sep, 'external');
         await service.copyFilesToSubfolder(
             [
                 vscode.Uri.file(path.join(external, 'first', 'workload.csv')),
@@ -362,13 +362,13 @@ describe('MigrationProjectService.copyFilesToSubfolder', () => {
         );
         const targets = vi.mocked(vscode.workspace.fs.copy).mock.calls.map(([, target]) => target.fsPath);
         expect(targets).toEqual([
-            path.join(service.getDefaultSubfolderPath('volumetrics'), 'first', 'workload.csv'),
-            path.join(service.getDefaultSubfolderPath('volumetrics'), 'second', 'workload.csv'),
+            vscode.Uri.file(path.join(service.getDefaultSubfolderPath('volumetrics'), 'first', 'workload.csv')).fsPath,
+            vscode.Uri.file(path.join(service.getDefaultSubfolderPath('volumetrics'), 'second', 'workload.csv')).fsPath,
         ]);
     });
 
     it('keeps files already in the target folder while copying new files', async () => {
-        const workspacePath = path.join(path.sep, 'workspace', 'app');
+        const workspacePath = path.resolve(path.sep, 'workspace', 'app');
         const service = new MigrationProjectService(workspacePath);
         const targetPath = path.join(
             workspacePath,
@@ -388,8 +388,8 @@ describe('MigrationProjectService.copyFilesToSubfolder', () => {
             vscode.Uri,
             { overwrite: boolean },
         ];
-        expect(source.fsPath).toBe(newPath);
-        expect(target.fsPath).toBe(path.join(path.dirname(targetPath), 'new.sql'));
+        expect(source.fsPath).toBe(vscode.Uri.file(newPath).fsPath);
+        expect(target.fsPath).toBe(vscode.Uri.file(path.join(path.dirname(targetPath), 'new.sql')).fsPath);
         expect(options).toEqual({ overwrite: true });
     });
 });
@@ -413,7 +413,10 @@ describe('MigrationProjectService.reset', () => {
             });
             const resetProject = await service.reset(project);
             expect(vscode.workspace.fs.delete).toHaveBeenCalledWith(
-                expect.objectContaining({ scheme: 'file', path: path.join(workspacePath, MIGRATION_FOLDER) }),
+                expect.objectContaining({
+                    scheme: 'file',
+                    path: vscode.Uri.file(path.join(workspacePath, MIGRATION_FOLDER)).path,
+                }),
                 { recursive: true, useTrash: false },
             );
             expect(resetProject.name).toBe('app');
@@ -425,7 +428,7 @@ describe('MigrationProjectService.reset', () => {
     });
 
     it('does not recreate the project when an existing migration root cannot be deleted', async () => {
-        const workspacePath = path.join(path.sep, 'workspace', 'app');
+        const workspacePath = path.resolve(path.sep, 'workspace', 'app');
         const service = new MigrationProjectService(workspacePath);
         const project = service.createDefaultProject('app');
         const error = new Error('permission denied');

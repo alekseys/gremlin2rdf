@@ -1,0 +1,498 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "migrationKind": {
+      "type": "string",
+      "const": "cosmos-gremlin-to-jena"
+    },
+    "baselineRepositorySha": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,80}$"
+    },
+    "protocolVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "workerVersion": {
+      "type": "string",
+      "const": "0.1.0"
+    },
+    "mapping": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "number",
+          "const": 1
+        },
+        "baseIri": {
+          "type": "string"
+        },
+        "vocabulary": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "properties": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "edges": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "exclusions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "derivedRelationships": {
+          "type": "boolean"
+        },
+        "provenance": {
+          "type": "boolean"
+        },
+        "fidelity": {
+          "type": "string",
+          "enum": ["strict", "reduced"]
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "baseIri",
+        "vocabulary",
+        "labels",
+        "properties",
+        "edges",
+        "exclusions",
+        "derivedRelationships",
+        "provenance",
+        "fidelity"
+      ],
+      "additionalProperties": false
+    },
+    "source": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "scope": {
+              "type": "string",
+              "minLength": 1
+            },
+            "host": {
+              "type": "string",
+              "minLength": 1
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "database": {
+              "type": "string",
+              "minLength": 1
+            },
+            "container": {
+              "type": "string",
+              "minLength": 1
+            },
+            "partitionKeyPath": {
+              "type": "string",
+              "pattern": "^\\/[^/]{1,255}$"
+            },
+            "authenticationRef": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^env:GRAPH_[A-Z0-9_]{1,100}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "extractionStrategy": {
+              "type": "string",
+              "const": "verified-identity-manifest"
+            },
+            "identityManifest": {
+              "type": "string",
+              "minLength": 1
+            },
+            "identityManifestHash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "compatibilityEvidence": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ruBudget": {
+              "default": null,
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9]+(?:\\.[0-9]+)?$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "customCaRef": {
+              "default": null,
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^env:GRAPH_[A-Z0-9_]{1,100}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "syntheticTestContainer": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "scope",
+            "host",
+            "port",
+            "database",
+            "container",
+            "partitionKeyPath",
+            "authenticationRef",
+            "extractionStrategy",
+            "identityManifest",
+            "identityManifestHash",
+            "compatibilityEvidence",
+            "ruBudget",
+            "customCaRef",
+            "syntheticTestContainer"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "target": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "datasetUrl": {
+              "type": "string"
+            },
+            "queryEndpoint": {
+              "type": "string"
+            },
+            "updateEndpoint": {
+              "type": "string"
+            },
+            "graphStoreEndpoint": {
+              "type": "string"
+            },
+            "authenticationRef": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^env:GRAPH_[A-Z0-9_]{1,100}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "graphNamespace": {
+              "type": "string"
+            },
+            "publicationMode": {
+              "type": "string",
+              "enum": ["manual", "version-pointer"]
+            },
+            "customCaRef": {
+              "default": null,
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^env:GRAPH_[A-Z0-9_]{1,100}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "datasetUrl",
+            "queryEndpoint",
+            "updateEndpoint",
+            "graphStoreEndpoint",
+            "authenticationRef",
+            "graphNamespace",
+            "publicationMode",
+            "customCaRef"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "batchRecords": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "batchBytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 8388608
+        },
+        "maxRecordBytes": {
+          "type": "integer",
+          "minimum": 128,
+          "maximum": 1048576
+        },
+        "requestTimeoutMillis": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 300000
+        },
+        "maxRetries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "queueCapacity": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "writerConcurrency": {
+          "type": "number",
+          "const": 1
+        },
+        "minimumFreeDiskBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "batchRecords",
+        "batchBytes",
+        "maxRecordBytes",
+        "requestTimeoutMillis",
+        "maxRetries",
+        "queueCapacity",
+        "writerConcurrency",
+        "minimumFreeDiskBytes"
+      ],
+      "additionalProperties": false
+    },
+    "consistency": {
+      "type": "string",
+      "enum": ["quiesced", "immutable", "best-effort"]
+    },
+    "phases": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["not-started", "running", "paused", "blocked", "failed", "succeeded", "cancelled", "stale"]
+          },
+          "blockers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "inputHash": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": ["status", "blockers", "evidence", "inputHash"],
+        "additionalProperties": false
+      }
+    },
+    "approvals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "runId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,80}$"
+          },
+          "operation": {
+            "type": "string",
+            "minLength": 1
+          },
+          "resources": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "inputHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "keyRef": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^env:GRAPH_[A-Z0-9_]{1,100}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "signature": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "runId",
+          "operation",
+          "resources",
+          "inputHash",
+          "expiresAt",
+          "keyRef",
+          "signature"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "applicationHashes": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "relativePath": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "ownerRunId": {
+            "type": "string"
+          },
+          "sensitive": {
+            "type": "boolean"
+          }
+        },
+        "required": ["relativePath", "sha256", "ownerRunId", "sensitive"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "migrationKind",
+    "baselineRepositorySha",
+    "runId",
+    "protocolVersion",
+    "workerVersion",
+    "mapping",
+    "source",
+    "target",
+    "limits",
+    "consistency",
+    "phases",
+    "approvals",
+    "applicationHashes",
+    "artifacts"
+  ],
+  "additionalProperties": false,
+  "$id": "urn:gremlin2rdf:schema:v1:project"
+}

@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "status": "succeeded",
+  "scope": "declared offline editor workflow, not live compatibility or release acceptance",
+  "executed": [
+    {
+      "command": "node node_modules/vitest/vitest.mjs run GraphMigrationTab.test.ts artifacts.test.ts WorkerBridge.test.ts GraphMigrationWorkbench.test.tsx contracts.test.ts --reporter=dot",
+      "shell": 139,
+      "exitCode": 0,
+      "tests": 32
+    },
+    {
+      "command": "GRAPH_TEST_APPROVAL_KEY=<private-test-only> java/mvnw.cmd -f java/pom.xml -pl migration-engine -am -Dtest=ProtocolTest,FixturesTest,RecoveryTest -Dsurefire.failIfNoSpecifiedTests=false test -q",
+      "shell": 144,
+      "exitCode": 0
+    },
+    {
+      "command": "node scripts/prepare-graph-worker.mjs && node scripts/smoke-graph-worker.mjs",
+      "shell": 147,
+      "exitCode": 0
+    },
+    {
+      "command": "npx vitest run GraphMigrationTab.test.ts contracts.test.ts performance.test.ts --reporter=dot",
+      "shell": "graph-linked-import-tests",
+      "exitCode": 0,
+      "tests": 20,
+      "scope": "current linked import and bounded policy selection; not the complete editor suite"
+    },
+    {
+      "command": "java/mvnw.cmd -f java/pom.xml -pl migration-engine -am -Dtest=ReadinessTest,SafeFilesTest,ValidationTest,DeadlineHttpClientTest -Dsurefire.failIfNoSpecifiedTests=false test -q",
+      "shell": "graph-proof-tests",
+      "exitCode": 0,
+      "tests": 11
+    }
+  ],
+  "checks": [
+    "separate persistent graph project creation",
+    "orphaned worker phase restart becomes paused",
+    "actual concrete output checksums and superseded evidence invalidation",
+    "tampered completion cannot advance phase",
+    "owned process and preparation admission/cancellation",
+    "exact rewrite/catalog approval interaction and keyboard accessible fields",
+    "bounded reads, streaming hashes and junction confinement",
+    "operation-owned controls and applicable credential isolation",
+    "actual Java catalog/query/mutation/rewrite JSON accepted by editor schemas",
+    "private testkit parent supervision and resource-blocked acknowledgement",
+    "reviewed current envelope and concrete linked artifact imports recheck every checksum after review",
+    "readiness rejects unowned nested reports, digest-only dependency claims and integer coercion",
+    "target response receipt enforces bounded bytes and full-body deadlines",
+    "structural validation binds consumed source bytes and bounded inventory",
+    "Java artifact resolution rejects Windows junction escapes"
+  ],
+  "limitations": [
+    "Existing project save lock/pending crash artifacts require reviewed manual repair; they are not automatically adopted/deleted.",
+    "The private resource-blocked launch probe is not load or two-hour soak acceptance.",
+    "Live source/target authorization and compatibility are not supplied.",
+    "Full integrated extension validation and release reports remain M7 work."
+  ]
+}

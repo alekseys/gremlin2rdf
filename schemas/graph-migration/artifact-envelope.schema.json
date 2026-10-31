@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "runId": {
+      "type": "string"
+    },
+    "inputHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "operation": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["not-started", "running", "paused", "blocked", "failed", "succeeded", "cancelled", "stale"]
+    },
+    "sensitiveArtifact": {
+      "type": "boolean",
+      "const": true
+    },
+    "result": {}
+  },
+  "required": ["schemaVersion", "runId", "inputHash", "operation", "status", "sensitiveArtifact", "result"],
+  "additionalProperties": false,
+  "$id": "urn:gremlin2rdf:schema:v1:artifact-envelope"
+}
