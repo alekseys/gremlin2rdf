@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "status": "cancelled-by-user",
+  "processTreeTerminationConfirmed": true,
+  "partialArtifactsPreserved": true,
+  "acceptance": "not-passed",
+  "reason": "User requested shorter preview delivery cycle; long acceptance run stopped.",
+  "mode": "soak",
+  "testkitSha256": "095401a89d07dc7a5fb469ad6c1e598daec51b52cd9be100a3f396d1a3a12136",
+  "configurationSha256": "35adb696b4352b7a162814e14e2a244502b8d5615a0d4f11366d83c387b85701",
+  "startedAt": "2026-10-31T22:28:46.192Z",
+  "immutableSnapshot": true,
+  "liveEndpointsUsed": false
+}

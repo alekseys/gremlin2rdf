@@ -97,9 +97,9 @@
     "Pinned Maven JAR forceCreation prevents incremental re-shading of previous shaded output"
   ],
   "remainingBlockers": [
-    "Current immutable full-load and two-hour-soak snapshots are executing; neither has passed.",
+    "Current immutable full-load and two-hour-soak snapshots were stopped at user request; partial artifacts are preserved and neither gate passed.",
     "Dependency review and live compatibility remain explicitly blocked.",
-    "No commit, push or PR has been performed."
+    "Windows remote offline CI passed. Linux offline and dependency collection failed because Maven Wrapper lacked Git executable mode; mode correction awaits remote verification."
   ],
   "historicalReferenceRuns": {
     "status": "cancelled-superseded",
@@ -110,11 +110,43 @@
     "acceptance": "not-passed"
   },
   "currentReferenceRuns": {
-    "status": "running",
+    "status": "cancelled-by-user",
+    "processTreeTerminationConfirmed": true,
+    "partialArtifactsPreserved": true,
     "testkitSha256": "095401a89d07dc7a5fb469ad6c1e598daec51b52cd9be100a3f396d1a3a12136",
     "loadSnapshot": "reference-load-B7bHBf",
     "soakSnapshot": "reference-soak-vikhQ8",
     "acceptance": "not-passed"
+  },
+  "followUpValidationAuthorization": {
+    "decision": "Push the small fix and use CI only; no long load or soak runs",
+    "localTests": "not-run",
+    "longAcceptance": "deferred",
+    "scope": "Maven Wrapper executable mode and interrupted release evidence"
+  },
+  "reviewDelivery": {
+    "implementationCommit": "bd6cfb4359c8ee00b135281d49c36f248a8a1111",
+    "commitUrl": "https://github.com/alekseys/gremlin2rdf/commit/bd6cfb4359c8ee00b135281d49c36f248a8a1111",
+    "pullRequestUrl": "https://github.com/alekseys/gremlin2rdf/pull/1",
+    "pullRequestState": "draft",
+    "merged": false,
+    "producerIndexByteChecks": 17,
+    "remoteGraphCi": {
+      "status": "failed",
+      "windowsOffline": "succeeded",
+      "linuxOffline": "failed-wrapper-not-executable",
+      "dependencyCollection": "failed-wrapper-not-executable",
+      "wrapperModeCorrection": "100755; pending remote verification",
+      "runUrl": "https://github.com/alekseys/gremlin2rdf/actions/runs/41248719632"
+    }
+  },
+  "previewPackage": {
+    "command": "npm run package",
+    "exitCode": 0,
+    "shell": "graph-preview-package",
+    "file": "vscode-cosmosdb-0.39.0.vsix",
+    "testsRunForPackaging": false,
+    "releaseAcceptance": "not-established"
   },
   "runtimeExecutionApprovalPending": false
 }

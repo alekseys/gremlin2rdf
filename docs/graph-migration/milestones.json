@@ -101,9 +101,9 @@
       ],
       "blockers": [
         "Live compatibility and deployed-target resource measurements require authorized endpoints.",
-        "Current full load and two-hour soak are executing immutable snapshots; neither has passed. Historical snapshots were superseded with partial artifacts preserved.",
+        "Current full load and two-hour soak were cancelled at user request; neither passed. All partial immutable snapshots are preserved.",
         "Dependency audit executed and is blocked by known advisories and a missing license declaration.",
-        "CI is implemented but has not run remotely. Fourth integrated recovery passed all applicable extension gates."
+        "Windows remote offline CI passed; Linux offline and dependency jobs failed on non-executable Maven Wrapper. Executable mode correction awaits remote verification. Draft review and installable preview are delivered."
       ]
     }
   }
