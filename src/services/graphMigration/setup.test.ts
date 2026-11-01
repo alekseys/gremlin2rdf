@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { spawnSync } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
@@ -148,6 +149,98 @@ it('fills real inventory checksum and conventional endpoints without manufacturi
         ).target?.queryEndpoint,
     ).toBe(altered.target.queryEndpoint);
 });
+it.skipIf(!process.env.GRAPH_WORKER_SMOKE)(
+    'parses a form-generated project and constructs the packaged driver offline',
+    async () => {
+        const run = await new GraphProjectService(root).root();
+        const result = await applySetup(
+            project(),
+            {
+                host: '127.0.0.1',
+                database: 'fixture',
+                container: 'graph',
+                partitionKeyPath: '/pk',
+                datasetUrl: 'http://localhost:3030',
+                consistency: 'quiesced',
+            },
+            run,
+        );
+        const configured = graphProjectSchema.parse({
+            ...result,
+            limits: { ...result.limits, maximumOperationMillis: 120000 },
+            source: { ...result.source, ruBudget: '1000' },
+        });
+        const file = path.join(run, 'form.json');
+        await writeFile(file, JSON.stringify(configured));
+        const jdk = process.env.JAVA_HOME;
+        if (!jdk) throw new Error('This opt-in smoke needs the existing JDK and built graph workers');
+        const jar = path.resolve('resources', 'graph-migration', 'cosmos-gremlin-source-0.1.0.jar');
+        const executableSuffix = process.platform === 'win32' ? '.exe' : '';
+        const compile = spawnSync(
+            path.join(jdk, 'bin', `javac${executableSuffix}`),
+            [
+                '-cp',
+                jar,
+                '-d',
+                root,
+                path.resolve(
+                    'java',
+                    'cosmos-gremlin-source',
+                    'src',
+                    'test',
+                    'java',
+                    'io',
+                    'github',
+                    'gremlin2rdf',
+                    'source',
+                    'FormClusterProbe.java',
+                ),
+            ],
+            { encoding: 'utf8', timeout: 15000, windowsHide: true },
+        );
+        expect(compile.status).toBe(0);
+        const probe = spawnSync(
+            path.join(jdk, 'bin', `java${executableSuffix}`),
+            ['-cp', [jar, root].join(path.delimiter), 'io.github.gremlin2rdf.source.FormClusterProbe', file],
+            { encoding: 'utf8', timeout: 10000, windowsHide: true },
+        );
+        expect(probe.status).toBe(0);
+        const response: unknown = JSON.parse(probe.stdout);
+        expect(response).toEqual({
+            status: 'succeeded',
+            inputHash: inputHash(configured),
+            requestsSubmitted: 0,
+            connectionsOpened: 0,
+            driver: '3.4.13',
+        });
+        const saved = {
+            ...configured,
+            phases: {
+                preflight: {
+                    status: 'blocked' as const,
+                    inputHash: inputHash(configured),
+                    evidence: [],
+                    blockers: ['previous'],
+                },
+            },
+        };
+        await new GraphProjectService(root).save(saved);
+        const unchanged = await applySetup(
+            saved,
+            {
+                host: configured.source!.host,
+                database: 'fixture',
+                container: 'graph',
+                partitionKeyPath: '/pk',
+                datasetUrl: 'http://localhost:3030/',
+                consistency: 'quiesced',
+            },
+            run,
+        );
+        expect(inputHash(unchanged)).toBe(inputHash(saved));
+        expect(unchanged.phases.preflight.status).toBe('blocked');
+    },
+);
 it('requires explicit source consistency and never replaces an existing inventory', async () => {
     const run = await new GraphProjectService(root).root();
     await writeFile(path.join(run, 'identities.ndjson'), 'reviewed-inventory\n');

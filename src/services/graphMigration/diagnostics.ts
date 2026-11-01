@@ -11,9 +11,13 @@ export const safeDiagnosticSchema = z
         code: z.string().regex(/^[A-Z][A-Z0-9_]{1,79}$/u),
         stage: z.string().regex(/^[a-z][a-z0-9-]{0,79}$/u),
         remediation: z.string().min(1).max(1000),
+        httpStatus: z.number().int().min(100).max(599).optional(),
     })
     .strict();
 export type SafeDiagnostic = z.infer<typeof safeDiagnosticSchema>;
+export function formatDiagnostic(diagnostic: SafeDiagnostic): string {
+    return `${diagnostic.stage} (${diagnostic.code}${diagnostic.httpStatus ? `, HTTP ${diagnostic.httpStatus}` : ''}): ${diagnostic.remediation}`;
+}
 export class GraphDiagnosticError extends Error {
     constructor(
         readonly code: string,

@@ -10,7 +10,7 @@ not a Microsoft Marketplace release.
 
 ## Install and choose your target
 
-1. Install **`vscode-cosmosdb-0.39.2.vsix`** using VS Code's **Extensions > Install from VSIX**, then reload.
+1. Install **`vscode-cosmosdb-0.39.3.vsix`** using VS Code's **Extensions > Install from VSIX**, then reload.
    Stop active migrations before upgrading; this replaces the extension, not its saved projects.
 2. Open your application's folder as a trusted workspace and enable:
 
@@ -53,6 +53,14 @@ Source writes, cleanup and publication require separate scoped approval.
 Projects stay separate: `.cosmosdb-graph-migration/` for Jena and `.cosmosdb-age-migration/` for AGE.
 Keep their artifacts and checkpoints local. Specific sanitized failures identify the failed substep and remedy;
 connection success alone does not establish source fidelity or live migration readiness.
+
+For Fuseki, use an existing **dataset URL** such as `http://localhost:3030/ekg`, not just `http://localhost:3030`.
+If the intended dataset is absent, your operator must create or mount it separately; the extension does not.
+Save its actual query/update/graph-store paths (custom paths are in advanced settings), then rerun
+**Check read-only connections**. HTTP 404 identifies a missing/misconfigured endpoint, not proof every dataset
+is absent. **Stale** results are previous input-bound evidence, not a new connection failure.
+Version 0.39.3 fixes the extension-owned Gremlin driver pool constructor defect; inventory or credential edits
+cannot fix that defect in older builds.
 
 ## Start small
 

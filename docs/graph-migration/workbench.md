@@ -32,6 +32,11 @@ not a guessed endpoint. Suggestions are collected in the trusted workspace and i
 saved connection values take precedence. Discovery makes no network request and does not establish compatibility.
 
 Saving the form derives standard `/query`, `/update` and `/data` endpoints for the supplied Fuseki dataset URL.
+Use the actual existing dataset path, for example `http://localhost:3030/ekg`; the server root alone does not
+establish a dataset. If the intended dataset is absent, an operator must create or mount it separately. Custom
+query/update/graph-store paths can be configured in advanced settings. Read-only checks do not use or require the
+Fuseki administration API and never create datasets. A safe HTTP 404 means the requested query path was not found,
+not universal proof that no datasets exist; HTTP 401/403 retain authentication/permission diagnostics.
 Existing custom endpoints remain unchanged when the dataset URL is unchanged. Mapping, run graphs, protocol
 versions, batching and request limits retain defaults; the active built-in Git API supplies the workspace baseline
 commit when available, otherwise the legacy baseline stays available for advanced review.
@@ -54,7 +59,17 @@ the inventory, creates a fresh extraction run, resets compatibility evidence and
 project snapshots, budgets, checkpoints and artifacts remain preserved. No advanced JSON/path/hash edits are
 needed for this normal path. Then run **Check read-only source fidelity**; enumeration does not establish it.
 Existing inventories are never overwritten. Input changes invalidate dependent evidence.
+Stale phase diagnostics are collapsed under **Previous result — not a current connection check**. They are
+historical input-bound evidence; changing the RU budget, inventory or run really does invalidate the old result.
+Re-saving unchanged normalized settings or updating phase/artifact metadata does not change the input hash.
+Save settings and rerun **Check read-only connections** to obtain current source/target results.
 This action does not populate source data, authorize target writes, or remove existing source/target configuration.
+
+Version 0.39.3 corrects the pinned Gremlin 3.4.13 adapter's internal single-connection pool invariants:
+minimum and maximum simultaneous usage (and in-process requests) are both explicitly one.
+The former constructor failure occurred before submitting source requests and is not invalid user JSON,
+an inventory problem or a credential failure. Future classified constructor defects report
+`INTERNAL_ADAPTER_CONFIGURATION` at `source-cluster-construction` with a complete-VSIX reinstall remedy.
 
 ## Installing or replacing the VSIX
 
@@ -63,7 +78,7 @@ Stop any active migration before replacing the extension. Settings and workspace
 For a package with the same version as your installed preview, you can force replacement from PowerShell:
 
 ```powershell
-code --install-extension ".\vscode-cosmosdb-0.39.1.vsix" --force
+code --install-extension ".\vscode-cosmosdb-0.39.3.vsix" --force
 ```
 
 If the CLI prints `DEP0169` after reporting that the extension was successfully installed, installation succeeded.

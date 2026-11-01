@@ -142,6 +142,58 @@ describe('graph workbench boundaries and keyboard access', () => {
         expect(await screen.findByRole('alert')).toHaveTextContent('target-connectivity (ENDPOINT_AUTHENTICATION)');
         expect(screen.getByRole('alert')).toHaveTextContent('Renew the configured credential securely.');
     });
+    it('retains safe HTTP status in current diagnostics and presents stale results only as history', async () => {
+        mocks.load.mockResolvedValue({
+            project: {
+                ...project,
+                phases: {
+                    preflight: {
+                        status: 'stale',
+                        inputHash: '0'.repeat(64),
+                        evidence: [],
+                        blockers: [
+                            'target-query (TARGET_ENDPOINT_NOT_FOUND, HTTP 404): Verify the existing dataset query path.',
+                        ],
+                    },
+                },
+            },
+            trusted: true,
+        });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        const summary = await screen.findAllByText('Previous result — not a current connection check');
+        expect(summary[0].closest('details')).not.toHaveAttribute('open');
+        expect(screen.getAllByText(/target-query \(TARGET_ENDPOINT_NOT_FOUND/)[0]).not.toBeVisible();
+        expect(mocks.run).not.toHaveBeenCalled();
+        act(() =>
+            listener({
+                type: 'worker',
+                message: {
+                    protocolVersion: 1,
+                    type: 'result',
+                    runId: 'fixture',
+                    operationId: 'owned',
+                    sequence: 1,
+                    timestamp: new Date().toISOString(),
+                    phase: 'complete',
+                    payload: {
+                        status: 'blocked',
+                        diagnostics: [
+                            {
+                                status: 'blocked',
+                                code: 'TARGET_ENDPOINT_NOT_FOUND',
+                                stage: 'target-query',
+                                httpStatus: 404,
+                                remediation: 'Verify the existing dataset query path.',
+                            },
+                        ],
+                    },
+                },
+            }),
+        );
+        expect(await screen.findByRole('alert')).toHaveTextContent('TARGET_ENDPOINT_NOT_FOUND, HTTP 404');
+        act(() => listener({ type: 'project', project }));
+        await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    });
     it('keeps full JSON collapsed by default and saves the visible connection fields independently', async () => {
         mocks.load.mockResolvedValue({
             project,

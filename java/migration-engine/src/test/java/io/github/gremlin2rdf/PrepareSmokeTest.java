@@ -37,6 +37,32 @@ class PrepareSmokeTest {
         assertEquals("succeeded",result.get("status"));
         assertEquals(2,((List<?>)result.get("extractionPrerequisites")).size());
     }
+    @Test void target404AndInternalAdapterDefectRetainSafeSubstepsThroughArtifactEnvelope() throws Exception {
+        var result=Preflight.run(source(RecoveryTest.project("prepare")),root,new Preflight.Connections(){
+            public boolean target(Project p){throw new HttpException(404,"private-url-query-token");}
+            public Map<String,Object> source(Project p) throws Exception {
+                var report=Diagnostics.report("INTERNAL_ADAPTER_CONFIGURATION","source-cluster-construction");
+                throw Diagnostics.acknowledged(Json.MAPPER.valueToTree(report),"source-connectivity");
+            }
+        });
+        var checks=(Map<?,?>)result.get("checks");
+        var target=(Map<?,?>)checks.get("target");
+        assertEquals(404,target.get("httpStatus"));
+        assertEquals("target-query",target.get("stage"));
+        assertEquals("TARGET_ENDPOINT_NOT_FOUND",target.get("code"));
+        assertEquals("INTERNAL_ADAPTER_CONFIGURATION",((Map<?,?>)checks.get("source")).get("code"));
+        var artifact=root.resolve("result.json");
+        SafeFiles.atomic(artifact,Map.of("schemaVersion",1,"operation","preflight","result",result));
+        var text=Files.readString(artifact);
+        assertTrue(text.contains("\"httpStatus\":404"));assertFalse(text.contains("private-url-query-token"));
+        assertFalse(text.contains("CONFIGURATION_INVALID"));
+        for (int status:List.of(401,403,500)) {
+            var report=Preflight.endpoint(new HttpException(status,"private"),"target-query");
+            assertEquals(status,report.get("httpStatus"));
+            assertEquals(status==401 ? "ENDPOINT_AUTHENTICATION" : status==403 ? "ENDPOINT_AUTHORIZATION"
+                : "TARGET_PROVIDER_FAILURE",report.get("code"));
+        }
+    }
     @Test void stableClassificationsNeverEchoRawPathsQueriesSecretsOrUnknownCause() {
         for(var failure:List.of(new Project.CredentialUnavailable(),new NoSuchFileException("private-source-value"),
             new IllegalArgumentException("private-source-value"),new RuntimeException(new ConnectException("private-source-value")),

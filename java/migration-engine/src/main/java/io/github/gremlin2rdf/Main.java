@@ -327,7 +327,7 @@ public final class Main {
                 if (acknowledgement == null || !acknowledgement.isObject())
                     throw new Diagnostics.Failure("SOURCE_PROTOCOL_INVALID","source-worker-protocol");
                 if (process.exitValue()!=0 && acknowledgement.has("code"))
-                    throw Diagnostics.acknowledged(acknowledgement.path("code").asText(),
+                    throw Diagnostics.acknowledged(acknowledgement,
                         check ? "source-connectivity" : enumerate ? "source-enumeration" : "source-operation");
                 if (check) {
                     if (process.exitValue()!=0 || !acknowledgement.path("sourceReadAccess").asBoolean() ||

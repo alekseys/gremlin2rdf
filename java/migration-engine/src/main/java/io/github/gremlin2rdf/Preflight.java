@@ -18,7 +18,7 @@ public final class Preflight {
             if (project.target()==null) throw new Diagnostics.Failure("TARGET_CONFIGURATION_REQUIRED","target-connectivity");
             if (!connections.target(project)) throw new Diagnostics.Failure("ENDPOINT_PROVIDER_FAILURE","target-connectivity");
             checks.put("target",Map.of("status","succeeded","queryAccess",true,"writeAccess","not-executed-without-authorization"));
-        } catch (Exception failure) { var report=endpoint(failure,"target-connectivity");checks.put("target",report);diagnostics.add(report); }
+        } catch (Exception failure) { var report=endpoint(failure,"target-query");checks.put("target",report);diagnostics.add(report); }
         try {
             if (project.source()==null) throw new Diagnostics.Failure("SOURCE_CONFIGURATION_REQUIRED","source-connectivity");
             var observation=connections.source(project);
@@ -54,7 +54,9 @@ public final class Preflight {
                 : current instanceof QueryExceptionHTTP q ? q.getStatusCode() : 0;
             if (status!=0) return Diagnostics.report(status==401 ? "ENDPOINT_AUTHENTICATION" : status==403 ? "ENDPOINT_AUTHORIZATION"
                 : status==429 ? "ENDPOINT_THROTTLED" : status==408 || status==504 ? "ENDPOINT_TIMEOUT"
-                : status==-1 ? "ENDPOINT_CONNECTIVITY" : "ENDPOINT_PROVIDER_FAILURE",stage);
+                : status==-1 ? "ENDPOINT_CONNECTIVITY"
+                : status==404 && stage.startsWith("target-") ? "TARGET_ENDPOINT_NOT_FOUND"
+                : stage.startsWith("target-") ? "TARGET_PROVIDER_FAILURE" : "ENDPOINT_PROVIDER_FAILURE",stage,status);
         }
         return Diagnostics.failure(failure,stage);
     }

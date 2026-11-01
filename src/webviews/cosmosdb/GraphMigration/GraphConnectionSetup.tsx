@@ -220,7 +220,9 @@ export function GraphConnectionSetup({
                             </Field>
                         ))}
                     <p className={styles.intro}>
-                        {l10n.t('Query, update and data endpoint paths are derived from the dataset URL.')}
+                        {l10n.t(
+                            'Use the existing dataset path, for example http://localhost:3030/my-dataset, not just the server address. Query, update and data paths are derived; custom endpoints remain available in advanced settings. An operator must create or mount a missing dataset separately.',
+                        )}
                     </p>
                 </section>
             </div>

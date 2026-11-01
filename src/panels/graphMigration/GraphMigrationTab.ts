@@ -31,7 +31,7 @@ import {
     relativePathSchema,
     type GraphProject,
 } from '../../services/graphMigration/contracts';
-import { hostDiagnostic, safeDiagnostics } from '../../services/graphMigration/diagnostics';
+import { formatDiagnostic, hostDiagnostic, safeDiagnostics } from '../../services/graphMigration/diagnostics';
 import { GraphProjectService } from '../../services/graphMigration/GraphProjectService';
 import {
     adoptEnumeration,
@@ -1053,7 +1053,7 @@ export class GraphMigrationTab extends BaseTab {
                 status === 'succeeded'
                     ? []
                     : safeDiagnostics(result).length
-                      ? safeDiagnostics(result).map((d) => `${d.stage} (${d.code}): ${d.remediation}`)
+                      ? safeDiagnostics(result).map(formatDiagnostic)
                       : [l10n.t('Review the worker diagnostics and current evidence before continuing.')],
         };
         await this.service.save(project);

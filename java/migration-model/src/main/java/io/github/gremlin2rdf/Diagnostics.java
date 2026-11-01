@@ -8,11 +8,18 @@ public final class Diagnostics {
     public static final class Failure extends java.io.IOException {
         private final String code;
         private final String stage;
-        public Failure(String code, String stage) { super(code); this.code = code; this.stage = stage; }
+        private final Integer httpStatus;
+        public Failure(String code, String stage) { this(code,stage,null); }
+        public Failure(String code,String stage,Integer httpStatus) {
+            super(code); this.code=code; this.stage=stage; this.httpStatus=httpStatus;
+        }
     }
     private static final Map<String,String> REMEDIES = Map.ofEntries(
         Map.entry("CREDENTIAL_REFERENCE_UNAVAILABLE", "Use Store credentials securely for the configured reference, then retry. Do not paste credentials into configuration or artifacts."),
         Map.entry("SOURCE_CONFIGURATION_REQUIRED", "Save the Gremlin hostname, database, container and partition key in the connection form."),
+        Map.entry("INTERNAL_ADAPTER_CONFIGURATION", "The packaged source adapter has an internal driver configuration defect. Install the corrected complete VSIX and reload VS Code; editing inventory or credentials cannot fix cluster construction."),
+        Map.entry("TARGET_ENDPOINT_NOT_FOUND", "The configured target query endpoint returned HTTP 404. Verify the existing Fuseki dataset and its query path; a running server root does not imply a dataset exists. Have the operator create or mount the intended dataset separately if absent, save its actual endpoint paths and rerun read-only checks."),
+        Map.entry("TARGET_PROVIDER_FAILURE", "The target rejected the bounded read-only query. Verify its SPARQL query path, service health and permissions; raw endpoint messages are redacted."),
         Map.entry("SOURCE_ADAPTER_REQUIRED", "Use the pinned packaged source adapter; rebuild with npm run graph:prepare if it is missing."),
         Map.entry("SOURCE_PROTOCOL_INVALID", "The isolated source worker did not return a valid bounded acknowledgement. Reinstall the complete VSIX or rebuild the pinned workers; missing inventory is not inferred from this failure."),
         Map.entry("TARGET_CONFIGURATION_REQUIRED", "Save the existing Fuseki dataset URL in the connection form."),
@@ -45,10 +52,15 @@ public final class Diagnostics {
         return Map.of("status","blocked","code", REMEDIES.containsKey(code) ? code : "OPERATION_CAUSE_UNKNOWN",
             "stage",stage,"remediation",REMEDIES.getOrDefault(code,REMEDIES.get("OPERATION_CAUSE_UNKNOWN")));
     }
+    public static Map<String,Object> report(String code,String stage,Integer httpStatus) {
+        var result=new TreeMap<>(report(code,stage));
+        if (httpStatus!=null && httpStatus>=100 && httpStatus<=599) result.put("httpStatus",httpStatus);
+        return result;
+    }
     public static Map<String,Object> failure(Throwable error,String stage) {
         Throwable current = error;
         for (int depth=0; current!=null && depth<16; depth++,current=current.getCause()) {
-            if (current instanceof Failure f) return report(f.code,f.stage);
+            if (current instanceof Failure f) return report(f.code,f.stage,f.httpStatus);
             if (current instanceof Project.CredentialUnavailable) return report("CREDENTIAL_REFERENCE_UNAVAILABLE",stage);
             if (current instanceof com.fasterxml.jackson.core.JsonProcessingException) return report("CONFIGURATION_INVALID",stage);
             if (current instanceof java.nio.file.NoSuchFileException || current instanceof java.io.FileNotFoundException)
@@ -69,5 +81,13 @@ public final class Diagnostics {
     }
     public static Failure acknowledged(String code,String stage) {
         return new Failure(REMEDIES.containsKey(code) ? code : "OPERATION_CAUSE_UNKNOWN",stage);
+    }
+    public static Failure acknowledged(com.fasterxml.jackson.databind.JsonNode diagnostic,String fallbackStage) {
+        String stage=diagnostic.path("stage").asText();
+        if (!stage.matches("[a-z][a-z0-9-]{0,79}")) stage=fallbackStage;
+        String code=diagnostic.path("code").asText();
+        var status=diagnostic.path("httpStatus");
+        return new Failure(REMEDIES.containsKey(code) ? code : "OPERATION_CAUSE_UNKNOWN",stage,
+            status.isIntegralNumber() && status.canConvertToInt() ? status.intValue() : null);
     }
 }

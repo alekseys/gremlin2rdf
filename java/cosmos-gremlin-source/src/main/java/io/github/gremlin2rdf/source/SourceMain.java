@@ -21,8 +21,8 @@ public final class SourceMain implements AutoCloseable {
     private final io.github.gremlin2rdf.Project typedProject;
     private final SourceRequests requests;
     private final boolean connectivityOnly;
-    private SourceMain(JsonNode project) { this(project,false); }
-    private SourceMain(JsonNode project,boolean connectivityOnly) {
+    private SourceMain(JsonNode project) throws IOException { this(project,false); }
+    private SourceMain(JsonNode project,boolean connectivityOnly) throws IOException {
         this.connectivityOnly=connectivityOnly;
         this.project = project; config = project.path("source");
         try { typedProject = io.github.gremlin2rdf.Json.MAPPER.treeToValue(project, io.github.gremlin2rdf.Project.class); codec = new SourceCodec(typedProject); }
@@ -37,17 +37,27 @@ public final class SourceMain implements AutoCloseable {
         if (timeout < 100 || timeout > 300000) throw new IllegalArgumentException("Invalid source deadline");
         requests = new SourceRequests(typedProject.limits().maxRetries(), timeout, typedProject.source().ruBudget(),
             millis -> Thread.sleep(millis + java.util.concurrent.ThreadLocalRandom.current().nextLong(50)));
+        cluster = createCluster(clusterBuilder(project,key));
+        client = cluster.connect();
+    }
+    static Cluster.Builder clusterBuilder(JsonNode project,String key) throws javax.net.ssl.SSLException {
+        var config = project.path("source");
         var builder = Cluster.build(config.path("host").asText()).port(config.path("port").asInt())
             .enableSsl(true).serializer(new GraphSONMessageSerializerV2d0())
             .credentials("/dbs/" + config.path("database").asText() + "/colls/" + config.path("container").asText(), key)
             .maxContentLength(Math.min(1048576, project.path("limits").path("maxRecordBytes").asInt() * 2))
-            .maxInProcessPerConnection(1).maxSimultaneousUsagePerConnection(1)
+            .minInProcessPerConnection(1).maxInProcessPerConnection(1)
+            .minSimultaneousUsagePerConnection(1).maxSimultaneousUsagePerConnection(1)
             .minConnectionPoolSize(1).maxConnectionPoolSize(1);
-        try { builder.sslContext(new SourceTls(config.path("host").asText(), config.path("port").asInt(),
-            config.path("customCaRef").isNull() ? null : io.github.gremlin2rdf.Project.secret(config.path("customCaRef").asText()))); }
-        catch (javax.net.ssl.SSLException e) { throw new IllegalArgumentException("Validated source TLS context required", e); }
-        cluster = builder.create();
-        client = cluster.connect();
+        builder.sslContext(new SourceTls(config.path("host").asText(), config.path("port").asInt(),
+            config.path("customCaRef").isNull() ? null : io.github.gremlin2rdf.Project.secret(config.path("customCaRef").asText())));
+        return builder;
+    }
+    static Cluster createCluster(Cluster.Builder builder) throws io.github.gremlin2rdf.Diagnostics.Failure {
+        try { return builder.create(); }
+        catch (IllegalArgumentException failure) {
+            throw new io.github.gremlin2rdf.Diagnostics.Failure("INTERNAL_ADAPTER_CONFIGURATION","source-cluster-construction");
+        }
     }
     private Object query(String script, Map<String, Object> bindings) throws Exception {
         return query(script, bindings, false);

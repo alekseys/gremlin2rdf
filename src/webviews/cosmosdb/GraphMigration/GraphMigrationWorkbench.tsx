@@ -34,7 +34,7 @@ import {
     type GraphOperation,
 } from '../../../panels/graphMigration/graphRouter';
 import { type GraphProject } from '../../../services/graphMigration/contracts';
-import { safeDiagnostics } from '../../../services/graphMigration/diagnostics';
+import { formatDiagnostic, safeDiagnostics } from '../../../services/graphMigration/diagnostics';
 import { graphEvidencePhases } from '../../../services/graphMigration/evidence';
 import { type SetupSuggestions } from '../../../services/graphMigration/setup';
 import { GraphConnectionSetup } from './GraphConnectionSetup';
@@ -189,6 +189,8 @@ const useStyles = makeStyles({
         color: tokens.colorNeutralForeground2,
     },
     notice: {
+        minWidth: 0,
+        overflowWrap: 'anywhere',
         padding: `${tokens.spacingVerticalS} ${tokens.spacingHorizontalM}`,
         borderLeftWidth: '3px',
         borderLeftStyle: 'solid',
@@ -236,6 +238,11 @@ const useStyles = makeStyles({
     },
     operationActions: {
         gridColumn: '1 / -1',
+        minWidth: 0,
+    },
+    operationDiagnostics: {
+        gridColumn: '1 / -1',
+        minWidth: 0,
     },
     status: {
         display: 'inline-flex',
@@ -370,6 +377,7 @@ export function GraphMigrationWorkbench() {
             onData: (event) => {
                 if (event.type === 'project') {
                     applyProject(event.project);
+                    setDiagnostic('');
                     announce(l10n.t('Graph project state updated.'));
                 } else if (event.type === 'diagnostic') {
                     setDiagnostic(
@@ -410,8 +418,7 @@ export function GraphMigrationWorkbench() {
                 } else if (event.message.type === 'result' || event.message.type === 'error') {
                     setProgress(l10n.t('Worker operation finished. Review the phase status and evidence.'));
                     const details = safeDiagnostics(event.message.payload);
-                    if (details.length)
-                        setDiagnostic(details.map((d) => `${d.stage} (${d.code}): ${d.remediation}`).join('\n'));
+                    if (details.length) setDiagnostic(details.map(formatDiagnostic).join('\n'));
                 }
             },
             onError: () => {
@@ -468,11 +475,27 @@ export function GraphMigrationWorkbench() {
                     <StatusIcon aria-hidden={true} />
                     {phaseLabels()[status]}
                 </span>
-                {project?.phases[operation]?.blockers.map((blocker, index) => (
-                    <p key={index} className={styles.notice}>
-                        {blocker}
-                    </p>
-                ))}
+                {Boolean(project?.phases[operation]?.blockers.length) && (
+                    <div className={styles.operationDiagnostics}>
+                        {status === 'stale' ? (
+                            <details>
+                                <summary>{l10n.t('Previous result — not a current connection check')}</summary>
+                                <p>{l10n.t('Inputs changed after this result. Save settings and rerun this check.')}</p>
+                                {project?.phases[operation]?.blockers.map((blocker, index) => (
+                                    <p key={index} className={styles.notice}>
+                                        {blocker}
+                                    </p>
+                                ))}
+                            </details>
+                        ) : (
+                            project?.phases[operation]?.blockers.map((blocker, index) => (
+                                <p key={index} className={styles.notice}>
+                                    {blocker}
+                                </p>
+                            ))
+                        )}
+                    </div>
+                )}
                 {showActions && (
                     <div className={styles.operationActions}>
                         <div className={styles.actionButtons}>
