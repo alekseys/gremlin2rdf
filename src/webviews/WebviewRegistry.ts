@@ -21,5 +21,7 @@ export const WebviewRegistry = {
     cosmosDbMigration: () => import('./cosmosdb/Migration/MigrationAssistant').then((m) => m.MigrationAssistant),
     cosmosDbGraphMigration: () =>
         import('./cosmosdb/GraphMigration/GraphMigrationWorkbench').then((m) => m.GraphMigrationWorkbench),
+    cosmosDbAgeMigration: () =>
+        import('./cosmosdb/AgeMigration/AgeMigrationWorkbench').then((m) => m.AgeMigrationWorkbench),
     cosmosDbQuery: () => import('./cosmosdb/QueryEditor/QueryEditor').then((m) => m.QueryEditor),
 } as const satisfies Record<string, () => Promise<ComponentType>>;

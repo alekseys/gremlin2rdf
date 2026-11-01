@@ -1,0 +1,23 @@
+using Gremlin.Net.Driver;
+using Gremlin2Age;
+using System.Threading;
+using System.Threading.Tasks;
+
+public sealed class Repository
+{
+    private readonly IGremlinClient client;
+    private readonly GraphAccess ageAccess;
+    private readonly CancellationToken cancellationToken;
+
+    public Repository(IGremlinClient client, GraphAccess ageAccess, CancellationToken cancellationToken)
+    {
+        this.client = client;
+        this.ageAccess = ageAccess;
+        this.cancellationToken = cancellationToken;
+    }
+
+    public async Task<object> CountAsync()
+    {
+        return await client.SubmitAsync<dynamic>("g.V().count()");
+    }
+}

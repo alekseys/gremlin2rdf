@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\AgeWorker\AgeWorker.csproj" />
+    <Compile Include="$(FixtureFile)" Link="Repository.cs" Condition="'$(FixtureFile)' != ''" />
+  </ItemGroup>
+</Project>

@@ -3,8 +3,10 @@
 
 # CosmosDB emulator data
 .cosmosdb-graph-migration/
+.cosmosdb-age-migration/
 resources/graph-migration/*.jar
 resources/graph-migration/worker-manifest.json
+resources/age-migration/
 .cosmosdb-data/
 .cosmosdb-logs/
 

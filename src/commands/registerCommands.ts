@@ -31,6 +31,7 @@ import { cosmosDBExecuteStoredProcedure } from './executeStoredProcedure/execute
 import { filterTreeItems } from './filterTreeItems/filterTreeItems';
 import { importDocuments } from './importDocuments/importDocuments';
 import { cosmosDBLoadMore } from './loadMore/loadMore';
+import { openAgeMigration } from './migration/openAgeMigration';
 import { openExistingMigration } from './migration/openExistingMigration';
 import { openGraphMigration } from './migration/openGraphMigration';
 import { openMigrationAssistant } from './migration/openMigrationAssistant';
@@ -84,6 +85,7 @@ export function registerCommands(): void {
 
     registerMigrationCommands();
     registerCommand('cosmosDB.graphMigration.open', openGraphMigration);
+    registerCommand('cosmosDB.ageMigration.open', openAgeMigration);
 
     registerCommand('cosmosDB.quickStart.reset', resetQuickStart);
     registerCommand('cosmosDB.dataModeling.deleteAllData', deleteAllDataModelerData);

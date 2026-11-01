@@ -83,6 +83,7 @@ function main() {
     console.log(`Preview: ${isPreview ? 'Yes' : 'No'}`);
 
     executeCommand('npm run graph:prepare', 'Preparing isolated Java graph workers');
+    executeCommand('npm run age:prepare', 'Preparing independent .NET AGE worker');
     // Step 1: Build the extension
     executeCommand('npm run vite-prod', 'Building extension');
 
