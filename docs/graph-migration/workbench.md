@@ -126,7 +126,7 @@ Stop any active migration before replacing the extension. Settings and workspace
 For a package with the same version as your installed preview, you can force replacement from PowerShell:
 
 ```powershell
-code --install-extension ".\vscode-cosmosdb-0.39.9.vsix" --force
+code --install-extension ".\vscode-cosmosdb-0.39.10.vsix" --force
 ```
 
 If the CLI prints `DEP0169` after reporting that the extension was successfully installed, installation succeeded.
@@ -160,8 +160,8 @@ coverage estimate, promised completion time or automatic authorization for that 
 
 Headless projects can set optional `source.ruPerSecond` (decimal string, 1–1000000000 RU/s).
 `source.ruBudget` retains its existing **total-run RU** meaning; it is never reinterpreted as a rate.
-The guided form requires review of both fields for new runs. Missing `ruPerSecond` in an old project
-keeps legacy behavior and its input hash unchanged. Re-saving unchanged connections preserves both settings.
+The guided form requires review of both fields for new runs. Missing `ruPerSecond` keeps legacy pacing
+behavior and does not change the project input hash. Re-saving unchanged connections preserves both settings.
 An explicit rate change changes the input hash; it cannot renew or adopt an old journal under new inputs.
 
 The source adapter is serial. Each successful or failed request's observed charge determines the minimum
@@ -189,6 +189,37 @@ request/duration bounds and stable-source assertion before **Start bounded read-
 The old run is archived, not reset; approvals/evidence remain input-bound. Resume is not offered for a
 current known exhausted/unobservable RU result and never grants more spend. No automatic budget increase,
 database provisioning or live requests occur by installing or reviewing these controls.
+
+### Complete request-charge accounting
+
+Version 0.39.10 corrects two adapter defects independently of RU settings:
+
+- Cosmos documents `x-ms-request-charge` as the **individual response chunk's** cost, and
+  `x-ms-total-request-charge` as cumulative cost for the traversal. The pinned Java 3.4.13
+  `ResultSet.statusAttributes()` exposes the **terminal response's** attributes, not all intermediate chunks.
+  The worker now uses the terminal total exactly once, never a partial chunk as a complete cost.
+- The previous decimal-only text check rejected finite numeric charges rendered in scientific notation.
+  Bounded nonnegative finite numbers and numeric strings now parse as exact decimal amounts, including explicit
+  zero; NaN, infinity, negatives, oversized values and malformed inputs remain rejected.
+
+Offline fixtures exercise the actual pinned GraphSON serializer, response handler, queue and ResultSet with
+partial frames followed by a terminal response, including folded empty edge pages and total-only metadata.
+These reproduce adapter handling, not the exact metadata returned by a user's live endpoint.
+See the [official Cosmos response headers](https://learn.microsoft.com/en-us/azure/cosmos-db/gremlin/headers)
+and [pinned Java handler](https://github.com/apache/tinkerpop/blob/3.4.13/gremlin-driver/src/main/java/org/apache/tinkerpop/gremlin/driver/Handler.java).
+
+If a complete charge is still unknown, evidence includes a fixed `chargeObservation`: `missing-total`,
+`partial-charge-only`, `invalid-total`, `unconfirmed-in-flight`, or `previous-unobservable`.
+Numeric provider statuses remain visible when actually observed. No arbitrary metadata keys/values, scripts,
+partition values or provider messages are exposed. A zero charge is accepted only when explicitly returned
+as a valid total; an empty page or absent header never implies zero. Increasing RU/s or total RU cannot
+repair unknown accounting.
+
+New request journals use accounting schema 2. Schema-1 journals from earlier builds may contain partial-only
+totals and cannot safely be upgraded by relabeling or resuming; `SOURCE_RU_ACCOUNTING_REVIEW` blocks without
+changing them. Preserve these files/checkpoints and review a new bounded preparation run. Current schema-2
+journals retain restart/debt/integrity checks; an unknown/in-flight observation never becomes known merely
+by restarting. No budget or authorization gate is bypassed.
 
 ## Execution budgets and meaningful progress
 

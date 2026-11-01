@@ -26,6 +26,7 @@ final class SourceRequests implements AutoCloseable {
     private long remainingDurationMillis = Long.MAX_VALUE;
     private BigDecimal charge = BigDecimal.ZERO;
     private boolean chargeObserved = true;
+    private String chargeObservation;
     private long retries;
     private Path journal;
     private Project project;
@@ -79,7 +80,8 @@ final class SourceRequests implements AutoCloseable {
                 var state = readState(journal); charge = new BigDecimal(state.charge()); chargeObserved = state.chargeObserved(); retries = state.retries();
                 pacingDelayMillis = state.pacingDelayMillis() == null ? 0 : state.pacingDelayMillis();
                 pacingStarted=clock.getAsLong();
-                if (state.inFlight()) { chargeObserved = false; persist(); }
+                if (!chargeObserved) chargeObservation="previous-unobservable";
+                if (state.inFlight()) { chargeObserved = false; chargeObservation="unconfirmed-in-flight"; persist(); }
             }
         } catch (IOException | RuntimeException e) { close(); throw e; }
     }
@@ -89,15 +91,17 @@ final class SourceRequests implements AutoCloseable {
         try { state=Json.MAPPER.readValue(Files.readAllBytes(path),State.class); }
         catch (com.fasterxml.jackson.core.JsonProcessingException failure) { throw new Diagnostics.Failure("SOURCE_REQUEST_JOURNAL","source-request-journal"); }
         if (state==null || state.runId()==null || state.inputHash()==null || state.integrity()==null ||
-            state.schemaVersion() != 1 || !state.runId().equals(project.runId()) || !state.inputHash().equals(project.inputHash())
+            !Set.of(1,2).contains(state.schemaVersion()) || !state.runId().equals(project.runId()) || !state.inputHash().equals(project.inputHash())
             || !state.integrity().equals(state.calculatedIntegrity()) || new BigDecimal(state.charge()).signum() < 0 || state.retries() < 0
             || state.pacingDelayMillis()!=null && state.pacingDelayMillis()<0
             || (rate == null) != (state.pacingDelayMillis()==null))
             throw new Diagnostics.Failure("SOURCE_REQUEST_JOURNAL","source-request-journal");
+        if (state.schemaVersion()==1)
+            throw new Diagnostics.Failure("SOURCE_RU_ACCOUNTING_REVIEW","source-request-journal");
         return state;
     }
     private void persist() throws IOException {
-        if (journal != null) SafeFiles.atomic(journal, new State(1, project.runId(), project.inputHash(), charge.toPlainString(), chargeObserved, retries, inFlight, "",
+        if (journal != null) SafeFiles.atomic(journal, new State(2, project.runId(), project.inputHash(), charge.toPlainString(), chargeObserved, retries, inFlight, "",
             rate == null ? null : pacingDelayMillis).signed());
     }
     Object execute(Attempt request) throws Exception {
@@ -128,15 +132,18 @@ final class SourceRequests implements AutoCloseable {
     }
     private void account(Map<String, Object> attributes) throws IOException {
         inFlight = false;
-        Object value = attributes.get("x-ms-request-charge");
-        if (value == null) chargeObserved = false;
+        // ResultSet exposes only terminal attributes; a chunk charge cannot establish a traversal's total.
+        Object value = attributes.get("x-ms-total-request-charge");
+        if (value == null) {
+            chargeObserved = false;
+            chargeObservation = attributes.containsKey("x-ms-request-charge") ? "partial-charge-only" : "missing-total";
+        }
         else {
             BigDecimal observed;
             try {
-                if (!value.toString().matches("[0-9]{1,15}(?:\\.[0-9]{1,9})?")) throw new NumberFormatException();
-                observed = new BigDecimal(value.toString());
+                observed = requestCharge(value);
             } catch (NumberFormatException failure) {
-                chargeObserved=false; persist(); throw budgetFailure("SOURCE_RU_UNOBSERVABLE");
+                chargeObserved=false; chargeObservation="invalid-total"; persist(); throw budgetFailure("SOURCE_RU_UNOBSERVABLE");
             }
             charge = charge.add(observed);
             if (rate != null) {
@@ -148,6 +155,17 @@ final class SourceRequests implements AutoCloseable {
         if ((budget != null || rate != null) && !chargeObserved) throw budgetFailure("SOURCE_RU_UNOBSERVABLE");
         if (budget != null && charge.compareTo(budget) > 0) throw budgetFailure("SOURCE_RU_BUDGET_EXHAUSTED");
     }
+    static BigDecimal requestCharge(Object value) {
+        if (!(value instanceof String || value instanceof Number)) throw new NumberFormatException();
+        String text=value.toString();
+        if (text.length()>64 || !text.matches("[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]{1,3})?"))
+            throw new NumberFormatException();
+        var amount=new BigDecimal(text);
+        if (amount.signum()<0 || amount.precision()>30 || amount.scale() < -15 || amount.scale()>20
+            || amount.compareTo(new BigDecimal("1000000000000000"))>0)
+            throw new NumberFormatException();
+        return amount.signum()==0 ? BigDecimal.ZERO : amount;
+    }
     private Diagnostics.Failure budgetFailure(String code) {
         var report=new TreeMap<String,Object>(Diagnostics.report(code,"source-request"));
         if (budget != null) report.put("ruBudget",budget.toPlainString());
@@ -156,6 +174,7 @@ final class SourceRequests implements AutoCloseable {
             if (budget != null) report.put("ruRemaining",budget.subtract(charge).max(BigDecimal.ZERO).toPlainString());
         }
         if (rate != null) report.put("ruPerSecond",rate.toPlainString());
+        if (chargeObservation != null) report.put("chargeObservation",chargeObservation);
         return Diagnostics.acknowledged(Json.MAPPER.valueToTree(report),"source-request");
     }
     private void pace() throws Exception {

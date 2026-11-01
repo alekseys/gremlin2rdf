@@ -53,7 +53,8 @@ public final class Diagnostics {
         Map.entry("SOURCE_ENUMERATION_REQUEST_LIMIT", "The reviewed enumeration request ceiling was reached. Preserve the checkpoint and review a new request budget before resuming."),
         Map.entry("SOURCE_ENUMERATION_DURATION_LIMIT", "The reviewed enumeration time ceiling was reached. Preserve the checkpoint and review the next bounded run; this is not complete coverage."),
         Map.entry("SOURCE_RU_BUDGET_EXHAUSTED", "The total-run RU allowance is exhausted, not the database RU/s throughput. Waiting does not replenish it. Preserve journals/checkpoints. In guided Prepare, review a new total-run allowance and a separate migration RU/s pacing rate before starting a new bounded run."),
-        Map.entry("SOURCE_RU_UNOBSERVABLE", "The provider did not expose reliable request charge. Configured total RU and RU/s pacing cannot be enforced; preserve the journal and do not treat the operation as successful."),
+        Map.entry("SOURCE_RU_UNOBSERVABLE", "A complete request charge could not be established. Review chargeObservation and safe statuses: missing/invalid terminal total, a partial-only charge, interrupted transport and an earlier unknown journal are distinct. Raising RU limits cannot fix this. Preserve the journal; do not infer zero cost or retry unknown spend."),
+        Map.entry("SOURCE_RU_ACCOUNTING_REVIEW", "This journal predates complete-request charge accounting and may contain partial-only spend. Preserve it and its checkpoints; do not reset or relabel its totals. Review a new bounded preparation run using the current worker."),
         Map.entry("SOURCE_RU_RATE_DEADLINE", "The required source pacing or retry wait cannot fit within the remaining operation duration. Preserve journals/checkpoints and review rate, duration and total-run budgets separately. No additional request was submitted."),
         Map.entry("ENDPOINT_AUTHENTICATION", "Renew the configured credential using SecretStorage and verify access to the configured database/dataset. Do not retry uncertain writes."),
         Map.entry("ENDPOINT_AUTHORIZATION", "Grant least-privilege access to the configured source or exact target resources. Connection credentials do not authorize migration writes."),
@@ -116,6 +117,9 @@ public final class Diagnostics {
         var failure=new Failure(REMEDIES.containsKey(code) ? code : "OPERATION_CAUSE_UNKNOWN",stage,
             status.isIntegralNumber() && status.canConvertToInt() ? status.intValue() : null);
         var fields=new TreeMap<String,Object>();
+        if (Set.of("missing-total","partial-charge-only","invalid-total","unconfirmed-in-flight","previous-unobservable")
+            .contains(diagnostic.path("chargeObservation").asText()))
+            fields.put("chargeObservation",diagnostic.path("chargeObservation").asText());
         if (Set.of("source-keyset-page-v1","source-keyset-page-v2").contains(diagnostic.path("templateId").asText()))
             fields.put("templateId",diagnostic.path("templateId").asText());
         for (String name:List.of("gremlinStatus","sourceStatus","sourceSubstatus")) {

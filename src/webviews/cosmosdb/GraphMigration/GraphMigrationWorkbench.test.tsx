@@ -188,6 +188,41 @@ describe('graph workbench boundaries and keyboard access', () => {
         expect(mocks.run).not.toHaveBeenCalled();
         expect(mocks.approve).not.toHaveBeenCalled();
     });
+    it('renders safe unknown-charge reason without suggesting a higher RU limit will fix it', async () => {
+        renderWorkbench();
+        await screen.findByRole('textbox', { name: 'Graph project JSON' });
+        act(() =>
+            listener({
+                type: 'worker',
+                message: {
+                    protocolVersion: 1,
+                    type: 'result',
+                    runId: 'fixture',
+                    operationId: 'owned',
+                    sequence: 1,
+                    timestamp: new Date().toISOString(),
+                    phase: 'complete',
+                    payload: {
+                        status: 'blocked',
+                        code: 'SOURCE_RU_UNOBSERVABLE',
+                        stage: 'source-enumeration-edge-page',
+                        remediation:
+                            'A complete request charge could not be established. Raising RU limits cannot fix this.',
+                        templateId: 'source-keyset-page-v2',
+                        chargeObservation: 'missing-total',
+                        ruBudget: '999999',
+                        ruPerSecond: '5000',
+                    },
+                },
+            }),
+        );
+        const alert = await screen.findByRole('alert');
+        expect(alert).toHaveTextContent('source-enumeration-edge-page');
+        expect(alert).toHaveTextContent('missing-total');
+        expect(alert).toHaveTextContent('Raising RU limits cannot fix this.');
+        expect(alert).not.toHaveTextContent('consumed 0 RU');
+        expect(mocks.run).not.toHaveBeenCalled();
+    });
     it('preserves expanded completed evidence and enables only the next unfinished required step across reloads', async () => {
         const configured = graphProjectSchema.parse({ ...bootstrapProject(), phases: {} });
         const hash = inputHash(configured);

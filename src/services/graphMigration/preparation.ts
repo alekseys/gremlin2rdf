@@ -196,17 +196,19 @@ export async function discoverPreparation(workspace: string, p: GraphProject): P
                     ),
                 );
             const phase = p.phases['source-enumerate'];
-            const exhausted =
+            const accountingBlocked =
                 phase?.inputHash === inputHash(p) &&
-                phase.blockers.some((blocker) => /\bSOURCE_RU_(?:BUDGET_EXHAUSTED|UNOBSERVABLE)\b/u.test(blocker));
-            if (exhausted)
+                phase.blockers.some((blocker) =>
+                    /\bSOURCE_RU_(?:BUDGET_EXHAUSTED|UNOBSERVABLE|ACCOUNTING_REVIEW)\b/u.test(blocker),
+                );
+            if (accountingBlocked)
                 notices.push(
                     l10n.t(
-                        'The preserved run has exhausted or unobservable total RU spend. Waiting or changing RU/s does not renew that allowance. Preserve its journal and review a new bounded run below; Resume does not grant additional RU.',
+                        'The preserved run has exhausted, unobservable, or older partial-only RU accounting. Waiting or changing RU/s cannot repair it. Preserve its journal and checkpoints and review a new bounded run below; Resume does not grant additional RU.',
                     ),
                 );
             if (
-                !exhausted &&
+                !accountingBlocked &&
                 state.runId === p.runId &&
                 state.inputHash === inputHash(p) &&
                 state.requests < limits.maximumRequests &&

@@ -86,75 +86,78 @@ it('infers recognized nonsecret settings and keeps conflicting endpoints unresol
     expect(detected.values.consistency).toBe('');
     expect(JSON.stringify(detected)).not.toContain('private-key');
 });
-it('keeps legacy RU allowance and checkpoints intact while reviewing independent pacing and total spend', async () => {
-    const run = await new GraphProjectService(root).root();
-    const configured = await applySetup(
-        project(),
-        {
-            host: 'localhost',
-            database: 'fixture',
-            container: 'graph',
-            partitionKeyPath: '/pk',
-            datasetUrl: 'http://localhost:3030/graph',
-            consistency: 'immutable',
-        },
-        run,
-    );
-    const legacy = graphProjectSchema.parse({ ...configured, source: { ...configured.source!, ruBudget: '1000' } });
-    expect(legacy.source).not.toHaveProperty('ruPerSecond');
-    const journal = `source-requests-${legacy.runId}.json`;
-    await writeFile(path.join(run, journal), 'preserved-journal');
-    const output = `artifacts/source-enumeration-${legacy.runId}`;
-    await mkdir(path.join(run, output), { recursive: true });
-    const checkpoint = { runId: legacy.runId, inputHash: inputHash(legacy), requests: 3, elapsedMillis: 20 };
-    await writeFile(path.join(run, output, 'checkpoint.json'), JSON.stringify(checkpoint));
-    const plan = `artifacts/enumeration-plan-${legacy.runId}.json`;
-    await writeFile(path.join(run, plan), JSON.stringify({ maximumRequests: 20, maximumDurationMillis: 10000 }));
-    const spent = graphProjectSchema.parse({
-        ...legacy,
-        phases: {
-            'source-enumerate': {
-                status: 'blocked',
-                inputHash: inputHash(legacy),
-                evidence: [],
-                blockers: ['source-enumeration-vertex-page (SOURCE_RU_BUDGET_EXHAUSTED): Total spent.'],
+it.each(['SOURCE_RU_BUDGET_EXHAUSTED', 'SOURCE_RU_UNOBSERVABLE', 'SOURCE_RU_ACCOUNTING_REVIEW'])(
+    'keeps RU allowance/checkpoints intact and requires reviewed fresh preparation for %s',
+    async (code) => {
+        const run = await new GraphProjectService(root).root();
+        const configured = await applySetup(
+            project(),
+            {
+                host: 'localhost',
+                database: 'fixture',
+                container: 'graph',
+                partitionKeyPath: '/pk',
+                datasetUrl: 'http://localhost:3030/graph',
+                consistency: 'immutable',
             },
-        },
-    });
-    const candidates = await discoverPreparation(root, spent);
-    expect(candidates.resume).toBeUndefined();
-    expect(candidates.notices.join(' ')).toContain('Waiting or changing RU/s does not renew');
-    const prepared = await freshPreparation(spent, run, {
-        partitions: ['fixture'],
-        maximumRequests: 20,
-        maximumDurationSeconds: 120,
-        ruBudget: '120000',
-        ruPerSecond: '1000',
-        confirmStableSource: true,
-    });
-    expect(prepared.project.runId).not.toBe(legacy.runId);
-    expect(prepared.project.source).toMatchObject({ ruBudget: '120000', ruPerSecond: '1000' });
-    expect(prepared.project.phases['source-enumerate'].status).toBe('stale');
-    expect(prepared.project.approvals).toEqual([]);
-    expect(spent.source?.ruBudget).toBe('1000');
-    expect(await readFile(path.join(run, journal), 'utf8')).toBe('preserved-journal');
-    expect(JSON.parse(await readFile(path.join(run, output, 'checkpoint.json'), 'utf8'))).toEqual(checkpoint);
-    const saved = await applySetup(
-        prepared.project,
-        {
-            host: 'localhost',
-            database: 'fixture',
-            container: 'graph',
-            partitionKeyPath: '/pk',
-            datasetUrl: 'http://localhost:3030/graph',
-            consistency: 'immutable',
-        },
-        run,
-    );
-    expect(inputHash(saved)).toBe(inputHash(prepared.project));
-    expect(saved.source?.ruPerSecond).toBe('1000');
-    expect(inputHash({ ...legacy, source: { ...legacy.source!, ruPerSecond: '400' } })).not.toBe(inputHash(legacy));
-});
+            run,
+        );
+        const legacy = graphProjectSchema.parse({ ...configured, source: { ...configured.source!, ruBudget: '1000' } });
+        expect(legacy.source).not.toHaveProperty('ruPerSecond');
+        const journal = `source-requests-${legacy.runId}.json`;
+        await writeFile(path.join(run, journal), 'preserved-journal');
+        const output = `artifacts/source-enumeration-${legacy.runId}`;
+        await mkdir(path.join(run, output), { recursive: true });
+        const checkpoint = { runId: legacy.runId, inputHash: inputHash(legacy), requests: 3, elapsedMillis: 20 };
+        await writeFile(path.join(run, output, 'checkpoint.json'), JSON.stringify(checkpoint));
+        const plan = `artifacts/enumeration-plan-${legacy.runId}.json`;
+        await writeFile(path.join(run, plan), JSON.stringify({ maximumRequests: 20, maximumDurationMillis: 10000 }));
+        const spent = graphProjectSchema.parse({
+            ...legacy,
+            phases: {
+                'source-enumerate': {
+                    status: 'blocked',
+                    inputHash: inputHash(legacy),
+                    evidence: [],
+                    blockers: [`source-enumeration-vertex-page (${code}): Review accounting.`],
+                },
+            },
+        });
+        const candidates = await discoverPreparation(root, spent);
+        expect(candidates.resume).toBeUndefined();
+        expect(candidates.notices.join(' ')).toContain('Waiting or changing RU/s cannot repair it');
+        const prepared = await freshPreparation(spent, run, {
+            partitions: ['fixture'],
+            maximumRequests: 20,
+            maximumDurationSeconds: 120,
+            ruBudget: '120000',
+            ruPerSecond: '1000',
+            confirmStableSource: true,
+        });
+        expect(prepared.project.runId).not.toBe(legacy.runId);
+        expect(prepared.project.source).toMatchObject({ ruBudget: '120000', ruPerSecond: '1000' });
+        expect(prepared.project.phases['source-enumerate'].status).toBe('stale');
+        expect(prepared.project.approvals).toEqual([]);
+        expect(spent.source?.ruBudget).toBe('1000');
+        expect(await readFile(path.join(run, journal), 'utf8')).toBe('preserved-journal');
+        expect(JSON.parse(await readFile(path.join(run, output, 'checkpoint.json'), 'utf8'))).toEqual(checkpoint);
+        const saved = await applySetup(
+            prepared.project,
+            {
+                host: 'localhost',
+                database: 'fixture',
+                container: 'graph',
+                partitionKeyPath: '/pk',
+                datasetUrl: 'http://localhost:3030/graph',
+                consistency: 'immutable',
+            },
+            run,
+        );
+        expect(inputHash(saved)).toBe(inputHash(prepared.project));
+        expect(saved.source?.ruPerSecond).toBe('1000');
+        expect(inputHash({ ...legacy, source: { ...legacy.source!, ruPerSecond: '400' } })).not.toBe(inputHash(legacy));
+    },
+);
 it('validates explicit pacing separately without treating a total allowance as RU per second', () => {
     const valid = {
         partitions: ['fixture'],

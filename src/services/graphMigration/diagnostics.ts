@@ -22,12 +22,22 @@ export const safeDiagnosticSchema = z
         ruConsumed: ruAmount.optional(),
         ruRemaining: ruAmount.optional(),
         ruPerSecond: ruAmount.optional(),
+        chargeObservation: z
+            .enum([
+                'missing-total',
+                'partial-charge-only',
+                'invalid-total',
+                'unconfirmed-in-flight',
+                'previous-unobservable',
+            ])
+            .optional(),
     })
     .strict();
 export type SafeDiagnostic = z.infer<typeof safeDiagnosticSchema>;
 export function formatDiagnostic(diagnostic: SafeDiagnostic): string {
     const statuses = [
         diagnostic.templateId ?? '',
+        diagnostic.chargeObservation ?? '',
         diagnostic.httpStatus !== undefined ? `HTTP ${diagnostic.httpStatus}` : '',
         diagnostic.gremlinStatus !== undefined ? `Gremlin ${diagnostic.gremlinStatus}` : '',
         diagnostic.sourceStatus !== undefined ? `source ${diagnostic.sourceStatus}` : '',

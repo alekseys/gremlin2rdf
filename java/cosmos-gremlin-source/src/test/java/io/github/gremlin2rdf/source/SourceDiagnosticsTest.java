@@ -66,6 +66,22 @@ class SourceDiagnosticsTest {
         }));
         var report=SourceDiagnostics.failure(new SourceDiagnostics.Context("source-enumeration-edge-page",failure),"source-operation");
         assertEquals("SOURCE_RU_UNOBSERVABLE",report.get("code"));assertEquals(597,report.get("gremlinStatus"));
+        assertEquals("missing-total",report.get("chargeObservation"));
         assertEquals("source-enumeration-edge-page",report.get("stage"));assertEquals(0,requests.retries());
+    }
+    @Test void realPinnedFailureWithTypedTotalRetainsKnownProviderClassification() {
+        var attributes=Map.<String,Object>of("x-ms-total-request-charge",1e-9,"x-ms-status-code",400,
+            "x-ms-request-charge",0.0,"private-binding","private-value");
+        var response=new ResponseException(ResponseStatusCode.SERVER_ERROR_SCRIPT_EVALUATION,"private-message",
+            List.of(),"private-stack",attributes);
+        var requests=new SourceRequests(2,1000,"1000",millis->{throw new AssertionError("Rejected script must not retry");});
+        var failure=assertThrows(Exception.class,()->requests.execute(()->{
+            throw new SourceRequests.Failure(false,response.getStatusAttributes().orElseThrow(),response);
+        }));
+        var diagnostic=SourceDiagnostics.failure(new SourceDiagnostics.Context("source-enumeration-edge-page",failure),"source-operation");
+        assertEquals("SOURCE_SCRIPT_REJECTED",diagnostic.get("code"));
+        assertEquals(597,diagnostic.get("gremlinStatus"));assertEquals(400,diagnostic.get("sourceStatus"));
+        assertEquals(0,new java.math.BigDecimal("0.000000001").compareTo(new java.math.BigDecimal(requests.charge())));
+        assertFalse(Json.text(diagnostic).contains("private"));
     }
 }
