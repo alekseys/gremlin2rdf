@@ -97,25 +97,66 @@
     "Pinned Maven JAR forceCreation prevents incremental re-shading of previous shaded output"
   ],
   "remainingBlockers": [
-    "Current immutable full-load and two-hour-soak snapshots were stopped at user request; partial artifacts are preserved and neither gate passed.",
+    "Current full-load acceptance is still running; the current continuous two-hour semantic-profile soak passed.",
     "Dependency review and live compatibility remain explicitly blocked.",
-    "Windows remote offline CI passed. Linux offline and dependency collection failed because Maven Wrapper lacked Git executable mode; mode correction awaits remote verification."
+    "Corrected Linux and Windows remote offline CI passed. Dependency collection executes successfully but its release gate remains blocked by actual findings."
   ],
   "historicalReferenceRuns": {
     "status": "cancelled-superseded",
     "processTreeTerminationConfirmed": true,
-    "partialArtifactsPreserved": true,
+    "reportsAndCheckpointsPreserved": true,
+    "privateFixtureAndTdb2PayloadsRemovedWithUserAuthorization": true,
     "testkitSha256": "e5317bd57192e192f5189196060918cc4c05f63408e08df816df7b339810a8a2",
     "snapshots": ["reference-load-yMygc7", "reference-soak-lKrCFP"],
     "acceptance": "not-passed"
   },
-  "currentReferenceRuns": {
+  "cancelledPreviewReferenceRuns": {
     "status": "cancelled-by-user",
     "processTreeTerminationConfirmed": true,
-    "partialArtifactsPreserved": true,
+    "reportsAndCheckpointsPreserved": true,
+    "privateFixtureAndTdb2PayloadsRemovedWithUserAuthorization": true,
     "testkitSha256": "095401a89d07dc7a5fb469ad6c1e598daec51b52cd9be100a3f396d1a3a12136",
     "loadSnapshot": "reference-load-B7bHBf",
     "soakSnapshot": "reference-soak-vikhQ8",
+    "acceptance": "not-passed"
+  },
+  "currentReferenceRuns": {
+    "status": "running",
+    "authorization": "User explicitly requested restart/resume and completion of acceptance on 2026-10-31.",
+    "testkitSha256": "095401a89d07dc7a5fb469ad6c1e598daec51b52cd9be100a3f396d1a3a12136",
+    "loadSnapshot": "reference-load-JVTeGv",
+    "loadStartedAt": "2026-10-31T23:34:18.020Z",
+    "soakSnapshot": "reference-soak-FlFfux",
+    "soakStartedAt": "2026-10-31T23:32:59.824Z",
+    "soakResult": {
+      "status": "succeeded",
+      "exitCode": 0,
+      "finishedAt": "2026-11-01T01:36:41.089Z",
+      "measuredDurationMillis": 7204528,
+      "mixedCrudOperations": 11870,
+      "equivalenceFailures": 0,
+      "corruptionFailures": 0,
+      "unresolvedBatches": 0,
+      "maximumAfterGcHeapBytes": 11858608,
+      "queueBoundRespected": true,
+      "report": "docs/graph-migration/evidence/raw/soak-current-report.json",
+      "reportSha256": "e2088985929ae6bfec04d48a14720ac045671d793dade915a868539a3445787f",
+      "execution": "docs/graph-migration/evidence/raw/soak-current-execution.json",
+      "scope": "private local semantic profile, 200 vertices and 800 edges; not full-load or live acceptance"
+    },
+    "initialLoadAttempt": {
+      "snapshot": "reference-load-dYFCd2",
+      "exitCode": 2,
+      "code": "INSUFFICIENT_BENCHMARK_DISK",
+      "availableBytes": 52342419456,
+      "requiredBytes": 53687091200
+    },
+    "scopedDiskRecovery": {
+      "authorization": "Remove cancelled private benchmark payloads and retry",
+      "removed": "Only generated records/warmup NDJSON and measured-0/recovery-check/warmup-0 TDB2 directories in four confirmed cancelled snapshots.",
+      "preserved": "Reports, checkpoints, manifests, configuration, execution records and immutable JARs.",
+      "freeBytesAfterCleanup": 122257498112
+    },
     "acceptance": "not-passed"
   },
   "followUpValidationAuthorization": {
@@ -134,10 +175,16 @@
     "remoteGraphCi": {
       "status": "failed",
       "windowsOffline": "succeeded",
-      "linuxOffline": "failed-wrapper-not-executable",
-      "dependencyCollection": "failed-wrapper-not-executable",
-      "wrapperModeCorrection": "100755; pending remote verification",
-      "runUrl": "https://github.com/alekseys/gremlin2rdf/actions/runs/41248719632"
+      "linuxOffline": "succeeded-after-wrapper-mode-fix",
+      "replacementWindowsOffline": "succeeded",
+      "dependencyCollection": "succeeded-after-wrapper-mode-fix",
+      "dependencyReleaseGate": "blocked-by-observed-findings",
+      "wrapperModeCorrection": "100755; verified on Linux CI",
+      "initialRunUrl": "https://github.com/alekseys/gremlin2rdf/actions/runs/41248719632",
+      "runUrl": "https://github.com/alekseys/gremlin2rdf/actions/runs/41252538696",
+      "linuxExecution": "docs/graph-migration/evidence/raw/ci-linux-current-execution.json",
+      "linuxReport": "docs/graph-migration/evidence/raw/ci-linux-current-report.json",
+      "dependencyArtifacts": "docs/graph-migration/evidence/raw/ci-dependencies-e771727c"
     }
   },
   "previewPackage": {
@@ -146,6 +193,8 @@
     "shell": "graph-preview-package",
     "file": "vscode-cosmosdb-0.39.0.vsix",
     "testsRunForPackaging": false,
+    "sha256": "c4dacc9fd8b4db942f8e32cdd2d72e7905d3997e4fb7d1b813468a3fb5c0bf55",
+    "runtimeChangesSincePackaging": false,
     "releaseAcceptance": "not-established"
   },
   "runtimeExecutionApprovalPending": false

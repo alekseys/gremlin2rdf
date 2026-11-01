@@ -101,9 +101,9 @@
       ],
       "blockers": [
         "Live compatibility and deployed-target resource measurements require authorized endpoints.",
-        "Current full load and two-hour soak were cancelled at user request; neither passed. All partial immutable snapshots are preserved.",
+        "Full load is still running. Current two-hour semantic-profile soak passed with 11,870 CRUD operations and zero equivalence/corruption failures. Earlier cancellation evidence is preserved; cancelled private payload cleanup was explicitly authorized.",
         "Dependency audit executed and is blocked by known advisories and a missing license declaration.",
-        "Windows remote offline CI passed; Linux offline and dependency jobs failed on non-executable Maven Wrapper. Executable mode correction awaits remote verification. Draft review and installable preview are delivered."
+        "Linux and Windows remote offline CI passed after executable-mode correction. Dependency collection succeeds but release findings block its gate. Draft review and installable preview are delivered."
       ]
     }
   }

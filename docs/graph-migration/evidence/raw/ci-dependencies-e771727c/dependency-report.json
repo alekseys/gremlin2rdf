@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "status": "blocked",
+  "sbomSha256": "e300f85f918dab45f8b0ea078d91bbc9758fb26cac00d6e0f74c97d48f893934",
+  "licenseReportSha256": "1b92b53817e52409c19ac1ffb78a9da5f2e95bd25b416109da3eaa5c80baf638",
+  "vulnerabilityScanExecuted": true,
+  "unresolvedReleaseBlockers": 105,
+  "javaVulnerabilityPackages": 26,
+  "unknownJavaLicenseDeclarations": 1,
+  "extensionVulnerabilities": {
+    "info": 0,
+    "low": 0,
+    "moderate": 4,
+    "high": 3,
+    "critical": 0,
+    "total": 7
+  },
+  "extensionSbom": "succeeded",
+  "sourceDriverPolicy": "Pinned 3.4.13 is isolated from Jena; do not override incompatible driver dependencies to hide advisories.",
+  "remediation": "Review license declarations and advisories; apply only supported compatibility-verified dependency fixes. Preserve baseline extension findings separately. A blocked audit never authorizes release.",
+  "observedAt": "2026-10-31T23:28:18.631Z"
+}
