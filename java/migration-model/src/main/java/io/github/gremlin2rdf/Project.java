@@ -22,7 +22,16 @@ public record Project(
     public record Source(String scope, String host, int port, String database, String container,
                          String partitionKeyPath, String authenticationRef, String extractionStrategy,
                          String identityManifest, String identityManifestHash, String compatibilityEvidence,
-                         String ruBudget, String customCaRef, boolean syntheticTestContainer) {
+                         String ruBudget, String customCaRef, boolean syntheticTestContainer,
+                         @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+                         String ruPerSecond) {
+        public Source(String scope, String host, int port, String database, String container,
+                      String partitionKeyPath, String authenticationRef, String extractionStrategy,
+                      String identityManifest, String identityManifestHash, String compatibilityEvidence,
+                      String ruBudget, String customCaRef, boolean syntheticTestContainer) {
+            this(scope,host,port,database,container,partitionKeyPath,authenticationRef,extractionStrategy,
+                identityManifest,identityManifestHash,compatibilityEvidence,ruBudget,customCaRef,syntheticTestContainer,null);
+        }
         public Source {
             reference(authenticationRef); reference(customCaRef);
             if (scope == null || scope.isBlank() || host == null || host.isBlank() || host.contains("/")
@@ -36,6 +45,10 @@ public record Project(
             if (compatibilityEvidence != null) SafeFiles.relative(compatibilityEvidence);
             if (ruBudget != null && new java.math.BigDecimal(ruBudget).signum() <= 0)
                 throw new IllegalArgumentException("Positive source RU budget required");
+            if (ruPerSecond != null && (!ruPerSecond.matches("[0-9]{1,10}(?:\\.[0-9]{1,9})?")
+                || new java.math.BigDecimal(ruPerSecond).compareTo(java.math.BigDecimal.ONE)<0
+                || new java.math.BigDecimal(ruPerSecond).compareTo(new java.math.BigDecimal("1000000000"))>0))
+                throw new IllegalArgumentException("Source pacing rate must be between 1 and 1000000000 RU/s");
         }
     }
     public record Target(String datasetUrl, String queryEndpoint, String updateEndpoint, String graphStoreEndpoint,

@@ -36,7 +36,10 @@ public final class SourceMain implements AutoCloseable {
         timeout = project.path("limits").path("requestTimeoutMillis").asInt();
         if (timeout < 100 || timeout > 300000) throw new IllegalArgumentException("Invalid source deadline");
         requests = new SourceRequests(typedProject.limits().maxRetries(), timeout, typedProject.source().ruBudget(),
-            millis -> Thread.sleep(millis + java.util.concurrent.ThreadLocalRandom.current().nextLong(50)));
+            typedProject.source().ruPerSecond(),
+            millis -> Thread.sleep(millis + java.util.concurrent.ThreadLocalRandom.current().nextLong(50)),System::nanoTime);
+        if (typedProject.limits().maximumOperationMillis()!=null)
+            requests.remainingDuration(typedProject.limits().maximumOperationMillis());
         cluster = createCluster(clusterBuilder(project,key));
         client = cluster.connect();
     }
@@ -214,6 +217,7 @@ public final class SourceMain implements AutoCloseable {
                 try (var source = new SourceMain(io.github.gremlin2rdf.Json.MAPPER.valueToTree(parsed))) {
                     source.requests.attachJournal(parsed, root);
                     var result = Enumeration.run(parsed, plan, directory, new Enumeration.Reader() {
+                        public void remainingDuration(long millis) { source.requests.remainingDuration(millis); }
                         public List<String> vertices(io.github.gremlin2rdf.GraphRecord.Value partition, String after, int limit) throws Exception {
                             return source.enumeratePage(partition, null, after, limit);
                         }

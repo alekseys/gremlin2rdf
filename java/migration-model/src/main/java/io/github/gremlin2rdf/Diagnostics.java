@@ -52,8 +52,9 @@ public final class Diagnostics {
         Map.entry("SOURCE_COUNTS_CHANGED", "Source counts changed during enumeration. Confirm paused writes or an immutable source and repeat the bounded read-only run; preserve its checkpoint."),
         Map.entry("SOURCE_ENUMERATION_REQUEST_LIMIT", "The reviewed enumeration request ceiling was reached. Preserve the checkpoint and review a new request budget before resuming."),
         Map.entry("SOURCE_ENUMERATION_DURATION_LIMIT", "The reviewed enumeration time ceiling was reached. Preserve the checkpoint and review the next bounded run; this is not complete coverage."),
-        Map.entry("SOURCE_RU_BUDGET_EXHAUSTED", "The source RU budget is exhausted. Preserve request journals and review an additional budget before retrying."),
-        Map.entry("SOURCE_RU_UNOBSERVABLE", "The provider did not expose reliable request charge. A configured RU ceiling cannot be enforced; do not treat the operation as successful."),
+        Map.entry("SOURCE_RU_BUDGET_EXHAUSTED", "The total-run RU allowance is exhausted, not the database RU/s throughput. Waiting does not replenish it. Preserve journals/checkpoints. In guided Prepare, review a new total-run allowance and a separate migration RU/s pacing rate before starting a new bounded run."),
+        Map.entry("SOURCE_RU_UNOBSERVABLE", "The provider did not expose reliable request charge. Configured total RU and RU/s pacing cannot be enforced; preserve the journal and do not treat the operation as successful."),
+        Map.entry("SOURCE_RU_RATE_DEADLINE", "The required source pacing or retry wait cannot fit within the remaining operation duration. Preserve journals/checkpoints and review rate, duration and total-run budgets separately. No additional request was submitted."),
         Map.entry("ENDPOINT_AUTHENTICATION", "Renew the configured credential using SecretStorage and verify access to the configured database/dataset. Do not retry uncertain writes."),
         Map.entry("ENDPOINT_AUTHORIZATION", "Grant least-privilege access to the configured source or exact target resources. Connection credentials do not authorize migration writes."),
         Map.entry("ENDPOINT_THROTTLED", "The endpoint throttled the bounded request. Review RU/request budgets and retry policy; preserve acknowledged progress."),
@@ -123,6 +124,11 @@ public final class Diagnostics {
             int min=name.equals("sourceSubstatus") ? 0 : 100;
             if (value.isIntegralNumber() && value.canConvertToInt() && value.intValue()>=min && value.intValue()<=max)
                 fields.put(name,value.intValue());
+        }
+        for (String name:List.of("ruBudget","ruConsumed","ruRemaining","ruPerSecond")) {
+            var value=diagnostic.path(name);
+            if (value.isTextual() && value.asText().matches("[0-9]{1,30}(?:\\.[0-9]{1,20})?"))
+                fields.put(name,value.asText());
         }
         failure.sourceStatus=Map.copyOf(fields);return failure;
     }

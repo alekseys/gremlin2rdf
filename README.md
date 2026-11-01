@@ -10,7 +10,7 @@ not a Microsoft Marketplace release.
 
 ## Install and choose your target
 
-1. Install **`vscode-cosmosdb-0.39.8.vsix`** using VS Code's **Extensions > Install from VSIX**, then reload.
+1. Install **`vscode-cosmosdb-0.39.9.vsix`** using VS Code's **Extensions > Install from VSIX**, then reload.
    Stop active migrations before upgrading; this replaces the extension, not its saved projects.
 2. Open your application's folder as a trusted workspace and enable:
 
@@ -73,6 +73,10 @@ unfinished step with an enabled Run, and collapses/disables future steps. Enumer
 candidate review rather than submitting a default plan. Its v2 page template projects string IDs before natural
 ascending ordering, avoiding the prior comparator/modulator dialect risk while retaining keyset/count checks.
 The exact live rejection token and successful Cosmos acceptance still require a bounded rerun.
+Version 0.39.9 separates **Migration source pacing (RU/s)** from **Total source RU allowance per run**.
+The old 400/1000 setting was cumulative spend, not throughput, so waiting could not replenish it.
+Existing allowances and journals keep their meaning. Review both values when starting new bounded preparation;
+the extension never changes your database's provisioned throughput. See the [RU controls](docs/graph-migration/workbench.md#source-ru-rate-and-total-run-allowance).
 
 ## Start small
 

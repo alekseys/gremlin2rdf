@@ -126,7 +126,7 @@ Stop any active migration before replacing the extension. Settings and workspace
 For a package with the same version as your installed preview, you can force replacement from PowerShell:
 
 ```powershell
-code --install-extension ".\vscode-cosmosdb-0.39.8.vsix" --force
+code --install-extension ".\vscode-cosmosdb-0.39.9.vsix" --force
 ```
 
 If the CLI prints `DEP0169` after reporting that the extension was successfully installed, installation succeeded.
@@ -143,6 +143,52 @@ the installer warning with a deprecation stack trace if it persists.
 
 For diagnostics, set `NODE_OPTIONS=--trace-deprecation` only for the installation command and restore its previous
 value afterward. This reports the actual caller instead of suppressing the warning.
+
+## Source RU rate and total-run allowance
+
+Version 0.39.9 separates two different controls in the enumeration review:
+
+| Control                               | Meaning                                                                                                 |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| **Migration source pacing (RU/s)**    | A migration-side average pacing rate, independent of provisioned database throughput.                   |
+| **Total source RU allowance per run** | Cumulative observed spend for that run, retained across retries/restarts. Waiting never replenishes it. |
+
+For example, a database provisioned at 5000 RU/s can serve a migration paced at 400 or 1000 RU/s.
+Neither value determines the total allowance: 1000 RU/s over 120 seconds corresponds to 120000 RU
+of rate-times-duration capacity, not a 1000-RU total. This arithmetic is planning guidance, not a
+coverage estimate, promised completion time or automatic authorization for that spend.
+
+Headless projects can set optional `source.ruPerSecond` (decimal string, 1–1000000000 RU/s).
+`source.ruBudget` retains its existing **total-run RU** meaning; it is never reinterpreted as a rate.
+The guided form requires review of both fields for new runs. Missing `ruPerSecond` in an old project
+keeps legacy behavior and its input hash unchanged. Re-saving unchanged connections preserves both settings.
+An explicit rate change changes the input hash; it cannot renew or adopt an old journal under new inputs.
+
+The source adapter is serial. Each successful or failed request's observed charge determines the minimum
+delay before the next request, allowing already elapsed time and provider retry-after waits to satisfy that
+delay. Charge is known only after a response: a single request can exceed one second of the selected rate,
+and a total allowance can be crossed by that final observed charge. There is no claim of a hard instantaneous
+server-side RU/s cap or pre-reservation of unknown request costs. Pacing never modifies source queries or
+silently skips work. Missing/malformed charge observations block execution when either control is configured.
+Counts, fidelity reads and extraction use the same controls, not just enumeration page reads.
+
+Outstanding pacing debt and cumulative spend are saved with the owned request journal. Restart retains the
+full last unconfirmed delay conservatively; it never grants fresh throughput credit or resets total spend.
+Pacing/retry waits must fit the remaining operation/enumeration duration and are interruptible; otherwise
+`SOURCE_RU_RATE_DEADLINE` blocks before another request. A resumed run keeps the originally reviewed
+settings; editing the new-run fields does not alter Resume.
+
+`SOURCE_RU_BUDGET_EXHAUSTED` means **total allowance exhausted**, not provider throughput exhausted.
+New safe diagnostics show `ruBudget`, `ruConsumed`, `ruRemaining` and, when configured, `ruPerSecond`.
+The code/stage/amounts survive source acknowledgement, persisted evidence and UI; no resource names or
+request contents are included. Provider throttling remains a separate `ENDPOINT_THROTTLED` observation.
+
+For an already exhausted run, preserve its journal and checkpoints. Install the new VSIX, reload and follow
+the next unfinished Run into guided Prepare. Review a new **total allowance**, a separate **RU/s rate**,
+request/duration bounds and stable-source assertion before **Start bounded read-only preparation**.
+The old run is archived, not reset; approvals/evidence remain input-bound. Resume is not offered for a
+current known exhausted/unobservable RU result and never grants more spend. No automatic budget increase,
+database provisioning or live requests occur by installing or reviewing these controls.
 
 ## Execution budgets and meaningful progress
 

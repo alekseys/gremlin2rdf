@@ -152,6 +152,42 @@ function renderWorkbench() {
     return rendered;
 }
 describe('graph workbench boundaries and keyboard access', () => {
+    it('shows total-run spend separately from RU/s in safe blocked evidence', async () => {
+        renderWorkbench();
+        await screen.findByRole('textbox', { name: 'Graph project JSON' });
+        act(() =>
+            listener({
+                type: 'worker',
+                message: {
+                    protocolVersion: 1,
+                    type: 'result',
+                    runId: 'fixture',
+                    operationId: 'owned',
+                    sequence: 1,
+                    timestamp: new Date().toISOString(),
+                    phase: 'complete',
+                    payload: {
+                        status: 'blocked',
+                        code: 'SOURCE_RU_BUDGET_EXHAUSTED',
+                        stage: 'source-enumeration-vertex-page',
+                        remediation: 'Waiting does not replenish the total-run allowance.',
+                        templateId: 'source-keyset-page-v2',
+                        ruBudget: '1000',
+                        ruConsumed: '1001.5',
+                        ruRemaining: '0',
+                        ruPerSecond: '400',
+                    },
+                },
+            }),
+        );
+        const alert = await screen.findByRole('alert');
+        expect(alert).toHaveTextContent('total allowance 1000 RU');
+        expect(alert).toHaveTextContent('consumed 1001.5 RU');
+        expect(alert).toHaveTextContent('remaining 0 RU');
+        expect(alert).toHaveTextContent('pacing 400 RU/s');
+        expect(mocks.run).not.toHaveBeenCalled();
+        expect(mocks.approve).not.toHaveBeenCalled();
+    });
     it('preserves expanded completed evidence and enables only the next unfinished required step across reloads', async () => {
         const configured = graphProjectSchema.parse({ ...bootstrapProject(), phases: {} });
         const hash = inputHash(configured);
@@ -297,13 +333,22 @@ describe('graph workbench boundaries and keyboard access', () => {
         await userEvent.setup().clear(screen.getByRole('spinbutton', { name: 'Maximum duration (seconds)' }));
         await userEvent.setup().type(screen.getByRole('spinbutton', { name: 'Maximum duration (seconds)' }), '10');
         await userEvent.setup().click(screen.getByRole('checkbox', { name: /I confirm source writes are paused/ }));
+        const total = screen.getByRole('textbox', { name: 'Total source RU allowance per run' });
+        const rate = screen.getByRole('textbox', { name: 'Migration source pacing (RU/s)' });
+        expect(total).toHaveValue('1000');
+        expect(rate).toHaveValue('');
+        expect(start).toBeDisabled();
+        await userEvent.setup().clear(total);
+        await userEvent.setup().type(total, '120000');
+        await userEvent.setup().type(rate, '400');
         expect(start).not.toBeDisabled();
         await userEvent.setup().click(start);
         expect(mocks.prepareSource).toHaveBeenCalledWith({
             partitions: ['fixture'],
             maximumRequests: 20,
             maximumDurationSeconds: 10,
-            ruBudget: '1000',
+            ruBudget: '120000',
+            ruPerSecond: '400',
             confirmStableSource: true,
         });
         expect(mocks.run).not.toHaveBeenCalled();

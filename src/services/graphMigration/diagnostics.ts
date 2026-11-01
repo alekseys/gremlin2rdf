@@ -6,6 +6,7 @@
 import * as l10n from '@vscode/l10n';
 import { z } from 'zod';
 import { type GraphProject } from './contracts';
+const ruAmount = z.string().regex(/^[0-9]{1,30}(?:\.[0-9]{1,20})?$/u);
 export const safeDiagnosticSchema = z
     .object({
         status: z.literal('blocked'),
@@ -17,6 +18,10 @@ export const safeDiagnosticSchema = z
         sourceStatus: z.number().int().min(100).max(599).optional(),
         sourceSubstatus: z.number().int().min(0).max(2147483647).optional(),
         templateId: z.enum(['source-keyset-page-v1', 'source-keyset-page-v2']).optional(),
+        ruBudget: ruAmount.optional(),
+        ruConsumed: ruAmount.optional(),
+        ruRemaining: ruAmount.optional(),
+        ruPerSecond: ruAmount.optional(),
     })
     .strict();
 export type SafeDiagnostic = z.infer<typeof safeDiagnosticSchema>;
@@ -27,6 +32,10 @@ export function formatDiagnostic(diagnostic: SafeDiagnostic): string {
         diagnostic.gremlinStatus !== undefined ? `Gremlin ${diagnostic.gremlinStatus}` : '',
         diagnostic.sourceStatus !== undefined ? `source ${diagnostic.sourceStatus}` : '',
         diagnostic.sourceSubstatus !== undefined ? `substatus ${diagnostic.sourceSubstatus}` : '',
+        diagnostic.ruBudget !== undefined ? l10n.t('total allowance {amount} RU', { amount: diagnostic.ruBudget }) : '',
+        diagnostic.ruConsumed !== undefined ? l10n.t('consumed {amount} RU', { amount: diagnostic.ruConsumed }) : '',
+        diagnostic.ruRemaining !== undefined ? l10n.t('remaining {amount} RU', { amount: diagnostic.ruRemaining }) : '',
+        diagnostic.ruPerSecond !== undefined ? l10n.t('pacing {amount} RU/s', { amount: diagnostic.ruPerSecond }) : '',
     ].filter(Boolean);
     return `${diagnostic.stage} (${[diagnostic.code, ...statuses].join(', ')}): ${diagnostic.remediation}`;
 }

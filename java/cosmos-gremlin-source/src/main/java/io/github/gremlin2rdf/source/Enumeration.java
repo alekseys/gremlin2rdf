@@ -20,6 +20,7 @@ final class Enumeration {
         }
     }
     interface Reader {
+        default void remainingDuration(long millis) {}
         List<String> vertices(GraphRecord.Value partition, String after, int limit) throws Exception;
         List<String> edges(GraphRecord.Value partition, String owner, String after, int limit) throws Exception;
         long count(GraphRecord.Kind kind, GraphRecord.Value partition) throws Exception;
@@ -207,6 +208,7 @@ final class Enumeration {
         }
     }
     private void budget() throws IOException {
+        reader.remainingDuration(Math.max(0,plan.maximumDurationMillis()-elapsed()));
         if (elapsedBase + (System.nanoTime() - started) / 1000000 >= plan.maximumDurationMillis()
             || Files.getFileStore(directory).getUsableSpace() < project.limits().minimumFreeDiskBytes())
             throw new Diagnostics.Failure("SOURCE_ENUMERATION_DURATION_LIMIT","source-enumeration");

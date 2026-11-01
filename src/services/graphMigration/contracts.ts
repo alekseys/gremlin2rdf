@@ -403,6 +403,11 @@ export const graphProjectSchema = z
                     .default(null),
                 customCaRef: reference.default(null),
                 syntheticTestContainer: z.boolean().default(false),
+                ruPerSecond: z
+                    .string()
+                    .regex(/^[0-9]{1,10}(?:\.[0-9]{1,9})?$/u)
+                    .refine((value) => Number(value) >= 1 && Number(value) <= 1e9)
+                    .optional(),
             })
             .strict()
             .nullable(),

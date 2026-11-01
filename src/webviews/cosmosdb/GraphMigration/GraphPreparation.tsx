@@ -31,6 +31,7 @@ export function GraphPreparation({
         [requests, setRequests] = useState('20000'),
         [seconds, setSeconds] = useState('120');
     const [ru, setRu] = useState(project.source?.ruBudget ?? ''),
+        [rate, setRate] = useState(project.source?.ruPerSecond ?? ''),
         [stable, setStable] = useState(false),
         [starting, setStarting] = useState(false);
     const partitions = [...new Set(text.split(/\r?\n/u).filter((v) => v.length > 0))];
@@ -55,6 +56,9 @@ export function GraphPreparation({
         /^\d+(?:\.\d+)?$/u.test(ru) &&
         Number(ru) > 0 &&
         Number(ru) <= 1e9 &&
+        /^[0-9]{1,10}(?:\.[0-9]{1,9})?$/u.test(rate) &&
+        Number(rate) >= 1 &&
+        Number(rate) <= 1e9 &&
         Number.isInteger(Number(requests)) &&
         Number(requests) >= 4 &&
         Number(requests) <= 100000 &&
@@ -107,12 +111,19 @@ export function GraphPreparation({
                         <p key={index}>{notice}</p>
                     ))}
                     {candidates.resume && (
-                        <Button
-                            disabled={disabled || starting}
-                            onClick={() => void action(() => client.resumePreparation.mutate())}
-                        >
-                            {l10n.t('Resume preserved read-only preparation')}
-                        </Button>
+                        <>
+                            <Button
+                                disabled={disabled || starting}
+                                onClick={() => void action(() => client.resumePreparation.mutate())}
+                            >
+                                {l10n.t('Resume preserved read-only preparation')}
+                            </Button>
+                            <p>
+                                {l10n.t(
+                                    'Resume keeps the original rate, total-run allowance and remaining duration. The fields below apply only to a newly reviewed run.',
+                                )}
+                            </p>
+                        </>
                     )}
                     <details>
                         <summary>{l10n.t('Review or add partition values')}</summary>
@@ -148,16 +159,30 @@ export function GraphPreparation({
                         />
                     </Field>
                     <Field
-                        label={l10n.t('Source RU ceiling per run')}
+                        label={l10n.t('Total source RU allowance per run')}
                         required
                         hint={l10n.t(
-                            'Preparation and extraction have separate request journals. Missing provider charge observations block the run rather than silently exceed its ceiling.',
+                            'Cumulative RU, not RU/s. For example, 1000 RU/s for 120 seconds can consume 120000 RU. Preparation and extraction have separate totals. Waiting does not replenish this allowance; existing saved values keep their total-run meaning.',
                         )}
                     >
                         <Input
                             aria-required={true}
                             value={ru}
                             onChange={(_, d) => setRu(d.value)}
+                            disabled={disabled}
+                        />
+                    </Field>
+                    <Field
+                        label={l10n.t('Migration source pacing (RU/s)')}
+                        required
+                        hint={l10n.t(
+                            'Separate from provisioned database throughput. Observed request charges pace subsequent requests; a single request can exceed one second of this rate because its cost is known only after completion. Missing charge observations block execution.',
+                        )}
+                    >
+                        <Input
+                            aria-required={true}
+                            value={rate}
+                            onChange={(_, d) => setRate(d.value)}
                             disabled={disabled}
                         />
                     </Field>
@@ -188,6 +213,7 @@ export function GraphPreparation({
                                         maximumRequests: Number(requests),
                                         maximumDurationSeconds: Number(seconds),
                                         ruBudget: ru,
+                                        ruPerSecond: rate,
                                         confirmStableSource: true,
                                     });
                                 } finally {

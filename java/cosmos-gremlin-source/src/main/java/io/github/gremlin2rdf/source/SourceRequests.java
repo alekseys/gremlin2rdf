@@ -19,8 +19,11 @@ final class SourceRequests implements AutoCloseable {
     interface Attempt { Response run() throws Exception; }
     interface Sleeper { void sleep(long millis) throws InterruptedException; }
     private final int maximum, timeout;
-    private final BigDecimal budget;
+    private final BigDecimal budget, rate;
     private final Sleeper sleeper;
+    private final java.util.function.LongSupplier clock;
+    private long pacingDelayMillis, pacingStarted, deadlineStarted;
+    private long remainingDurationMillis = Long.MAX_VALUE;
     private BigDecimal charge = BigDecimal.ZERO;
     private boolean chargeObserved = true;
     private long retries;
@@ -29,12 +32,29 @@ final class SourceRequests implements AutoCloseable {
     private FileChannel lockChannel;
     private FileLock lock;
     private boolean inFlight;
-    record State(int schemaVersion, String runId, String inputHash, String charge, boolean chargeObserved, long retries, boolean inFlight, String integrity) {
-        String calculatedIntegrity() { return Json.hash(List.of(schemaVersion, runId, inputHash, charge, chargeObserved, retries, inFlight)); }
-        State signed() { return new State(schemaVersion, runId, inputHash, charge, chargeObserved, retries, inFlight, calculatedIntegrity()); }
+    record State(int schemaVersion, String runId, String inputHash, String charge, boolean chargeObserved, long retries, boolean inFlight, String integrity,
+                 @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+                 Long pacingDelayMillis) {
+        String calculatedIntegrity() {
+            var fields = new ArrayList<Object>(List.of(schemaVersion, runId, inputHash, charge, chargeObserved, retries, inFlight));
+            if (pacingDelayMillis != null) fields.add(pacingDelayMillis);
+            return Json.hash(fields);
+        }
+        State signed() { return new State(schemaVersion, runId, inputHash, charge, chargeObserved, retries, inFlight, calculatedIntegrity(), pacingDelayMillis); }
     }
     SourceRequests(int maximum, int timeout, String budget, Sleeper sleeper) {
-        this.maximum = maximum; this.timeout = timeout; this.budget = budget == null ? null : new BigDecimal(budget); this.sleeper = sleeper;
+        this(maximum,timeout,budget,null,sleeper,System::nanoTime);
+    }
+    SourceRequests(int maximum, int timeout, String budget, String rate, Sleeper sleeper, java.util.function.LongSupplier clock) {
+        this.maximum = maximum; this.timeout = timeout; this.budget = budget == null ? null : new BigDecimal(budget);
+        this.rate = rate == null ? null : new BigDecimal(rate); this.sleeper = sleeper; this.clock = clock;
+        if (this.rate != null && (this.rate.compareTo(BigDecimal.ONE)<0 || this.rate.compareTo(new BigDecimal("1000000000"))>0))
+            throw new IllegalArgumentException("Invalid bounded source pacing rate");
+    }
+    void remainingDuration(long millis) {
+        long remaining = remainingDurationMillis == Long.MAX_VALUE ? Long.MAX_VALUE
+            : Math.max(0,remainingDurationMillis-(clock.getAsLong()-deadlineStarted)/1000000);
+        remainingDurationMillis = Math.min(remaining,Math.max(0,millis)); deadlineStarted=clock.getAsLong();
     }
     void attachJournal(Project project, Path root) throws IOException {
         this.project = project;
@@ -57,6 +77,8 @@ final class SourceRequests implements AutoCloseable {
             }
             if (Files.exists(journal)) {
                 var state = readState(journal); charge = new BigDecimal(state.charge()); chargeObserved = state.chargeObserved(); retries = state.retries();
+                pacingDelayMillis = state.pacingDelayMillis() == null ? 0 : state.pacingDelayMillis();
+                pacingStarted=clock.getAsLong();
                 if (state.inFlight()) { chargeObserved = false; persist(); }
             }
         } catch (IOException | RuntimeException e) { close(); throw e; }
@@ -68,17 +90,22 @@ final class SourceRequests implements AutoCloseable {
         catch (com.fasterxml.jackson.core.JsonProcessingException failure) { throw new Diagnostics.Failure("SOURCE_REQUEST_JOURNAL","source-request-journal"); }
         if (state==null || state.runId()==null || state.inputHash()==null || state.integrity()==null ||
             state.schemaVersion() != 1 || !state.runId().equals(project.runId()) || !state.inputHash().equals(project.inputHash())
-            || !state.integrity().equals(state.calculatedIntegrity()) || new BigDecimal(state.charge()).signum() < 0 || state.retries() < 0)
+            || !state.integrity().equals(state.calculatedIntegrity()) || new BigDecimal(state.charge()).signum() < 0 || state.retries() < 0
+            || state.pacingDelayMillis()!=null && state.pacingDelayMillis()<0
+            || (rate == null) != (state.pacingDelayMillis()==null))
             throw new Diagnostics.Failure("SOURCE_REQUEST_JOURNAL","source-request-journal");
         return state;
     }
     private void persist() throws IOException {
-        if (journal != null) SafeFiles.atomic(journal, new State(1, project.runId(), project.inputHash(), charge.toPlainString(), chargeObserved, retries, inFlight, "").signed());
+        if (journal != null) SafeFiles.atomic(journal, new State(1, project.runId(), project.inputHash(), charge.toPlainString(), chargeObserved, retries, inFlight, "",
+            rate == null ? null : pacingDelayMillis).signed());
     }
     Object execute(Attempt request) throws Exception {
         for (int attempt = 0; ; attempt++) {
-            if (budget != null && (!chargeObserved || charge.compareTo(budget) >= 0))
-                throw new Diagnostics.Failure(chargeObserved ? "SOURCE_RU_BUDGET_EXHAUSTED" : "SOURCE_RU_UNOBSERVABLE","source-request");
+            if ((budget != null || rate != null) && !chargeObserved) throw budgetFailure("SOURCE_RU_UNOBSERVABLE");
+            if (budget != null && charge.compareTo(budget) >= 0) throw budgetFailure("SOURCE_RU_BUDGET_EXHAUSTED");
+            waitWithinDeadline(0);
+            pace();
             try {
                 inFlight = true; persist();
                 Response response = request.run(); account(response.attributes());
@@ -95,7 +122,7 @@ final class SourceRequests implements AutoCloseable {
                     if (requested < 0 || requested > timeout) throw new IOException("Provider retry-after exceeds the approved deadline");
                     wait = Math.max(wait, requested);
                 }
-                retries++; persist(); sleeper.sleep(wait);
+                retries++; persist(); waitWithinDeadline(wait);
             }
         }
     }
@@ -104,13 +131,47 @@ final class SourceRequests implements AutoCloseable {
         Object value = attributes.get("x-ms-request-charge");
         if (value == null) chargeObserved = false;
         else {
-            var observed = new BigDecimal(value.toString());
-            if (observed.signum() < 0) throw new IOException("Negative source request charge");
+            BigDecimal observed;
+            try {
+                if (!value.toString().matches("[0-9]{1,15}(?:\\.[0-9]{1,9})?")) throw new NumberFormatException();
+                observed = new BigDecimal(value.toString());
+            } catch (NumberFormatException failure) {
+                chargeObserved=false; persist(); throw budgetFailure("SOURCE_RU_UNOBSERVABLE");
+            }
             charge = charge.add(observed);
+            if (rate != null) {
+                pacingDelayMillis=observed.multiply(new BigDecimal("1000")).divide(rate,0,RoundingMode.CEILING).longValueExact();
+                pacingStarted=clock.getAsLong();
+            }
         }
         persist();
-        if (budget != null && (!chargeObserved || charge.compareTo(budget) > 0))
-            throw new Diagnostics.Failure(chargeObserved ? "SOURCE_RU_BUDGET_EXHAUSTED" : "SOURCE_RU_UNOBSERVABLE","source-request");
+        if ((budget != null || rate != null) && !chargeObserved) throw budgetFailure("SOURCE_RU_UNOBSERVABLE");
+        if (budget != null && charge.compareTo(budget) > 0) throw budgetFailure("SOURCE_RU_BUDGET_EXHAUSTED");
+    }
+    private Diagnostics.Failure budgetFailure(String code) {
+        var report=new TreeMap<String,Object>(Diagnostics.report(code,"source-request"));
+        if (budget != null) report.put("ruBudget",budget.toPlainString());
+        if (chargeObserved) {
+            report.put("ruConsumed",charge.toPlainString());
+            if (budget != null) report.put("ruRemaining",budget.subtract(charge).max(BigDecimal.ZERO).toPlainString());
+        }
+        if (rate != null) report.put("ruPerSecond",rate.toPlainString());
+        return Diagnostics.acknowledged(Json.MAPPER.valueToTree(report),"source-request");
+    }
+    private void pace() throws Exception {
+        if (rate == null) return;
+        long elapsed=Math.max(0,(clock.getAsLong()-pacingStarted)/1000000);
+        waitWithinDeadline(Math.max(0,pacingDelayMillis-elapsed));
+        pacingDelayMillis=0; persist();
+    }
+    private void waitWithinDeadline(long millis) throws Exception {
+        long remaining=remainingDurationMillis == Long.MAX_VALUE ? Long.MAX_VALUE
+            : Math.max(0,remainingDurationMillis-(clock.getAsLong()-deadlineStarted)/1000000);
+        if (millis>=remaining) throw budgetFailure("SOURCE_RU_RATE_DEADLINE");
+        if (Thread.currentThread().isInterrupted()) throw new InterruptedException("Source pacing interrupted");
+        if (millis>0) sleeper.sleep(millis);
+        if (remainingDurationMillis!=Long.MAX_VALUE && (clock.getAsLong()-deadlineStarted)/1000000>=remainingDurationMillis)
+            throw budgetFailure("SOURCE_RU_RATE_DEADLINE");
     }
     long retries() { return retries; }
     String charge() { return chargeObserved ? charge.toPlainString() : "not-observed"; }

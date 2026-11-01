@@ -10,6 +10,101 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class SourceRequestsTest {
     @TempDir Path root;
+    static final class Clock implements java.util.function.LongSupplier, SourceRequests.Sleeper {
+        long nanos;
+        final List<Long> waits=new ArrayList<>();
+        public long getAsLong(){return nanos;}
+        public void sleep(long millis){waits.add(millis);nanos+=millis*1000000;}
+    }
+    @Test void ratePacesObservedSpendInsteadOfBecomingACumulativeAllowance() throws Exception {
+        var clock=new Clock();
+        var requests=new SourceRequests(0,1000,"10000","400",clock,clock);
+        for(int i=0;i<4;i++) requests.execute(()->new SourceRequests.Response(List.of(1L),Map.of("x-ms-request-charge","400")));
+        assertEquals(List.of(1000L,1000L,1000L),clock.waits);
+        assertEquals("1600",requests.charge());
+    }
+    @Test void elapsedTimeAndProviderBackoffPayPacingDebtWithoutDoubleWaiting() throws Exception {
+        var clock=new Clock();
+        var requests=new SourceRequests(1,1000,"10000","400",clock,clock);
+        requests.execute(()->new SourceRequests.Response(List.of(1L),Map.of("x-ms-request-charge","400")));
+        clock.nanos+=250000000;
+        requests.execute(()->new SourceRequests.Response(List.of(1L),Map.of("x-ms-request-charge","0")));
+        assertEquals(List.of(750L),clock.waits);
+        int[] attempts={0}; clock.waits.clear();
+        requests.execute(()-> {
+            if(++attempts[0]==1)throw new SourceRequests.Failure(true,Map.of("x-ms-request-charge","200","x-ms-retry-after-ms","700"),new IOException("fixture"));
+            return new SourceRequests.Response(List.of(1L),Map.of("x-ms-request-charge","50"));
+        });
+        assertEquals(List.of(700L),clock.waits); assertEquals(1,requests.retries());assertEquals("650",requests.charge());
+    }
+    @Test void rateCannotReplenishTotalAllowanceAndReportsSafeAmountsThroughParent() throws Exception {
+        var clock=new Clock();var requests=new SourceRequests(0,1000,"1000","400",clock,clock);
+        var error=assertThrows(Diagnostics.Failure.class,()->requests.execute(()->new SourceRequests.Response(List.of(1L),Map.of("x-ms-request-charge","1001.5"))));
+        var diagnostic=SourceDiagnostics.failure(new SourceDiagnostics.Context("source-enumeration-vertex-page",error),"source-operation");
+        var parent=Diagnostics.failure(Diagnostics.acknowledged(Json.MAPPER.valueToTree(diagnostic),"execution"),"execution");
+        assertEquals(diagnostic,parent);assertEquals("SOURCE_RU_BUDGET_EXHAUSTED",parent.get("code"));
+        assertEquals("1000",parent.get("ruBudget"));assertEquals("1001.5",parent.get("ruConsumed"));
+        assertEquals("0",parent.get("ruRemaining"));assertEquals("400",parent.get("ruPerSecond"));
+        clock.nanos+=3600000000000L;
+        assertThrows(Diagnostics.Failure.class,()->requests.execute(()->{fail("Waiting does not renew total spend");return null;}));
+    }
+    @Test void restartPreservesPacingDebtAndTotalSpendWithoutRealSleeps() throws Exception {
+        var project = new Project(1, "cosmos-gremlin-to-jena", "0".repeat(40), "paced", 1, "0.1.0", Mapping.standard(), null, null,
+            Project.Limits.standard(), "immutable", Map.of(), List.of(), Map.of(), List.of());
+        var clock=new Clock();
+        try(var first=new SourceRequests(0,1000,"10000","400",clock,clock)){
+            first.attachJournal(project,root);
+            first.execute(()->new SourceRequests.Response(List.of(1L),Map.of("x-ms-request-charge","400")));
+        }
+        try(var resumed=new SourceRequests(0,1000,"10000","400",clock,clock)){
+            resumed.attachJournal(project,root);assertEquals("400",resumed.charge());
+            resumed.execute(()->new SourceRequests.Response(List.of(1L),Map.of("x-ms-request-charge","0")));
+        }
+        assertEquals(List.of(1000L),clock.waits);
+    }
+    @Test void pacingNeverSubmitsWhenDelayExceedsRemainingDurationOrSleepIsInterrupted() throws Exception {
+        var clock=new Clock();var requests=new SourceRequests(0,1000,"10000","400",clock,clock);
+        requests.remainingDuration(900);
+        requests.execute(()->new SourceRequests.Response(List.of(1L),Map.of("x-ms-request-charge","400")));
+        var failure=assertThrows(Diagnostics.Failure.class,()->requests.execute(()->{fail("Deadline prevents next request");return null;}));
+        assertEquals("SOURCE_RU_RATE_DEADLINE",Diagnostics.failure(failure,"source-request").get("code"));
+        assertTrue(clock.waits.isEmpty());
+        var interrupted=new SourceRequests(0,1000,"10000","400",millis->{throw new InterruptedException();},clock);
+        interrupted.execute(()->new SourceRequests.Response(List.of(1L),Map.of("x-ms-request-charge","400")));
+        assertThrows(InterruptedException.class,()->interrupted.execute(()->{fail("Cancellation prevents next request");return null;}));
+    }
+    @Test void rateAloneStillFailsClosedOnMissingOrMalformedCharge() {
+        for(var attributes:List.<Map<String,Object>>of(Map.of(),Map.of("x-ms-request-charge","private-provider-value"))){
+            var clock=new Clock();var requests=new SourceRequests(1,1000,null,"400",clock,clock);
+            var failure=assertThrows(Diagnostics.Failure.class,()->requests.execute(()->new SourceRequests.Response(List.of(1L),attributes)));
+            assertEquals("SOURCE_RU_UNOBSERVABLE",Diagnostics.failure(failure,"source-request").get("code"));
+            assertFalse(Json.text(Diagnostics.failure(failure,"source-request")).contains("private"));
+            assertThrows(Diagnostics.Failure.class,()->requests.execute(()->{fail("Unknown spend cannot be retried");return null;}));
+        }
+    }
+    @Test void legacyJournalIntegrityRemainsUnchangedWithoutRateAndRateCannotAdoptIt() throws Exception {
+        var source=new Project.Source("fixture","localhost",443,"db","graph","/pk",null,
+            "verified-identity-manifest","identities.ndjson","0".repeat(64),null,"1000",null,false);
+        assertFalse(Json.MAPPER.valueToTree(source).has("ruPerSecond"));
+        var paced=(com.fasterxml.jackson.databind.node.ObjectNode)Json.MAPPER.valueToTree(source);
+        paced.put("ruPerSecond","400");
+        assertEquals("400",Json.MAPPER.treeToValue(paced,Project.Source.class).ruPerSecond());
+        var project = new Project(1, "cosmos-gremlin-to-jena", "0".repeat(40), "legacy", 1, "0.1.0", Mapping.standard(), null, null,
+            Project.Limits.standard(), "immutable", Map.of(), List.of(), Map.of(), List.of());
+        String integrity=Json.hash(List.of(1,project.runId(),project.inputHash(),"2",true,0,false));
+        var journal=root.resolve("source-requests-legacy.json");
+        Files.writeString(journal,Json.text(Map.of("schemaVersion",1,"runId",project.runId(),"inputHash",project.inputHash(),
+            "charge","2","chargeObserved",true,"retries",0,"inFlight",false,"integrity",integrity)));
+        try(var legacy=new SourceRequests(0,1000,"10000",millis->{})){
+            legacy.attachJournal(project,root);assertEquals("2",legacy.charge());
+        }
+        var bytes=Files.readAllBytes(journal);
+        var clock=new Clock();
+        try(var altered=new SourceRequests(0,1000,"10000","400",clock,clock)){
+            assertThrows(Diagnostics.Failure.class,()->altered.attachJournal(project,root));
+        }
+        assertArrayEquals(bytes,Files.readAllBytes(journal));
+    }
     @Test void sourceThrottlingHonorsReturnedDelayAndAccountsEveryAttempt() throws Exception {
         List<Long> waits = new ArrayList<>(); var requests = new SourceRequests(3, 1000, "10", waits::add);
         int[] attempts = {0};

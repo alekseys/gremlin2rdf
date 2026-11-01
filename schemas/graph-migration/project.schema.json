@@ -250,6 +250,10 @@
             "syntheticTestContainer": {
               "default": false,
               "type": "boolean"
+            },
+            "ruPerSecond": {
+              "type": "string",
+              "pattern": "^[0-9]{1,10}(?:\\.[0-9]{1,9})?$"
             }
           },
           "required": [

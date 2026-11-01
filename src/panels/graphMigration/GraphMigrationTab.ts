@@ -144,14 +144,24 @@ export class GraphMigrationTab extends BaseTab {
                 hash = inputHash(project);
             const confirm = await vscode.window.showWarningMessage(
                 l10n.t(
-                    'Enumerate up to {partitions} candidate partitions using read-only requests, at most {requests} reserved attempts, {seconds} seconds and {ru} RU? Coverage is unverified until live counts reconcile. This preserves the old run and creates fresh preparation/extraction runs; old approvals and evidence will not authorize new writes.',
+                    'Enumerate up to {partitions} candidate partitions using read-only requests, at most {requests} reserved attempts, {seconds} seconds and a total-run allowance of {ru} RU (not RU/s)? Coverage is unverified until live counts reconcile. This preserves the old run and creates fresh preparation/extraction runs; old approvals and evidence will not authorize new writes.',
                     {
                         partitions: value.partitions.length,
                         requests: value.maximumRequests,
                         seconds: value.maximumDurationSeconds,
                         ru: value.ruBudget,
                     },
-                ),
+                ) +
+                    ' ' +
+                    l10n.t(
+                        'Migration pacing: {rate}. Charges pace subsequent requests; a single request can exceed one second of this rate.',
+                        {
+                            rate:
+                                (value.ruPerSecond ?? project.source?.ruPerSecond)
+                                    ? `${value.ruPerSecond ?? project.source?.ruPerSecond} RU/s`
+                                    : l10n.t('not configured (legacy)'),
+                        },
+                    ),
                 { modal: true },
                 l10n.t('Start bounded read-only preparation'),
             );
@@ -188,7 +198,7 @@ export class GraphMigrationTab extends BaseTab {
                 );
             const confirmed = await vscode.window.showWarningMessage(
                 l10n.t(
-                    'Resume the preserved read-only enumeration within its original request, duration and RU ceilings? This does not grant additional budget or establish complete coverage.',
+                    'Resume preserved enumeration within its original request, duration, total-run RU allowance and pacing settings? Waiting does not replenish total spend. This grants no additional budget and establishes no coverage.',
                 ),
                 { modal: true },
                 l10n.t('Resume bounded preparation'),

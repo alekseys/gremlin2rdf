@@ -39,6 +39,11 @@ export const prepareSourceSchema = z
             .regex(/^[0-9]+(?:\.[0-9]+)?$/u)
             .refine((v) => Number(v) > 0 && Number(v) <= 1e9),
         confirmStableSource: z.literal(true),
+        ruPerSecond: z
+            .string()
+            .regex(/^[0-9]{1,10}(?:\.[0-9]{1,9})?$/u)
+            .refine((value) => Number(value) >= 1 && Number(value) <= 1e9)
+            .optional(),
     })
     .strict();
 export type PrepareSource = z.infer<typeof prepareSourceSchema>;
@@ -190,7 +195,18 @@ export async function discoverPreparation(workspace: string, p: GraphProject): P
                         ).toString('utf8'),
                     ),
                 );
+            const phase = p.phases['source-enumerate'];
+            const exhausted =
+                phase?.inputHash === inputHash(p) &&
+                phase.blockers.some((blocker) => /\bSOURCE_RU_(?:BUDGET_EXHAUSTED|UNOBSERVABLE)\b/u.test(blocker));
+            if (exhausted)
+                notices.push(
+                    l10n.t(
+                        'The preserved run has exhausted or unobservable total RU spend. Waiting or changing RU/s does not renew that allowance. Preserve its journal and review a new bounded run below; Resume does not grant additional RU.',
+                    ),
+                );
             if (
+                !exhausted &&
                 state.runId === p.runId &&
                 state.inputHash === inputHash(p) &&
                 state.requests < limits.maximumRequests &&
@@ -229,6 +245,7 @@ export async function freshPreparation(
         source: {
             ...p.source,
             ruBudget: input.ruBudget,
+            ...(input.ruPerSecond === undefined ? {} : { ruPerSecond: input.ruPerSecond }),
             compatibilityEvidence: `artifacts/source-compatibility-${runId}.json`,
         },
         limits: { ...p.limits, maximumOperationMillis: input.maximumDurationSeconds * 1000 },
