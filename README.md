@@ -10,7 +10,7 @@ not a Microsoft Marketplace release.
 
 ## Install and choose your target
 
-1. Install **`vscode-cosmosdb-0.39.7.vsix`** using VS Code's **Extensions > Install from VSIX**, then reload.
+1. Install **`vscode-cosmosdb-0.39.8.vsix`** using VS Code's **Extensions > Install from VSIX**, then reload.
    Stop active migrations before upgrading; this replaces the extension, not its saved projects.
 2. Open your application's folder as a trusted workspace and enable:
 
@@ -68,6 +68,11 @@ as empty, not as a successful capability check.
 Version 0.39.5 keeps failed enumeration in the main Prepare sequence and disables extraction until current
 source fidelity evidence exists. Connection, application assessment and mapping success alone do not authorize
 extraction. Evidence/checkpoints remain preserved; paging rejection reports the fixed adapter template ID.
+Version 0.39.8 keeps completed required steps/evidence expanded and execution-disabled, expands only the next
+unfinished step with an enabled Run, and collapses/disables future steps. Enumeration Run opens the bounded
+candidate review rather than submitting a default plan. Its v2 page template projects string IDs before natural
+ascending ordering, avoiding the prior comparator/modulator dialect risk while retaining keyset/count checks.
+The exact live rejection token and successful Cosmos acceptance still require a bounded rerun.
 
 ## Start small
 

@@ -152,6 +152,83 @@ function renderWorkbench() {
     return rendered;
 }
 describe('graph workbench boundaries and keyboard access', () => {
+    it('preserves expanded completed evidence and enables only the next unfinished required step across reloads', async () => {
+        const configured = graphProjectSchema.parse({ ...bootstrapProject(), phases: {} });
+        const hash = inputHash(configured);
+        mocks.load.mockResolvedValue({ project: configured, trusted: true, currentInputHash: hash });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        const connection = await screen.findByRole('button', { name: 'Run for Check read-only connections' });
+        const required = screen.getByLabelText('Required migration steps');
+        const cards = Array.from(required.querySelectorAll('details')).filter(
+            (card) => card.parentElement === required,
+        );
+        expect(cards[0]).toHaveAttribute('open');
+        expect(cards.slice(1).every((card) => !card.open)).toBe(true);
+        expect(connection).not.toBeDisabled();
+        expect(
+            within(required)
+                .getAllByRole('button', { hidden: true })
+                .filter((button) => !button.hasAttribute('disabled')),
+        ).toEqual([connection]);
+        const passed = {
+            status: 'succeeded' as const,
+            inputHash: hash,
+            evidence: ['artifacts/connections.json'],
+            blockers: [],
+        };
+        const connected = graphProjectSchema.parse({ ...configured, phases: { preflight: passed } });
+        act(() => listener({ type: 'project', project: connected, currentInputHash: hash }));
+        expect(connection).toBeDisabled();
+        expect(cards[0]).toHaveAttribute('open');
+        expect(cards[1]).toHaveAttribute('open');
+        expect(cards[1].querySelector('summary')).toHaveAttribute('aria-current', 'step');
+        expect(screen.getByRole('button', { name: 'Evidence 1 for Check read-only connections' })).not.toBeDisabled();
+        expect(
+            screen.getByRole('button', { name: 'Run for Enumerate read-only source identities' }),
+        ).not.toBeDisabled();
+        expect(mocks.run).not.toHaveBeenCalled();
+        const adopted = graphProjectSchema.parse({
+            ...connected,
+            source: { ...connected.source!, identityManifestHash: '1'.repeat(64) },
+            phases: {
+                preflight: passed,
+                'source-enumerate': { ...passed, evidence: ['artifacts/enumeration.json'] },
+                assess: passed,
+            },
+        });
+        act(() => listener({ type: 'project', project: adopted, currentInputHash: hash }));
+        const fidelity = screen.getByRole('button', { name: 'Run for Probe read-only source compatibility' });
+        expect(fidelity).not.toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Run for Enumerate read-only source identities' })).toBeDisabled();
+        const checked = graphProjectSchema.parse({
+            ...adopted,
+            phases: {
+                ...adopted.phases,
+                'source-compatibility': { ...passed, evidence: ['artifacts/fidelity.json'] },
+                mapping: passed,
+            },
+            artifacts: [
+                {
+                    relativePath: 'artifacts/fidelity.json',
+                    ownerRunId: adopted.runId,
+                    sha256: '2'.repeat(64),
+                    sensitive: true,
+                },
+            ],
+        });
+        mocks.load.mockResolvedValue({ project: checked, trusted: true, currentInputHash: hash });
+        await userEvent.setup().click(screen.getByRole('button', { name: 'Reload persisted state' }));
+        const extract = screen.getByRole('button', { name: 'Run for Extract read-only source' });
+        await waitFor(() => expect(extract).not.toBeDisabled());
+        expect(fidelity).toBeDisabled();
+        expect(
+            screen.getByRole('button', { name: 'Run for Load approved target graphs', hidden: true }),
+        ).toBeDisabled();
+        act(() => listener({ type: 'project', project: checked, currentInputHash: 'f'.repeat(64) }));
+        expect(extract).toBeDisabled();
+        expect(connection).not.toBeDisabled();
+        expect(mocks.approve).not.toHaveBeenCalled();
+    });
     it('routes the next enumeration step to guided review and preserved resume, never the default raw plan', async () => {
         const current = bootstrapProject();
         mocks.load.mockResolvedValue({ project: current, trusted: true, currentInputHash: inputHash(current) });
@@ -163,18 +240,11 @@ describe('graph workbench boundaries and keyboard access', () => {
             resume: { plan: 'artifacts/enumeration-plan-fixture.json', output: 'artifacts/source-enumeration-fixture' },
         });
         render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
-        const next = await screen.findByRole('region', { name: 'Next unfinished migration step' });
-        expect(within(next).getByRole('heading', { name: 'Enumerate read-only source identities' })).toBeVisible();
-        expect(
-            within(next).queryByRole('button', { name: 'Run for Enumerate read-only source identities' }),
-        ).toBeNull();
-        const review = within(next).getByRole('button', { name: 'Review guided read-only preparation' });
-        expect(review).toHaveTextContent('Review guided read-only preparation');
+        const review = await screen.findByRole('button', { name: 'Run for Enumerate read-only source identities' });
+        expect(review).toHaveTextContent('Run');
+        expect(review).not.toBeDisabled();
         await userEvent.setup().click(review);
-        const find = screen.getByRole('button', { name: 'Find partition candidates' });
-        expect(find).toHaveFocus();
         expect(mocks.run).not.toHaveBeenCalled();
-        await userEvent.setup().click(find);
         await userEvent
             .setup()
             .click(await screen.findByRole('button', { name: 'Resume preserved read-only preparation' }));
@@ -182,23 +252,32 @@ describe('graph workbench boundaries and keyboard access', () => {
         expect(mocks.prepareSource).not.toHaveBeenCalled();
         expect(mocks.run).not.toHaveBeenCalled();
     });
-    it('routes the enumeration card in all phases to the same guided review without submitting a default plan', async () => {
-        mocks.load.mockResolvedValue({ project: bootstrapProject(), trusted: true });
+    it('has one sequential enumeration card and no duplicate raw control in all phases', async () => {
+        const current = bootstrapProject();
+        mocks.load.mockResolvedValue({ project: current, trusted: true, currentInputHash: inputHash(current) });
+        mocks.preparation.mockResolvedValue({
+            partitions: [],
+            origins: [],
+            notices: [],
+            coverage: 'unverified-candidates',
+        });
         renderWorkbench();
         const button = await screen.findByRole('button', {
-            name: 'Review guided read-only preparation for Enumerate read-only source identities',
+            name: 'Run for Enumerate read-only source identities',
         });
-        expect(button).toHaveTextContent('Review guided read-only preparation');
-        expect(screen.queryByRole('button', { name: 'Run for Enumerate read-only source identities' })).toBeNull();
+        expect(screen.getAllByRole('button', { name: 'Run for Enumerate read-only source identities' })).toHaveLength(
+            1,
+        );
         await userEvent.setup().click(button);
-        expect(screen.getByRole('button', { name: 'Find partition candidates' })).toHaveFocus();
+        await screen.findByRole('button', { name: 'Find partition candidates' });
         expect(mocks.run).not.toHaveBeenCalled();
         expect(mocks.prepareSource).not.toHaveBeenCalled();
         expect(mocks.resumePreparation).not.toHaveBeenCalled();
         expect(screen.queryByLabelText('Run-relative source enumeration plan path')).toBeNull();
     });
     it('keeps bounded preparation disabled until candidate, ceilings and stable-source review are supplied', async () => {
-        mocks.load.mockResolvedValue({ project: bootstrapProject(), trusted: true });
+        const current = bootstrapProject();
+        mocks.load.mockResolvedValue({ project: current, trusted: true, currentInputHash: inputHash(current) });
         mocks.preparation.mockResolvedValue({
             partitions: ['fixture'],
             origins: [],
@@ -206,7 +285,9 @@ describe('graph workbench boundaries and keyboard access', () => {
             coverage: 'unverified-candidates',
         });
         render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
-        await userEvent.setup().click(await screen.findByRole('button', { name: 'Find partition candidates' }));
+        await userEvent
+            .setup()
+            .click(await screen.findByRole('button', { name: 'Run for Enumerate read-only source identities' }));
         const start = await screen.findByRole('button', { name: 'Start bounded read-only preparation' });
         expect(start).toBeDisabled();
         await userEvent.setup().clear(screen.getByRole('spinbutton', { name: 'Maximum reserved request attempts' }));
@@ -251,6 +332,9 @@ describe('graph workbench boundaries and keyboard access', () => {
         const current = graphProjectSchema.parse({
             ...supplied,
             phases: {
+                preflight: { status: 'succeeded', inputHash: inputHash(supplied), blockers: [], evidence: [] },
+                assess: { status: 'succeeded', inputHash: inputHash(supplied), blockers: [], evidence: [] },
+                mapping: { status: 'succeeded', inputHash: inputHash(supplied), blockers: [], evidence: [] },
                 'source-compatibility': {
                     status: 'succeeded',
                     inputHash: inputHash(supplied),
@@ -278,7 +362,7 @@ describe('graph workbench boundaries and keyboard access', () => {
     });
     it('shows a safe failed substep and concrete remedy from the worker acknowledgement', async () => {
         render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
-        await screen.findByRole('button', { name: 'Check read-only connections' });
+        await screen.findByRole('button', { name: 'Run for Check read-only connections' });
         act(() =>
             listener({
                 type: 'worker',
@@ -417,11 +501,7 @@ describe('graph workbench boundaries and keyboard access', () => {
         expect(screen.getByText('Optional application adaptation').closest('details')).not.toHaveAttribute('open');
         expect(screen.getByText('Optional reviewed evidence import').closest('details')).not.toHaveAttribute('open');
         expect(screen.getByRole('navigation', { name: 'Migration sequence overview' })).toBeVisible();
-        expect(
-            within(screen.getByRole('region', { name: 'Next unfinished migration step' })).getByRole('button', {
-                name: 'Run for Check prerequisites',
-            }),
-        ).toBeVisible();
+        expect(screen.getByRole('button', { name: 'Run for Check read-only connections' })).toBeVisible();
         expect(screen.getByText('Run private two-hour mixed soak')).not.toBeVisible();
         expect(screen.getByRole('textbox', { name: 'Gremlin endpoint' })).toBeRequired();
         expect(screen.getByRole('textbox', { name: 'Fuseki dataset URL' })).toBeRequired();
@@ -430,6 +510,37 @@ describe('graph workbench boundaries and keyboard access', () => {
         expect(mocks.approve).not.toHaveBeenCalled();
     });
     it('labels configuration/review fields and dispatches only the selected operation by keyboard', async () => {
+        const current = bootstrapProject();
+        const supplied = graphProjectSchema.parse({
+            ...current,
+            source: { ...current.source!, identityManifestHash: '1'.repeat(64) },
+        });
+        const hash = inputHash(supplied);
+        mocks.load.mockResolvedValue({
+            project: {
+                ...supplied,
+                phases: {
+                    preflight: { status: 'succeeded', inputHash: hash, blockers: [], evidence: [] },
+                    assess: { status: 'succeeded', inputHash: hash, blockers: [], evidence: [] },
+                    'source-compatibility': {
+                        status: 'succeeded',
+                        inputHash: hash,
+                        blockers: [],
+                        evidence: ['artifacts/fidelity.json'],
+                    },
+                },
+                artifacts: [
+                    {
+                        relativePath: 'artifacts/fidelity.json',
+                        ownerRunId: supplied.runId,
+                        sha256: '2'.repeat(64),
+                        sensitive: true,
+                    },
+                ],
+            },
+            trusted: true,
+            currentInputHash: hash,
+        });
         renderWorkbench();
         expect(await screen.findByRole('textbox', { name: 'Graph project JSON' })).toBeVisible();
         expect(screen.getByRole('textbox', { name: 'Restricted Gremlin read query' })).toBeVisible();
@@ -450,6 +561,30 @@ describe('graph workbench boundaries and keyboard access', () => {
         expect(mocks.approve).not.toHaveBeenCalled();
     });
     it('separates approval review from executing graph writes', async () => {
+        const current = bootstrapProject(),
+            hash = inputHash(current);
+        mocks.load.mockResolvedValue({
+            project: {
+                ...current,
+                source: { ...current.source!, identityManifestHash: '1'.repeat(64) },
+                phases: Object.fromEntries(
+                    ['preflight', 'assess', 'source-compatibility', 'mapping', 'extract'].map((phase) => [
+                        phase,
+                        { status: 'succeeded', inputHash: hash, blockers: [], evidence: ['artifacts/fidelity.json'] },
+                    ]),
+                ),
+                artifacts: [
+                    {
+                        relativePath: 'artifacts/fidelity.json',
+                        ownerRunId: current.runId,
+                        sha256: '2'.repeat(64),
+                        sensitive: true,
+                    },
+                ],
+            },
+            trusted: true,
+            currentInputHash: hash,
+        });
         renderWorkbench();
         const button = await screen.findByRole('button', { name: 'Authorize for Load approved target graphs' });
         expect(button).toHaveTextContent('Authorize');
@@ -471,9 +606,18 @@ describe('graph workbench boundaries and keyboard access', () => {
         expect(await screen.findByRole('alert')).toHaveTextContent('Reload the project');
     });
     it('dispatches read-only compatibility independently from target approval', async () => {
+        const supplied = graphProjectSchema.parse({
+            ...bootstrapProject(),
+            source: { ...bootstrapProject().source!, identityManifestHash: '1'.repeat(64) },
+        });
+        const hash = inputHash(supplied);
         mocks.load.mockResolvedValue({
             project: {
-                ...project,
+                ...supplied,
+                phases: {
+                    preflight: { status: 'succeeded', inputHash: hash, blockers: [], evidence: [] },
+                    assess: { status: 'succeeded', inputHash: hash, blockers: [], evidence: [] },
+                },
                 source: {
                     scope: 'fixture',
                     host: 'localhost',
@@ -492,6 +636,7 @@ describe('graph workbench boundaries and keyboard access', () => {
                 },
             },
             trusted: true,
+            currentInputHash: hash,
         });
         renderWorkbench();
         const button = await screen.findByRole('button', { name: 'Run for Probe read-only source compatibility' });
@@ -542,14 +687,13 @@ describe('graph workbench boundaries and keyboard access', () => {
             trusted: true,
         });
         renderWorkbench();
-        expect(await screen.findByRole('button', { name: 'Check read-only source fidelity' })).toBeDisabled();
+        await screen.findByRole('button', { name: 'Run for Probe read-only source compatibility' });
         expect(screen.getByRole('button', { name: 'Run for Probe read-only source compatibility' })).toBeDisabled();
         expect(screen.getByRole('button', { name: 'Run for Extract read-only source' })).toBeDisabled();
         expect(screen.getByRole('button', { name: 'Run for Extract read-only source' })).toHaveAccessibleDescription(
             /current, succeeded source fidelity/,
         );
-        expect(screen.getByRole('button', { name: 'Check read-only connections' })).not.toBeDisabled();
-        expect(screen.getByText(/no source capability conclusion/)).toBeVisible();
+        expect(screen.getByRole('button', { name: 'Run for Check read-only connections' })).not.toBeDisabled();
         expect(mocks.run).not.toHaveBeenCalled();
         act(() =>
             listener({
@@ -572,6 +716,7 @@ describe('graph workbench boundaries and keyboard access', () => {
                                 gremlinStatus: 597,
                                 sourceStatus: 400,
                                 sourceSubstatus: 1004,
+                                templateId: 'source-keyset-page-v2',
                                 remediation: 'Share only safe status evidence.',
                             },
                         ],
@@ -579,7 +724,9 @@ describe('graph workbench boundaries and keyboard access', () => {
                 },
             }),
         );
-        expect(await screen.findByRole('alert')).toHaveTextContent('Gremlin 597, source 400, substatus 1004');
+        const diagnostic = await screen.findByRole('alert');
+        expect(diagnostic).toHaveTextContent('Gremlin 597, source 400, substatus 1004');
+        expect(diagnostic).toHaveTextContent('source-keyset-page-v2');
     });
     it('keeps reduced-fidelity and best-effort approvals separate from worker execution', async () => {
         mocks.load.mockResolvedValue({

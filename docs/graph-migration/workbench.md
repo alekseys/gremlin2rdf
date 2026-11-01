@@ -5,24 +5,40 @@ A blocked enumeration cannot be adopted: an empty bootstrap file leaves fidelity
 success does not permit extraction. Existing evidence and acknowledged checkpoints are preserved. Inspect the
 current enumeration evidence first; collapsed stale reports are prior observations only. `SOURCE_SCRIPT_REJECTED`
 with Gremlin 597/source 400 identifies an observed page-script rejection, not its exact unsupported token.
-The fixed `source-keyset-page-v1` template identifier and sanitized numeric statuses survive into saved reports/UI.
+Fixed template identifiers and sanitized numeric statuses survive into saved reports/UI.
 Offline pinned Groovy syntax parsing does not establish Cosmos dialect or ordered paging acceptance; there is no
 unordered-paging fallback. Do not share full project configuration, queries, bindings or secrets.
 
-Version 0.39.7 routes every webview enumeration action, including **All phases and tools**, to guided Prepare instead of submitting the advanced default
-`enumeration-plan.json` (which guided Prepare does not create). Select **Find partition candidates**, then
+Version 0.39.8 uses `source-keyset-page-v2`: project string IDs first, then natural ascending scalar
+`.id().order().limit(g2rPageSize).fold()`. Partition/owner selection, exclusive ID cursor, page ceiling,
+strict ordering validation and count reconciliation remain unchanged. This avoids the prior
+`.order().by(id(),asc)` comparator/modulator combination: the
+[Cosmos support reference](https://learn.microsoft.com/en-us/azure/cosmos-db/gremlin/support) links TinkerPop
+3.3.2 semantics, whose [Order enum](https://github.com/apache/tinkerpop/blob/3.3.2/gremlin-core/src/main/java/org/apache/tinkerpop/gremlin/process/traversal/Order.java)
+has `incr`/`decr`, not `asc`. Pinned-driver offline scalar-order/cursor tests preserve string-ID ordering;
+they do not prove the exact live rejection token or successful Cosmos acceptance. Prior v1 reports still render.
+
+Only the next unfinished required step is expanded with execution enabled. Completed steps and their evidence
+stay expanded, with their Run/authorization controls disabled; future steps start collapsed and disabled.
+Current failed steps remain retryable. Hash changes return to the earliest invalidated step; old evidence
+stays available as historical, never forcibly current. Configuration remains editable under its collapsed
+section; saving changed inputs still invalidates dependent evidence and approvals.
+
+The active enumeration **Run** opens inline guided Prepare and discovers local candidates, instead of submitting
+the advanced default `enumeration-plan.json` (which guided Prepare does not create). Review candidates, then
 **Resume preserved read-only preparation** if offered. Otherwise explicitly review the listed ceilings and
 stable-source assertion before **Start bounded read-only preparation**. The independent CLI still accepts an
 existing explicit plan; missing/invalid plans block at `source-enumeration-plan` before source construction.
-The webview no longer offers a duplicate raw enumeration Run or unused default plan/output fields.
+There is no duplicate required-step Run in **All phases and tools**; that collapsed section retains only
+explicit optional tools. Local discovery alone never starts a worker, renews budgets or authorizes writes.
 
 ## Simplified connection setup
 
 The project page uses source/target connection cards, a numbered sequence overview and status badges with icons.
 Required inputs and core migration steps are highlighted; application adaptation, reviewed-report import and
 advanced tools are collapsed by default. The sequence overview is not a progress claim: phase badges reflect
-persisted project state. Open **All phases and tools** to run a different phase, review its approval or open
-its evidence. Identity enumeration is a discovery option when you need an inventory; an already reviewed
+persisted project state and current input ownership. Open a required step to review its evidence, or
+**All phases and tools** for optional operations. Identity enumeration is a discovery option when you need an inventory; an already reviewed
 inventory does not require enumeration again. Local fixtures and benchmarks remain explicit manual actions.
 
 New projects show a connection form for Gremlin host, database, graph, partition key and Fuseki dataset URL.
@@ -59,7 +75,7 @@ commit when available, otherwise the legacy baseline stays available for advance
 
 New source setup creates an empty `identities.ndjson` only if no inventory exists; its SHA-256 is the actual file
 checksum, not fabricated evidence. Empty bootstrap inventories allow discovery but cannot establish source fidelity.
-Use **Prepare your source** to check read-only source and target connectivity independently. Missing extraction
+Run **Check read-only connections** first to check source and target independently. Missing extraction
 inventory/fidelity evidence appears as a separate prerequisite rather than masking endpoint diagnostics.
 **Find partition candidates** reads at most 16 MiB from each of `gremlin-partitions.json` and
 `data/gremlin/gremlin_load_file.txt`, refuses symlinks and supports at most 1000 string partitions.
@@ -73,7 +89,8 @@ and exhausted budgets are distinct blockers, never successful partial inventorie
 Successful enumeration verifies producer/run/input ownership and plan/inventory checksums, automatically selects
 the inventory, creates a fresh extraction run, resets compatibility evidence and clears old approvals. Prior
 project snapshots, budgets, checkpoints and artifacts remain preserved. No advanced JSON/path/hash edits are
-needed for this normal path. Then run **Check read-only source fidelity**; enumeration does not establish it.
+needed for this normal path. Follow the next enabled Run to **Probe read-only source compatibility**;
+enumeration does not establish source fidelity.
 Do not run fidelity after failed enumeration: the unchanged empty bootstrap inventory has no observations.
 Version 0.39.4 disables that follow-on action and reports `SOURCE_INVENTORY_REQUIRED` instead of false capability
 findings. Valid supplied nonempty inventories remain usable. An empty inventory is accepted only with an owned
@@ -109,7 +126,7 @@ Stop any active migration before replacing the extension. Settings and workspace
 For a package with the same version as your installed preview, you can force replacement from PowerShell:
 
 ```powershell
-code --install-extension ".\vscode-cosmosdb-0.39.4.vsix" --force
+code --install-extension ".\vscode-cosmosdb-0.39.8.vsix" --force
 ```
 
 If the CLI prints `DEP0169` after reporting that the extension was successfully installed, installation succeeded.

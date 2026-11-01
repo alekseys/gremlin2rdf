@@ -22,7 +22,7 @@ final class SourceDiagnostics {
             var report=new TreeMap<>(classified==null ? Diagnostics.failure(error,stage) : classified);
             if (!stage.equals(fallback)) report.put("stage",stage);
             if (stage.equals("source-enumeration-vertex-page") || stage.equals("source-enumeration-edge-page"))
-                report.put("templateId","source-keyset-page-v1");
+                report.put("templateId","source-keyset-page-v2");
             return report;
         }
         int gremlin=response.getResponseStatusCode().getValue();
@@ -40,7 +40,7 @@ final class SourceDiagnostics {
         var report=new TreeMap<>(classified==null ? Diagnostics.report(code,stage) : classified);
         if (!stage.equals(fallback)) report.put("stage",stage);
         if (stage.equals("source-enumeration-vertex-page") || stage.equals("source-enumeration-edge-page"))
-            report.put("templateId","source-keyset-page-v1");
+            report.put("templateId","source-keyset-page-v2");
         report.put("gremlinStatus",gremlin);
         if (source!=null) report.put("sourceStatus",source);
         if (substatus!=null) report.put("sourceSubstatus",substatus);

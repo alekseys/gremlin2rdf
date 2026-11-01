@@ -27,7 +27,7 @@ import {
 } from '@fluentui/react-icons';
 import { useTrpcClient } from '@microsoft/vscode-ext-webview/react';
 import * as l10n from '@vscode/l10n';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
     type GraphAppRouter,
     type GraphEvidencePhase,
@@ -321,7 +321,7 @@ export function GraphMigrationWorkbench() {
     const { announce } = useAnnounce();
     const [project, setProject] = useState<GraphProject | null>(null);
     const [currentInputHash, setCurrentInputHash] = useState<string>();
-    const preparationReviewButton = useRef<HTMLButtonElement>(null);
+    const [enumerationReview, setEnumerationReview] = useState(false);
     const [suggestions, setSuggestions] = useState<SetupSuggestions>();
     const [configuration, setConfiguration] = useState('');
     const [trusted, setTrusted] = useState(false);
@@ -442,7 +442,7 @@ export function GraphMigrationWorkbench() {
         authorizationLabel = l10n.t('Authorize');
     const run = async (operation: GraphOperation) => {
         if (operation === 'source-enumerate') {
-            preparationReviewButton.current?.focus();
+            setEnumerationReview(true);
             return;
         }
         setBusy(true);
@@ -461,21 +461,47 @@ export function GraphMigrationWorkbench() {
         .filter(
             ([operation]) =>
                 coreOperations.has(operation) &&
-                (operation !== 'source-enumerate' || !project || !hasFidelityInventory(project)),
+                (operation !== 'source-enumerate' ||
+                    !project ||
+                    !hasFidelityInventory(project) ||
+                    Boolean(project.phases['source-enumerate'])),
+        );
+    const phaseComplete = (operation: GraphOperation) =>
+        Boolean(
+            project &&
+            (operation === 'source-enumerate'
+                ? hasFidelityInventory(project)
+                : operation === 'source-compatibility'
+                  ? hasCurrentSourceCompatibility(project, currentInputHash)
+                  : project.phases[operation]?.status === 'succeeded' &&
+                    currentInputHash !== undefined &&
+                    project.phases[operation].inputHash === currentInputHash),
         );
     const nextPhase =
         corePhases.find(([operation]) => project?.phases[operation]?.status === 'running') ??
-        corePhases.find(([operation]) => project?.phases[operation]?.status !== 'succeeded');
+        corePhases.find(([operation]) => !phaseComplete(operation));
+    const nextOperation = nextPhase?.[0];
+    const nextLabel = nextPhase?.[1];
+    const phaseStatus = (operation: GraphOperation) => {
+        const phase = project?.phases[operation];
+        return phase && phase.status !== 'running' && currentInputHash && phase.inputHash !== currentInputHash
+            ? 'stale'
+            : (phase?.status ?? 'not-started');
+    };
+    useEffect(() => {
+        setEnumerationReview(false);
+        if (nextLabel) announce(l10n.t('Next unfinished step: {phase}', { phase: nextLabel }));
+    }, [nextOperation, nextLabel, announce]);
     const renderOperation = ([operation, label]: [GraphOperation, string], showActions = true) => {
-        const operationActionLabel =
-            operation === 'source-enumerate' ? l10n.t('Review guided read-only preparation') : runLabel;
+        const operationActionLabel = runLabel;
+        const phaseDisabled = disabled || (coreOperations.has(operation) && operation !== nextPhase?.[0]);
         const extractionPrerequisite =
             operation === 'extract' && project && !hasCurrentSourceCompatibility(project, currentInputHash)
                 ? l10n.t(
                       'Extraction needs current, succeeded source fidelity evidence. Resolve the Prepare enumeration blocker first, then run fidelity. Mapping and connectivity success alone do not permit extraction.',
                   )
                 : undefined;
-        const status = project?.phases[operation]?.status ?? 'not-started';
+        const status = phaseStatus(operation);
         const statusClass =
             status === 'succeeded'
                 ? styles.statusSucceeded
@@ -523,7 +549,7 @@ export function GraphMigrationWorkbench() {
                         <div className={styles.actionButtons}>
                             <Button
                                 disabled={
-                                    disabled ||
+                                    phaseDisabled ||
                                     (operation === 'extract' &&
                                         Boolean(
                                             project && !hasCurrentSourceCompatibility(project, currentInputHash),
@@ -548,7 +574,7 @@ export function GraphMigrationWorkbench() {
                                 operation === 'source-populate' ||
                                 operation === 'source-cleanup') && (
                                 <Button
-                                    disabled={disabled}
+                                    disabled={phaseDisabled}
                                     aria-label={l10n.t('{action} for {phase}', {
                                         action: authorizationLabel,
                                         phase: label,
@@ -560,7 +586,7 @@ export function GraphMigrationWorkbench() {
                             )}
                             {operation === 'target-probe' && (
                                 <Button
-                                    disabled={disabled}
+                                    disabled={phaseDisabled}
                                     aria-label={l10n.t('{action} for {phase}', {
                                         action: authorizationLabel,
                                         phase: label,
@@ -579,7 +605,7 @@ export function GraphMigrationWorkbench() {
                             )}
                             {(operation === 'rewrite-apply' || operation === 'fixture-test') && (
                                 <Button
-                                    disabled={disabled}
+                                    disabled={phaseDisabled}
                                     aria-label={l10n.t('{action} for {phase}', {
                                         action: authorizationLabel,
                                         phase: label,
@@ -606,6 +632,19 @@ export function GraphMigrationWorkbench() {
                             })}
                         </div>
                         {extractionPrerequisite && <p>{extractionPrerequisite}</p>}
+                        {operation === 'source-enumerate' &&
+                            operation === nextPhase?.[0] &&
+                            enumerationReview &&
+                            project && (
+                                <GraphPreparation
+                                    key={`${project.runId}-${currentInputHash}`}
+                                    project={project}
+                                    disabled={phaseDisabled}
+                                    action={action}
+                                    run={run}
+                                    enumerationOnly
+                                />
+                            )}
                     </div>
                 )}
             </article>
@@ -689,162 +728,170 @@ export function GraphMigrationWorkbench() {
                 </Button>
             ) : (
                 <>
-                    <section className={styles.section} aria-labelledby="graph-configuration">
-                        <div className={styles.sectionHeader}>
-                            <DatabaseRegular aria-hidden={true} className={styles.sourceIcon} />
-                            <h2 id="graph-configuration">{l10n.t('Configuration and mapping')}</h2>
-                        </div>
-                        <GraphConnectionSetup
-                            project={project}
-                            suggestions={suggestions}
-                            disabled={disabled}
-                            save={(value) =>
-                                action(async () => {
-                                    await client.saveSetup.mutate(value);
-                                    await reload();
-                                })
-                            }
-                        />
-                        <GraphPreparation
-                            project={project}
-                            disabled={disabled}
-                            action={action}
-                            run={run}
-                            reviewButtonRef={preparationReviewButton}
-                        />
-                        <div className={styles.actionButtons}>
-                            <Button disabled={disabled} onClick={() => void action(() => client.credentials.mutate())}>
-                                {l10n.t('Store credentials securely')}
-                            </Button>
-                        </div>
-                        <p className={styles.notice}>
-                            {l10n.t(
-                                'Credentials use secure references, never connection fields. Source uses env:GRAPH_SOURCE_KEY by default; configure a target reference in advanced settings for protected Fuseki.',
-                            )}
-                        </p>
-                        <details className={styles.optionalDetails}>
-                            <summary>{l10n.t('Advanced configuration and mapping')}</summary>
-                            <div className={styles.detailsBody}>
-                                <p>
-                                    {l10n.t(
-                                        'Edit endpoint, typed identity-manifest and mapping fields in this strict project document. Use env:GRAPH_* references only; never enter credentials here. Input changes invalidate previous evidence and approvals.',
-                                    )}
-                                </p>
-                                <p>
-                                    {l10n.t(
-                                        'Set limits.maximumOperationMillis to bound the entire editor worker operation. At the deadline, work is paused and an unresponsive worker is requested to terminate after five seconds. Checkpoints remain subject to reconciliation.',
-                                    )}
-                                </p>
-                                <p>
-                                    {l10n.t(
-                                        'Source population is separate from read-only extraction. Use only a pre-existing empty dedicated test container with no concurrent writers. Review the generated identity-manifest checksum, set an RU budget and approve the exact plan before any source mutation.',
-                                    )}
-                                </p>
-                                <Field label={l10n.t('Graph project JSON')}>
-                                    <Textarea
-                                        value={configuration}
-                                        rows={18}
-                                        resize="vertical"
-                                        disabled={busy}
-                                        onChange={(_, data) => setConfiguration(data.value)}
-                                    />
-                                </Field>
+                    <details className={styles.section} open={!phaseComplete('preflight')}>
+                        <summary>{l10n.t('Configuration and mapping')}</summary>
+                        <section aria-labelledby="graph-configuration">
+                            <div className={styles.sectionHeader}>
+                                <DatabaseRegular aria-hidden={true} className={styles.sourceIcon} />
+                                <h2 id="graph-configuration">{l10n.t('Configuration and mapping')}</h2>
+                            </div>
+                            <GraphConnectionSetup
+                                project={project}
+                                suggestions={suggestions}
+                                disabled={disabled}
+                                save={(value) =>
+                                    action(async () => {
+                                        await client.saveSetup.mutate(value);
+                                        await reload();
+                                    })
+                                }
+                            />
+                            <div className={styles.actionButtons}>
                                 <Button
                                     disabled={disabled}
-                                    onClick={() =>
-                                        void action(async () => {
-                                            await client.save.mutate(configuration);
-                                            await reload();
-                                        })
-                                    }
+                                    onClick={() => void action(() => client.credentials.mutate())}
                                 >
-                                    {l10n.t('Save configuration')}
+                                    {l10n.t('Store credentials securely')}
                                 </Button>
-                                <Field label={l10n.t('Dedicated target probe graph IRI')}>
-                                    <Input
-                                        value={probeGraph}
-                                        disabled={busy}
-                                        onChange={(_, data) => setProbeGraph(data.value)}
-                                    />
-                                </Field>
-                                <p>
-                                    {l10n.t(
-                                        'Enumeration is read-only and requires explicit partition values, string IDs, a quiesced or immutable source, and request/duration budgets. Review the generated identity manifest before configuring a new extraction run.',
-                                    )}
-                                </p>
-                                {project.mapping.fidelity === 'reduced' && (
-                                    <Button
-                                        disabled={disabled}
-                                        onClick={() => void action(() => client.approve.mutate('reduced-fidelity'))}
-                                    >
-                                        {l10n.t('Authorize reduced fidelity')}
-                                    </Button>
+                            </div>
+                            <p className={styles.notice}>
+                                {l10n.t(
+                                    'Credentials use secure references, never connection fields. Source uses env:GRAPH_SOURCE_KEY by default; configure a target reference in advanced settings for protected Fuseki.',
                                 )}
-                                {project.consistency === 'best-effort' && (
-                                    <Button
-                                        disabled={disabled}
-                                        onClick={() => void action(() => client.approve.mutate('best-effort-source'))}
-                                    >
-                                        {l10n.t('Authorize best-effort source')}
-                                    </Button>
-                                )}
-                                {(project.mapping.fidelity === 'reduced' || project.consistency === 'best-effort') && (
+                            </p>
+                            <details className={styles.optionalDetails}>
+                                <summary>{l10n.t('Advanced configuration and mapping')}</summary>
+                                <div className={styles.detailsBody}>
                                     <p>
                                         {l10n.t(
-                                            'These separately approved modes cannot establish strict cutover equivalence. Reduced source projection omits occurrence IDs/meta-properties and explicitly excluded properties.',
+                                            'Edit endpoint, typed identity-manifest and mapping fields in this strict project document. Use env:GRAPH_* references only; never enter credentials here. Input changes invalidate previous evidence and approvals.',
                                         )}
                                     </p>
-                                )}
-                            </div>
-                        </details>
-                    </section>
-                    <section className={styles.section} aria-labelledby="graph-review">
-                        <div className={styles.sectionHeader}>
-                            <DocumentSearchRegular aria-hidden={true} />
-                            <h2 id="graph-review">{l10n.t('Query and application review')}</h2>
-                        </div>
-                        <Field
-                            required
-                            label={l10n.t('Restricted Gremlin read query')}
-                            hint={l10n.t('Required for query comparison.')}
-                        >
-                            <Textarea
-                                value={query}
-                                rows={3}
-                                disabled={busy}
-                                onChange={(_, data) => setQuery(data.value)}
-                            />
-                        </Field>
-                        <details className={styles.optionalDetails}>
-                            <summary>{l10n.t('Optional application adaptation')}</summary>
-                            <div className={styles.detailsBody}>
-                                <Field label={l10n.t('Workspace-relative Java source path')}>
-                                    <Input
-                                        value={sourcePath}
-                                        disabled={busy}
-                                        onChange={(_, data) => setSourcePath(data.value)}
-                                    />
-                                </Field>
-                                <Field label={l10n.t('Run-relative new Java output path')}>
-                                    <Input
-                                        value={outputPath}
-                                        disabled={busy}
-                                        onChange={(_, data) => setOutputPath(data.value)}
-                                    />
-                                </Field>
-                                <p>
-                                    {l10n.t(
-                                        'Rewrite plans never overwrite source files. Review and authorize the exact plan and a new Java path under artifacts/rewritten/, then apply it to that separate output. Build and compare both applications before cutover.',
+                                    <p>
+                                        {l10n.t(
+                                            'Set limits.maximumOperationMillis to bound the entire editor worker operation. At the deadline, work is paused and an unresponsive worker is requested to terminate after five seconds. Checkpoints remain subject to reconciliation.',
+                                        )}
+                                    </p>
+                                    <p>
+                                        {l10n.t(
+                                            'Source population is separate from read-only extraction. Use only a pre-existing empty dedicated test container with no concurrent writers. Review the generated identity-manifest checksum, set an RU budget and approve the exact plan before any source mutation.',
+                                        )}
+                                    </p>
+                                    <Field label={l10n.t('Graph project JSON')}>
+                                        <Textarea
+                                            value={configuration}
+                                            rows={18}
+                                            resize="vertical"
+                                            disabled={busy}
+                                            onChange={(_, data) => setConfiguration(data.value)}
+                                        />
+                                    </Field>
+                                    <Button
+                                        disabled={disabled}
+                                        onClick={() =>
+                                            void action(async () => {
+                                                await client.save.mutate(configuration);
+                                                await reload();
+                                            })
+                                        }
+                                    >
+                                        {l10n.t('Save configuration')}
+                                    </Button>
+                                    <Field label={l10n.t('Dedicated target probe graph IRI')}>
+                                        <Input
+                                            value={probeGraph}
+                                            disabled={busy}
+                                            onChange={(_, data) => setProbeGraph(data.value)}
+                                        />
+                                    </Field>
+                                    <p>
+                                        {l10n.t(
+                                            'Enumeration is read-only and requires explicit partition values, string IDs, a quiesced or immutable source, and request/duration budgets. Review the generated identity manifest before configuring a new extraction run.',
+                                        )}
+                                    </p>
+                                    {project.mapping.fidelity === 'reduced' && (
+                                        <Button
+                                            disabled={disabled}
+                                            onClick={() => void action(() => client.approve.mutate('reduced-fidelity'))}
+                                        >
+                                            {l10n.t('Authorize reduced fidelity')}
+                                        </Button>
                                     )}
-                                </p>
-                                <p>
-                                    {l10n.t(
-                                        'Fixture execution requires a current canonical-derived catalog and explicit approval for the exact catalog checksum and application write/delete graph scopes. It never populates Cosmos DB.',
+                                    {project.consistency === 'best-effort' && (
+                                        <Button
+                                            disabled={disabled}
+                                            onClick={() =>
+                                                void action(() => client.approve.mutate('best-effort-source'))
+                                            }
+                                        >
+                                            {l10n.t('Authorize best-effort source')}
+                                        </Button>
                                     )}
-                                </p>
+                                    {(project.mapping.fidelity === 'reduced' ||
+                                        project.consistency === 'best-effort') && (
+                                        <p>
+                                            {l10n.t(
+                                                'These separately approved modes cannot establish strict cutover equivalence. Reduced source projection omits occurrence IDs/meta-properties and explicitly excluded properties.',
+                                            )}
+                                        </p>
+                                    )}
+                                </div>
+                            </details>
+                        </section>
+                    </details>
+                    <details
+                        className={styles.section}
+                        open={nextPhase?.[0] === 'assess' || nextPhase?.[0] === 'functional'}
+                    >
+                        <summary>{l10n.t('Query and application review')}</summary>
+                        <section aria-labelledby="graph-review">
+                            <div className={styles.sectionHeader}>
+                                <DocumentSearchRegular aria-hidden={true} />
+                                <h2 id="graph-review">{l10n.t('Query and application review')}</h2>
                             </div>
-                        </details>
-                    </section>
+                            <Field
+                                required
+                                label={l10n.t('Restricted Gremlin read query')}
+                                hint={l10n.t('Required for query comparison.')}
+                            >
+                                <Textarea
+                                    value={query}
+                                    rows={3}
+                                    disabled={busy}
+                                    onChange={(_, data) => setQuery(data.value)}
+                                />
+                            </Field>
+                            <details className={styles.optionalDetails}>
+                                <summary>{l10n.t('Optional application adaptation')}</summary>
+                                <div className={styles.detailsBody}>
+                                    <Field label={l10n.t('Workspace-relative Java source path')}>
+                                        <Input
+                                            value={sourcePath}
+                                            disabled={busy}
+                                            onChange={(_, data) => setSourcePath(data.value)}
+                                        />
+                                    </Field>
+                                    <Field label={l10n.t('Run-relative new Java output path')}>
+                                        <Input
+                                            value={outputPath}
+                                            disabled={busy}
+                                            onChange={(_, data) => setOutputPath(data.value)}
+                                        />
+                                    </Field>
+                                    <p>
+                                        {l10n.t(
+                                            'Rewrite plans never overwrite source files. Review and authorize the exact plan and a new Java path under artifacts/rewritten/, then apply it to that separate output. Build and compare both applications before cutover.',
+                                        )}
+                                    </p>
+                                    <p>
+                                        {l10n.t(
+                                            'Fixture execution requires a current canonical-derived catalog and explicit approval for the exact catalog checksum and application write/delete graph scopes. It never populates Cosmos DB.',
+                                        )}
+                                    </p>
+                                </div>
+                            </details>
+                        </section>
+                    </details>
                     <section className={styles.section} aria-labelledby="graph-phases">
                         <div className={styles.sectionHeader}>
                             <ArrowUploadRegular aria-hidden={true} />
@@ -865,41 +912,31 @@ export function GraphMigrationWorkbench() {
                             </Button>
                             <Button onClick={() => void action(reload)}>{l10n.t('Reload persisted state')}</Button>
                         </div>
-                        <div className={styles.workflowGrid} aria-label={l10n.t('Required migration steps')}>
-                            {workflowGroups.map((group, index) => (
-                                <section className={styles.workflowGroup} key={group.title} aria-label={group.title}>
-                                    <h3>
-                                        <span aria-hidden={true}>{index + 1}. </span>
-                                        {group.title}
-                                    </h3>
-                                    <span className={styles.requiredTag}>{l10n.t('Required')}</span>
-                                    {corePhases
-                                        .filter(([operation]) => group.phases.includes(operation))
-                                        .map((phase) => renderOperation(phase, false))}
-                                </section>
-                            ))}
+                        <div aria-label={l10n.t('Required migration steps')}>
+                            {corePhases.map((phase, index) => {
+                                const active = phase[0] === nextPhase?.[0];
+                                const completed = phaseComplete(phase[0]);
+                                const priorEvidence =
+                                    Boolean(project.phases[phase[0]]?.evidence.length) &&
+                                    index < corePhases.findIndex(([operation]) => operation === nextPhase?.[0]);
+                                return (
+                                    <details
+                                        key={phase[0]}
+                                        open={active || completed || priorEvidence}
+                                        className={styles.optionalDetails}
+                                    >
+                                        <summary aria-current={active ? 'step' : undefined}>
+                                            {l10n.t('Step {number}: {phase}', { number: index + 1, phase: phase[1] })}
+                                            {' — '}
+                                            {phaseLabels()[phaseStatus(phase[0])]}
+                                        </summary>
+                                        {active && <h3>{l10n.t('Next unfinished step')}</h3>}
+                                        {renderOperation(phase)}
+                                    </details>
+                                );
+                            })}
                         </div>
-                        {nextPhase ? (
-                            <section aria-label={l10n.t('Next unfinished migration step')}>
-                                <h3>{l10n.t('Next unfinished step')}</h3>
-                                {renderOperation(nextPhase, nextPhase[0] !== 'source-enumerate')}
-                                {nextPhase[0] === 'source-enumerate' && (
-                                    <>
-                                        <p>
-                                            {l10n.t(
-                                                'Use guided Prepare to review partition values and request, duration and RU ceilings before enumeration. Resume preserved preparation when available; the advanced Run requires an existing explicit plan.',
-                                            )}
-                                        </p>
-                                        <Button
-                                            disabled={disabled}
-                                            onClick={() => preparationReviewButton.current?.focus()}
-                                        >
-                                            {l10n.t('Review guided read-only preparation')}
-                                        </Button>
-                                    </>
-                                )}
-                            </section>
-                        ) : (
+                        {!nextPhase && (
                             <p>
                                 <output>{l10n.t('Core steps succeeded. Review evidence before cutover.')}</output>
                             </p>
@@ -959,8 +996,6 @@ export function GraphMigrationWorkbench() {
                                 <p>
                                     {l10n.t('Optional tools are manual and do not replace live endpoint verification.')}
                                 </p>
-                                <h3>{l10n.t('Required migration phases')}</h3>
-                                {corePhases.map((phase) => renderOperation(phase))}
                                 <h3>{l10n.t('Optional tools and advanced operations')}</h3>
                                 {operations()
                                     .filter(([operation]) => !coreOperations.has(operation))

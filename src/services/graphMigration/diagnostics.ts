@@ -16,7 +16,7 @@ export const safeDiagnosticSchema = z
         gremlinStatus: z.number().int().min(100).max(999).optional(),
         sourceStatus: z.number().int().min(100).max(599).optional(),
         sourceSubstatus: z.number().int().min(0).max(2147483647).optional(),
-        templateId: z.literal('source-keyset-page-v1').optional(),
+        templateId: z.enum(['source-keyset-page-v1', 'source-keyset-page-v2']).optional(),
     })
     .strict();
 export type SafeDiagnostic = z.infer<typeof safeDiagnosticSchema>;

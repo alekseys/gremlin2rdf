@@ -6,7 +6,7 @@
 import { Button, Checkbox, Field, Input, Textarea } from '@fluentui/react-components';
 import { useTrpcClient } from '@microsoft/vscode-ext-webview/react';
 import * as l10n from '@vscode/l10n';
-import { useState, type Ref } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { type GraphAppRouter, type GraphOperation } from '../../../panels/graphMigration/graphRouter';
 import { type GraphProject } from '../../../services/graphMigration/contracts';
 import { hasFidelityInventory } from '../../../services/graphMigration/diagnostics';
@@ -16,15 +16,16 @@ export function GraphPreparation({
     disabled,
     action,
     run,
-    reviewButtonRef,
+    enumerationOnly = false,
 }: {
     project: GraphProject;
     disabled: boolean;
     action: (work: () => Promise<unknown>) => Promise<void>;
     run: (operation: GraphOperation) => Promise<void>;
-    reviewButtonRef?: Ref<HTMLButtonElement>;
+    enumerationOnly?: boolean;
 }) {
     const client = useTrpcClient<GraphAppRouter>();
+    const reviewButtonRef = useRef<HTMLButtonElement>(null);
     const [candidates, setCandidates] = useState<PreparationCandidates>();
     const [text, setText] = useState(''),
         [requests, setRequests] = useState('20000'),
@@ -33,6 +34,21 @@ export function GraphPreparation({
         [stable, setStable] = useState(false),
         [starting, setStarting] = useState(false);
     const partitions = [...new Set(text.split(/\r?\n/u).filter((v) => v.length > 0))];
+    useEffect(() => {
+        if (!enumerationOnly) return;
+        reviewButtonRef.current?.focus();
+        let disposed = false;
+        void action(async () => {
+            const found = await client.preparation.query();
+            if (!disposed) {
+                setCandidates(found);
+                setText(found.partitions.join('\n'));
+            }
+        });
+        return () => {
+            disposed = true;
+        };
+    }, [enumerationOnly, client, action]);
     const valid =
         partitions.length > 0 &&
         partitions.length <= 1000 &&
@@ -48,18 +64,22 @@ export function GraphPreparation({
         stable;
     return (
         <section aria-label={l10n.t('Guided read-only Prepare')}>
-            <h2>{l10n.t('Prepare your source')}</h2>
+            {!enumerationOnly && <h2>{l10n.t('Prepare your source')}</h2>}
             <p>
                 {l10n.t(
                     'Check connections independently, then build a verified identity inventory without editing project JSON.',
                 )}
             </p>
-            <Button disabled={disabled} onClick={() => void action(() => run('preflight'))}>
-                {l10n.t('Check read-only connections')}
-            </Button>
-            <Button disabled={disabled} onClick={() => void action(() => client.credentials.mutate())}>
-                {l10n.t('Store credentials securely')}
-            </Button>
+            {!enumerationOnly && (
+                <>
+                    <Button disabled={disabled} onClick={() => void action(() => run('preflight'))}>
+                        {l10n.t('Check read-only connections')}
+                    </Button>
+                    <Button disabled={disabled} onClick={() => void action(() => client.credentials.mutate())}>
+                        {l10n.t('Store credentials securely')}
+                    </Button>
+                </>
+            )}
             <Button
                 ref={reviewButtonRef}
                 disabled={disabled || !project.source}
@@ -185,19 +205,21 @@ export function GraphPreparation({
                     'After reconciled enumeration, the inventory and checksum are selected automatically. Then check actual source fidelity before extraction.',
                 )}
             </p>
-            {!hasFidelityInventory(project) && (
+            {!enumerationOnly && !hasFidelityInventory(project) && (
                 <p>
                     {l10n.t(
                         'Source fidelity needs a completed inventory. Review any enumeration failure first; no source capability conclusion can be drawn from an empty bootstrap file.',
                     )}
                 </p>
             )}
-            <Button
-                disabled={disabled || !hasFidelityInventory(project)}
-                onClick={() => void action(() => run('source-compatibility'))}
-            >
-                {l10n.t('Check read-only source fidelity')}
-            </Button>
+            {!enumerationOnly && (
+                <Button
+                    disabled={disabled || !hasFidelityInventory(project)}
+                    onClick={() => void action(() => run('source-compatibility'))}
+                >
+                    {l10n.t('Check read-only source fidelity')}
+                </Button>
+            )}
         </section>
     );
 }

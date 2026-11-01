@@ -18,7 +18,7 @@ class SourceDiagnosticsTest {
         var diagnostic=SourceDiagnostics.failure(new SourceDiagnostics.Context("source-enumeration-vertex-page",
             new SourceRequests.Failure(false,Map.of(),response)),"source-operation");
         assertEquals("SOURCE_SCRIPT_REJECTED",diagnostic.get("code"));
-        assertEquals("source-keyset-page-v1",diagnostic.get("templateId"));
+        assertEquals("source-keyset-page-v2",diagnostic.get("templateId"));
         assertEquals(597,diagnostic.get("gremlinStatus"));assertEquals(400,diagnostic.get("sourceStatus"));
         assertEquals(1004,diagnostic.get("sourceSubstatus"));
         var acknowledged=Diagnostics.failure(Diagnostics.acknowledged(Json.MAPPER.valueToTree(diagnostic),"source-operation"),"execution");

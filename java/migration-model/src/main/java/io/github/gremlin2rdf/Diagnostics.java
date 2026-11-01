@@ -115,8 +115,8 @@ public final class Diagnostics {
         var failure=new Failure(REMEDIES.containsKey(code) ? code : "OPERATION_CAUSE_UNKNOWN",stage,
             status.isIntegralNumber() && status.canConvertToInt() ? status.intValue() : null);
         var fields=new TreeMap<String,Object>();
-        if (diagnostic.path("templateId").asText().equals("source-keyset-page-v1"))
-            fields.put("templateId","source-keyset-page-v1");
+        if (Set.of("source-keyset-page-v1","source-keyset-page-v2").contains(diagnostic.path("templateId").asText()))
+            fields.put("templateId",diagnostic.path("templateId").asText());
         for (String name:List.of("gremlinStatus","sourceStatus","sourceSubstatus")) {
             var value=diagnostic.path(name);
             int max=name.equals("gremlinStatus") ? 999 : name.equals("sourceStatus") ? 599 : Integer.MAX_VALUE;

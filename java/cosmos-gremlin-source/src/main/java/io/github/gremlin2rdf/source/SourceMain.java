@@ -171,7 +171,7 @@ public final class SourceMain implements AutoCloseable {
             bindings.put("g2rAfter", after);
             selection += ".hasId(gt(g2rAfter))";
         }
-        return new PopulationScripts.Script(selection+".order().by(id(),asc).limit(g2rPageSize).id().fold()",Map.copyOf(bindings));
+        return new PopulationScripts.Script(selection+".id().order().limit(g2rPageSize).fold()",Map.copyOf(bindings));
     }
     static Enumeration.Plan readEnumerationPlan(Path root,String reference) throws IOException {
         Path planPath=io.github.gremlin2rdf.SafeFiles.resolve(root,reference);
