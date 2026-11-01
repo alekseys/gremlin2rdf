@@ -9,8 +9,10 @@ import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as vscode from 'vscode';
-import { inputHash, type WorkerMessage } from '../../services/graphMigration/contracts';
+import { writeNewArtifact } from '../../services/graphMigration/artifacts';
+import { canonicalJson, inputHash, type WorkerMessage } from '../../services/graphMigration/contracts';
 import { GraphProjectService } from '../../services/graphMigration/GraphProjectService';
+import { adoptEnumeration, freshPreparation, seedPartitions } from '../../services/graphMigration/preparation';
 import { GraphMigrationTab } from './GraphMigrationTab';
 import { type GraphRouterContext } from './graphRouter';
 
@@ -96,6 +98,7 @@ afterEach(async () => {
 });
 
 async function complete(payload: WorkerMessage['payload']) {
+    const before = mocks.events.mock.calls.length;
     mocks.message?.({
         protocolVersion: 1,
         type: 'result',
@@ -106,10 +109,121 @@ async function complete(payload: WorkerMessage['payload']) {
         phase: 'complete',
         payload,
     });
-    await vi.waitFor(() => expect(mocks.events).toHaveBeenCalledWith(expect.objectContaining({ type: 'project' })));
+    await vi.waitFor(() =>
+        expect(mocks.events.mock.calls.slice(before).some(([event]) => event.type === 'project')).toBe(true),
+    );
 }
 
 describe('persisted graph editor workflow', () => {
+    it('starts guided preparation with bounded settings and exposes running state to Pause and Cancel', async () => {
+        await context.create();
+        await context.saveSetup({
+            host: 'account.gremlin.cosmos.azure.com',
+            database: 'db',
+            container: 'graph',
+            partitionKeyPath: '/pk',
+            datasetUrl: 'http://localhost:3030/test',
+            consistency: 'quiesced',
+        });
+        const prior = await service.load();
+        await context.prepareSource({
+            partitions: ['p'],
+            maximumRequests: 100,
+            maximumDurationSeconds: 30,
+            ruBudget: '100',
+            confirmStableSource: true,
+        });
+        const current = await service.load();
+        expect(current.runId).not.toBe(prior.runId);
+        expect(current.phases['source-enumerate'].status).toBe('running');
+        expect(mocks.start).toHaveBeenCalledWith(
+            expect.objectContaining({ runId: current.runId }),
+            expect.any(String),
+            'source-enumerate',
+            expect.arrayContaining([`artifacts/enumeration-plan-${current.runId}.json`]),
+        );
+        expect(mocks.events).toHaveBeenCalledWith({
+            type: 'project',
+            project: expect.objectContaining({
+                phases: expect.objectContaining({ 'source-enumerate': expect.objectContaining({ status: 'running' }) }),
+            }),
+        });
+    });
+    it('parses static seed candidates without evaluating code or matching comments/quoted fake properties', () => {
+        expect(
+            seedPartitions(
+                "g.addV('person').property('pk','a')\ng.addV('person').property('pk',variable)\n// g.addV('x').property('pk','fake')\ng.addV('person').property('text',\".property('pk','fake')\")",
+                'pk',
+            ),
+        ).toEqual(['a']);
+    });
+    it('adopts only reconciled owned inventory into a fresh extraction run and preserves the prior configuration', async () => {
+        await context.create();
+        await context.saveSetup({
+            host: 'account.gremlin.cosmos.azure.com',
+            database: 'db',
+            container: 'graph',
+            partitionKeyPath: '/pk',
+            datasetUrl: 'http://localhost:3030/test',
+            consistency: 'quiesced',
+        });
+        const prior = await service.load(),
+            root = await service.root();
+        const prepared = await freshPreparation(prior, root, {
+            partitions: ['p'],
+            maximumRequests: 100,
+            maximumDurationSeconds: 30,
+            ruBudget: '100',
+            confirmStableSource: true,
+        });
+        const bytes =
+                '{"kind":"vertex","partition":{"type":"string","lexical":"p"},"id":{"type":"string","lexical":"v"}}\n',
+            sha256 = createHash('sha256').update(bytes).digest('hex');
+        await writeNewArtifact(root, `${prepared.output}/identities.ndjson`, bytes);
+        const plan = JSON.parse(await readFile(path.join(root, prepared.plan), 'utf8'));
+        await writeNewArtifact(
+            root,
+            `${prepared.output}/manifest.json`,
+            JSON.stringify({
+                schemaVersion: 1,
+                status: 'succeeded',
+                runId: prepared.project.runId,
+                inputHash: inputHash(prepared.project),
+                sha256,
+                planHash: createHash('sha256').update(canonicalJson(plan)).digest('hex'),
+                vertices: 1,
+                edges: 0,
+                identityTypes: 'string-only',
+                edgeScope: 'sourceVertex',
+            }),
+        );
+        const adopted = await adoptEnumeration(prepared.project, root, prepared.output);
+        expect(adopted.runId).not.toBe(prepared.project.runId);
+        expect(adopted.source?.identityManifestHash).toBe(sha256);
+        expect(adopted.source?.identityManifest).toBe(`${prepared.output}/identities.ndjson`);
+        expect(adopted.approvals).toEqual([]);
+        expect(adopted.source?.compatibilityEvidence).not.toBe(prepared.project.source?.compatibilityEvidence);
+        await writeFile(path.join(root, prepared.output, 'identities.ndjson'), 'tampered');
+        await expect(adoptEnumeration(prepared.project, root, prepared.output)).rejects.toThrow();
+    });
+    it('keeps specific blocked diagnostics in the persisted phase instead of a generic failure', async () => {
+        await context.create();
+        await context.run('preflight', '', '', '');
+        await complete({
+            status: 'blocked',
+            diagnostics: [
+                {
+                    status: 'blocked',
+                    code: 'ENDPOINT_AUTHENTICATION',
+                    stage: 'target-connectivity',
+                    remediation: 'Renew the configured credential securely.',
+                },
+            ],
+        });
+        await vi.waitFor(async () =>
+            expect((await service.load()).phases.preflight.blockers.join(' ')).toContain('ENDPOINT_AUTHENTICATION'),
+        );
+    });
     it('saves simple connection settings with derived endpoints and a real bootstrap inventory', async () => {
         await context.create();
         await context.saveSetup({

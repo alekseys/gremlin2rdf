@@ -38,8 +38,22 @@ commit when available, otherwise the legacy baseline stays available for advance
 
 New source setup creates an empty `identities.ndjson` only if no inventory exists; its SHA-256 is the actual file
 checksum, not fabricated evidence. Empty bootstrap inventories allow discovery but cannot establish source fidelity.
-After reviewing discovery, select its inventory in advanced settings and save the connection form to refresh the
-selected checksum. Existing inventories are never overwritten. Input changes invalidate dependent evidence.
+Use **Prepare your source** to check read-only source and target connectivity independently. Missing extraction
+inventory/fidelity evidence appears as a separate prerequisite rather than masking endpoint diagnostics.
+**Find partition candidates** reads at most 16 MiB from each of `gremlin-partitions.json` and
+`data/gremlin/gremlin_load_file.txt`, refuses symlinks and supports at most 1000 string partitions.
+The JSON shape is `{"schemaVersion":1,"partitions":["tenant-a","tenant-b"]}`. Seed discovery lexes literal
+`g.addV(...).property('pk','value')` chains for the configured flat partition key; it never evaluates Groovy.
+Candidates remain unverified until global/per-partition live counts reconcile.
+
+Review candidate values, request/duration/RU ceilings and the explicit stable-source declaration, then start
+bounded read-only preparation. Provider charge observations must enforce the RU ceiling. Coverage/count changes
+and exhausted budgets are distinct blockers, never successful partial inventories.
+Successful enumeration verifies producer/run/input ownership and plan/inventory checksums, automatically selects
+the inventory, creates a fresh extraction run, resets compatibility evidence and clears old approvals. Prior
+project snapshots, budgets, checkpoints and artifacts remain preserved. No advanced JSON/path/hash edits are
+needed for this normal path. Then run **Check read-only source fidelity**; enumeration does not establish it.
+Existing inventories are never overwritten. Input changes invalidate dependent evidence.
 This action does not populate source data, authorize target writes, or remove existing source/target configuration.
 
 ## Installing or replacing the VSIX
@@ -49,7 +63,7 @@ Stop any active migration before replacing the extension. Settings and workspace
 For a package with the same version as your installed preview, you can force replacement from PowerShell:
 
 ```powershell
-code --install-extension ".\vscode-cosmosdb-0.39.0.vsix" --force
+code --install-extension ".\vscode-cosmosdb-0.39.1.vsix" --force
 ```
 
 If the CLI prints `DEP0169` after reporting that the extension was successfully installed, installation succeeded.

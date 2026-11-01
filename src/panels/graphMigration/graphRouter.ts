@@ -8,6 +8,11 @@ import { z } from 'zod';
 import { type GraphProject, type WorkerMessage } from '../../services/graphMigration/contracts';
 import { graphEvidencePhases } from '../../services/graphMigration/evidence';
 import {
+    prepareSourceSchema,
+    type PrepareSource,
+    type PreparationCandidates,
+} from '../../services/graphMigration/preparation';
+import {
     connectionSetupSchema,
     type ConnectionSetup,
     type SetupSuggestions,
@@ -78,10 +83,18 @@ export interface GraphRouterContext extends BaseRouterContext {
     credentials(): Promise<void>;
     cancel(): void;
     pause(): void;
+    preparation(): Promise<PreparationCandidates>;
+    prepareSource(input: PrepareSource): Promise<void>;
+    resumePreparation(): Promise<void>;
 }
 const graph = initWebviewTrpc<GraphRouterContext>();
 export const graphAppRouter = graph.router({
     load: graph.publicProcedure.query(({ ctx }) => ctx.load()),
+    preparation: graph.publicProcedure.query(({ ctx }) => ctx.preparation()),
+    prepareSource: graph.publicProcedure
+        .input(prepareSourceSchema)
+        .mutation(({ ctx, input }) => ctx.prepareSource(input)),
+    resumePreparation: graph.publicProcedure.mutation(({ ctx }) => ctx.resumePreparation()),
     create: graph.publicProcedure.mutation(({ ctx }) => ctx.create()),
     save: graph.publicProcedure.input(z.string().max(1048576)).mutation(({ ctx, input }) => ctx.save(input)),
     saveSetup: graph.publicProcedure.input(connectionSetupSchema).mutation(({ ctx, input }) => ctx.saveSetup(input)),

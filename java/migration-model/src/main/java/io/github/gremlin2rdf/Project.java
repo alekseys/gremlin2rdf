@@ -115,8 +115,11 @@ public record Project(
         reference(ref);
         if (ref == null) return null;
         String value = System.getenv(ref.substring(4));
-        if (value == null || value.isBlank()) throw new IllegalArgumentException("Credential reference is unavailable");
+        if (value == null || value.isBlank()) throw new CredentialUnavailable();
         return value;
+    }
+    public static final class CredentialUnavailable extends IllegalArgumentException {
+        public CredentialUnavailable() { super("Configured credential reference is unavailable"); }
     }
     private static void endpoint(String value) {
         URI uri = URI.create(value);

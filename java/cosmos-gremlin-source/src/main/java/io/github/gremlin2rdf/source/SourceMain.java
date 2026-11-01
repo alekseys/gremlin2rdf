@@ -20,7 +20,10 @@ public final class SourceMain implements AutoCloseable {
     private final SourceCodec codec;
     private final io.github.gremlin2rdf.Project typedProject;
     private final SourceRequests requests;
-    private SourceMain(JsonNode project) {
+    private final boolean connectivityOnly;
+    private SourceMain(JsonNode project) { this(project,false); }
+    private SourceMain(JsonNode project,boolean connectivityOnly) {
+        this.connectivityOnly=connectivityOnly;
         this.project = project; config = project.path("source");
         try { typedProject = io.github.gremlin2rdf.Json.MAPPER.treeToValue(project, io.github.gremlin2rdf.Project.class); codec = new SourceCodec(typedProject); }
         catch (IOException e) { throw new IllegalArgumentException("Strict source project required", e); }
@@ -29,7 +32,7 @@ public final class SourceMain implements AutoCloseable {
         String reference = config.path("authenticationRef").asText();
         if (!reference.matches("env:GRAPH_[A-Z0-9_]{1,100}")) throw new SecurityException("Credential reference required");
         String key = System.getenv(reference.substring(4));
-        if (key == null || key.isBlank()) throw new SecurityException("Credential unavailable");
+        if (key == null || key.isBlank()) throw new io.github.gremlin2rdf.Project.CredentialUnavailable();
         timeout = project.path("limits").path("requestTimeoutMillis").asInt();
         if (timeout < 100 || timeout > 300000) throw new IllegalArgumentException("Invalid source deadline");
         requests = new SourceRequests(typedProject.limits().maxRetries(), timeout, typedProject.source().ruBudget(),
@@ -50,7 +53,8 @@ public final class SourceMain implements AutoCloseable {
         return query(script, bindings, false);
     }
     private Object query(String script, Map<String, Object> bindings, boolean mutation) throws Exception {
-        io.github.gremlin2rdf.SourceCompatibility.authorizeMode(typedProject);
+        if (connectivityOnly && mutation) throw new SecurityException("Connectivity checks prohibit source mutations");
+        if (!connectivityOnly) io.github.gremlin2rdf.SourceCompatibility.authorizeMode(typedProject);
         return requests.execute(() -> {
             try {
                 var resultSet = client.submit(script, bindings);
@@ -167,7 +171,7 @@ public final class SourceMain implements AutoCloseable {
                 System.out.println(io.github.gremlin2rdf.Json.text(Map.of("status", "succeeded", "planHash", plan.hash(), "estimatedWrites", plan.estimatedWrites())));
                 return;
             }
-            if ((args.length != 4 && args.length != 5) || !Set.of("enumerate", "extract", "probe", "populate", "source-cleanup", "recipes").contains(args[0])
+            if ((args.length != 4 && args.length != 5) || !Set.of("check","enumerate", "extract", "probe", "populate", "source-cleanup", "recipes").contains(args[0])
                 || args.length == 5 && !args[4].equals("--parent-owned"))
                 throw new IllegalArgumentException("extract or probe project manifest output required");
             if (args.length == 5) monitorParent();
@@ -196,6 +200,17 @@ public final class SourceMain implements AutoCloseable {
                     System.out.println(io.github.gremlin2rdf.Json.text(result));
                 }
                 return;
+            }
+            if (args[0].equals("check")) {
+                if (parsed.source() == null) throw new io.github.gremlin2rdf.Diagnostics.Failure("SOURCE_CONFIGURATION_REQUIRED","source-connectivity");
+                Map<String,Object> result;
+                try (var source = new SourceMain(io.github.gremlin2rdf.Json.MAPPER.valueToTree(parsed),true)) {
+                    SourceCodec.count(source.query("g.V().limit(1).count()",Map.of()));
+                    result = Map.of("schemaVersion",1,"status","succeeded","sourceReadAccess",true,
+                        "driverVersion","3.4.13","requestCharge",source.requests.charge(),
+                        "compatibility","not-established-by-connectivity-check");
+                }
+                System.out.println(io.github.gremlin2rdf.Json.text(result));return;
             }
             if (args[0].equals("recipes")) {
                 Path selected = io.github.gremlin2rdf.SafeFiles.resolve(root, args[2]);
@@ -251,7 +266,7 @@ public final class SourceMain implements AutoCloseable {
                         "operation", "source-compatibility", "status", observation.get("status"), "sensitiveArtifact", true, "result", observation));
                     System.out.println(io.github.gremlin2rdf.Json.text(Map.of("status", observation.get("status"),
                         "artifactSha256", io.github.gremlin2rdf.SafeFiles.fileHash(output))));
-                    if (!observation.get("status").equals("succeeded")) throw new IllegalArgumentException("Required probe observations are missing");
+                    if (!observation.get("status").equals("succeeded")) { System.exit(2); return; }
                     return;
                 }
                 var result = Extraction.run(parsed, manifest, output, reader);
@@ -259,13 +274,19 @@ public final class SourceMain implements AutoCloseable {
                     "sourceHash", result.sha256(), "sourceRetries", source.requests.retries(), "requestCharge", source.requests.charge())));
             }
         } catch (Exception e) {
-            System.err.println(io.github.gremlin2rdf.Json.text(Map.of("status", "blocked",
-                "code", e instanceof io.github.gremlin2rdf.PopulationPlan.UnsupportedValue ? "SOURCE_POPULATION_INT64_RANGE"
-                    : e instanceof SecurityException ? "SOURCE_AUTHORIZATION_REQUIRED" : e instanceof IOException ? "SOURCE_ARTIFACT_OR_CHECKPOINT"
-                    : e instanceof IllegalArgumentException ? "SOURCE_FIDELITY_OR_CONFIGURATION" : "SOURCE_CONNECTIVITY",
-                "remediation", e instanceof SecurityException ? "Store the referenced credential securely and provide current scoped approvals; never put secret values in project files."
-                    : e instanceof IOException ? "Preserve and verify the owned manifest, checkpoint and RU journal; changed or unobservable state requires explicit reconciliation."
-                    : "Verify the flat partition key, typed identities, observed fidelity, TLS hostname/CA and pinned driver/serializer before retrying.")));
+            Map<String,Object> diagnostic = io.github.gremlin2rdf.Diagnostics.failure(e,
+                args.length > 0 && args[0].equals("check") ? "source-connectivity" : "source-operation");
+            Throwable cause=e;
+            for (int depth=0;cause!=null && depth<16;depth++,cause=cause.getCause()) {
+                if (cause instanceof org.apache.tinkerpop.gremlin.driver.exception.ResponseException response) {
+                    int status=response.getResponseStatusCode().getValue();
+                    diagnostic=io.github.gremlin2rdf.Diagnostics.report(status==401 ? "ENDPOINT_AUTHENTICATION"
+                        : status==403 ? "ENDPOINT_AUTHORIZATION" : status==429 ? "ENDPOINT_THROTTLED"
+                        : "ENDPOINT_PROVIDER_FAILURE","source-request");break;
+                }
+            }
+            // Only fixed sanitized diagnostics are returned on stdout; raw driver stderr stays private.
+            System.out.println(io.github.gremlin2rdf.Json.text(diagnostic));
             System.exit(2);
         }
     }

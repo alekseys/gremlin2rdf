@@ -40,7 +40,7 @@ provision Cosmos DB resources or a Fuseki server, and it never opens a deployed 
 ## Install and open the workbench
 
 1. In VS Code, open **Extensions**, select **Install from VSIX** from the view's menu, and choose
-   `vscode-cosmosdb-0.39.0.vsix` from your local build. Reload VS Code after installation.
+   `vscode-cosmosdb-0.39.1.vsix` from your local build. Reload VS Code after installation.
 2. Enable this setting:
 
    ```json
@@ -60,7 +60,7 @@ migration state.
 If an older build with the same version is already installed, stop active migrations and force replacement:
 
 ```powershell
-code --install-extension ".\vscode-cosmosdb-0.39.0.vsix" --force
+code --install-extension ".\vscode-cosmosdb-0.39.1.vsix" --force
 ```
 
 The VS Code CLI may print `DEP0169` from its own deprecated URL parser even when installation succeeds.
@@ -101,7 +101,7 @@ compatibility from configuration. See [setup discovery details](https://github.c
 Select **Save connection settings**. Standard Fuseki query, update and graph-store URLs are derived from the dataset
 URL; run graph names, identity-preserving mapping, batching and request timeouts already have defaults.
 Open **Advanced configuration and mapping** only when you need custom endpoints, authentication/CA references,
-an identity inventory, a domain vocabulary, or different limits.
+a custom identity inventory, a domain vocabulary, or different limits.
 
 Use **Store credentials securely** after saving the connection settings. The default source reference is
 `env:GRAPH_SOURCE_KEY`. For a protected Fuseki server, configure its target authentication reference in advanced
@@ -124,14 +124,26 @@ settings if your application needs a particular RDF vocabulary.
 Saving a new source creates a real empty bootstrap identity inventory if none exists. This permits setup and
 discovery; **it is not an extraction-ready inventory or compatibility evidence**.
 
-For a stable source with string element IDs, use **Enumerate read-only source identities** with a bounded plan
-listing your known partition values. Review the output, then select the reviewed inventory in advanced settings.
-Saving the connection settings recalculates the checksum of the selected inventory; it does not manufacture a
-passing compatibility report. Other supported typed identities require a correctly prepared inventory.
+In **Prepare your source**, select **Check read-only connections**. Source and target results are independent;
+missing inventories do not hide connection failures. A blocked result identifies the failed substep and a safe
+remedy, without exposing credentials or provider query text.
 
-Run **Check prerequisites** and follow the [source compatibility and extraction guide](https://github.com/alekseys/gremlin2rdf/blob/alekseys-gremlin-to-rdf-workbench/docs/graph-migration/source-extraction.md)
-to collect endpoint-specific evidence before loading live source data. A local sample does not verify Cosmos DB
-driver behavior, system metadata fidelity or your live endpoint.
+Select **Find partition candidates**. Supported local seed files (`data/gremlin/gremlin_load_file.txt`) and
+`gremlin-partitions.json` can supply candidates automatically; review/add string partition values only when needed.
+Seeds are **unverified candidates**, not a live inventory. Choose explicit request, duration and RU ceilings,
+confirm the source consistency declaration, then select **Start bounded read-only preparation**.
+The RU ceiling applies per run; preparation and the fresh extraction run retain separate request journals.
+
+Enumeration reconciles global and per-partition counts. Incomplete coverage, changed counts, exhausted budgets
+or unobservable RU charges block completion. Successful enumeration automatically selects the actual inventory
+and checksum in a fresh extraction run, preserving prior artifacts and invalidating old approvals—no advanced
+JSON edits or manual hash refresh. Then select **Check read-only source fidelity**.
+After interruption, **Find partition candidates** also offers **Resume preserved read-only preparation** when
+the same-input checkpoint has remaining reviewed capacity; otherwise review a new bounded run.
+
+Connection success and reconciled counts alone do not prove source property/system-metadata fidelity.
+See the [source compatibility and extraction guide](https://github.com/alekseys/gremlin2rdf/blob/alekseys-gremlin-to-rdf-workbench/docs/graph-migration/source-extraction.md)
+for supported identities and endpoint-specific limits.
 
 ### 3. Extract and load
 

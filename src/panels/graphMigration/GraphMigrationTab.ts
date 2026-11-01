@@ -31,7 +31,14 @@ import {
     relativePathSchema,
     type GraphProject,
 } from '../../services/graphMigration/contracts';
+import { hostDiagnostic, safeDiagnostics } from '../../services/graphMigration/diagnostics';
 import { GraphProjectService } from '../../services/graphMigration/GraphProjectService';
+import {
+    adoptEnumeration,
+    discoverPreparation,
+    freshPreparation,
+    type PrepareSource,
+} from '../../services/graphMigration/preparation';
 import { applySetup, discoverSetup, type SetupSuggestions } from '../../services/graphMigration/setup';
 import { WorkerBridge } from '../../services/graphMigration/WorkerBridge';
 import { BaseTab } from '../BaseTab';
@@ -54,6 +61,8 @@ export class GraphMigrationTab extends BaseTab {
     private finishing: Promise<void> | undefined;
     private preparationStop: 'paused' | 'cancelled' | undefined;
     private setup: SetupSuggestions | undefined;
+    private guidedEnumerationOutput: string | undefined;
+    private reviewingPreparation = false;
     constructor(
         panel: vscode.WebviewPanel,
         private readonly workspacePath: string,
@@ -66,7 +75,7 @@ export class GraphMigrationTab extends BaseTab {
             (message) => {
                 this.events.emit({ type: 'worker', message });
                 if (message.type === 'result' || message.type === 'error')
-                    void this.finish(message.type === 'result' ? message.payload : null).catch(() =>
+                    void this.finish(message.payload).catch(() =>
                         this.events.emit({ type: 'diagnostic', code: 'STATE_SAVE_FAILED' }),
                     );
             },
@@ -83,13 +92,13 @@ export class GraphMigrationTab extends BaseTab {
             create: () => this.create(),
             save: async (json: string) => {
                 if (!vscode.workspace.isTrusted) throw new Error(l10n.t('Workspace trust is required.'));
-                if (this.activeOperation || this.bridge.active)
+                if (this.activeOperation || this.bridge.active || this.reviewingPreparation)
                     throw new Error(l10n.t('Pause or cancel the worker before changing inputs.'));
                 await this.service.save(graphProjectSchema.parse(JSON.parse(json)));
             },
             saveSetup: async (value) => {
                 if (!vscode.workspace.isTrusted) throw new Error(l10n.t('Workspace trust is required.'));
-                if (this.activeOperation || this.bridge.active)
+                if (this.activeOperation || this.bridge.active || this.reviewingPreparation)
                     throw new Error(l10n.t('Pause or cancel the worker before changing inputs.'));
                 const project = await applySetup(await this.service.load(), value, await this.service.root());
                 await this.service.save(project);
@@ -103,6 +112,12 @@ export class GraphMigrationTab extends BaseTab {
             credentials: () => this.credentials(),
             cancel: () => this.stop('cancelled'),
             pause: () => this.stop('paused'),
+            preparation: async () => {
+                if (!vscode.workspace.isTrusted) throw new Error(l10n.t('Workspace trust is required.'));
+                return discoverPreparation(this.workspacePath, await this.service.load());
+            },
+            prepareSource: (value) => this.prepareSource(value),
+            resumePreparation: () => this.resumePreparation(),
         };
         const attached = attachTrpc(panel, context, graphAppRouter, graphCallerFactory);
         this.disposables.push(attached.disposable, this.bridge);
@@ -112,6 +127,74 @@ export class GraphMigrationTab extends BaseTab {
         this.preparationStop = status;
         if (status === 'paused') this.bridge.pause();
         else this.bridge.cancel();
+    }
+    private async prepareSource(value: PrepareSource): Promise<void> {
+        if (!vscode.workspace.isTrusted || this.activeOperation || this.bridge.active || this.reviewingPreparation)
+            throw new Error(l10n.t('Trust the workspace and pause any active operation before preparing a new run.'));
+        this.reviewingPreparation = true;
+        try {
+            const project = await this.service.load(),
+                root = await this.service.root(),
+                hash = inputHash(project);
+            const confirm = await vscode.window.showWarningMessage(
+                l10n.t(
+                    'Enumerate up to {partitions} candidate partitions using read-only requests, at most {requests} reserved attempts, {seconds} seconds and {ru} RU? Coverage is unverified until live counts reconcile. This preserves the old run and creates fresh preparation/extraction runs; old approvals and evidence will not authorize new writes.',
+                    {
+                        partitions: value.partitions.length,
+                        requests: value.maximumRequests,
+                        seconds: value.maximumDurationSeconds,
+                        ru: value.ruBudget,
+                    },
+                ),
+                { modal: true },
+                l10n.t('Start bounded read-only preparation'),
+            );
+            if (!confirm) return;
+            if (
+                !vscode.workspace.isTrusted ||
+                inputHash(await this.service.load()) !== hash ||
+                this.activeOperation ||
+                this.bridge.active
+            )
+                throw new Error(l10n.t('Project inputs changed during preparation review.'));
+            const prepared = await freshPreparation(project, root, value);
+            if (!vscode.workspace.isTrusted || inputHash(await this.service.load()) !== hash)
+                throw new Error(l10n.t('Project inputs changed while creating the local preparation plan.'));
+            await this.service.save(prepared.project);
+            this.events.emit({ type: 'project', project: prepared.project });
+            this.guidedEnumerationOutput = prepared.output;
+            await this.run('source-enumerate', '', prepared.plan, prepared.output, true);
+        } finally {
+            this.reviewingPreparation = false;
+        }
+    }
+    private async resumePreparation(): Promise<void> {
+        if (!vscode.workspace.isTrusted || this.activeOperation || this.bridge.active || this.reviewingPreparation)
+            throw new Error(l10n.t('Trust the workspace and pause owned work before resuming preparation.'));
+        this.reviewingPreparation = true;
+        try {
+            const project = await this.service.load(),
+                hash = inputHash(project);
+            const resume = (await discoverPreparation(this.workspacePath, project)).resume;
+            if (!resume)
+                throw new Error(
+                    l10n.t('No same-input preparation checkpoint with remaining reviewed capacity is available.'),
+                );
+            const confirmed = await vscode.window.showWarningMessage(
+                l10n.t(
+                    'Resume the preserved read-only enumeration within its original request, duration and RU ceilings? This does not grant additional budget or establish complete coverage.',
+                ),
+                { modal: true },
+                l10n.t('Resume bounded preparation'),
+            );
+            if (!confirmed) return;
+            if (!vscode.workspace.isTrusted || inputHash(await this.service.load()) !== hash)
+                throw new Error(l10n.t('Project inputs changed during resume review.'));
+            this.guidedEnumerationOutput = resume.output;
+            await this.run('source-enumerate', '', resume.plan, resume.output, true);
+        } finally {
+            this.reviewingPreparation = false;
+        }
     }
     static render(workspacePath: string): GraphMigrationTab {
         return new GraphMigrationTab(
@@ -468,8 +551,14 @@ export class GraphMigrationTab extends BaseTab {
             if (selected?.[0]) await ext.context.secrets.store(`graph-migration:${reference}`, selected[0].fsPath);
         }
     }
-    private async run(operation: GraphOperation, query: string, sourcePath: string, outputPath = ''): Promise<void> {
-        if (this.activeOperation || this.bridge.active)
+    private async run(
+        operation: GraphOperation,
+        query: string,
+        sourcePath: string,
+        outputPath = '',
+        reviewedPreparation = false,
+    ): Promise<void> {
+        if (this.activeOperation || this.bridge.active || (this.reviewingPreparation && !reviewedPreparation))
             throw new Error(l10n.t('A graph migration operation is already active.'));
         if (!vscode.workspace.isTrusted) throw new Error(l10n.t('Workspace trust is required.'));
         this.activeOperation = operation;
@@ -478,7 +567,20 @@ export class GraphMigrationTab extends BaseTab {
             const project = await this.service.load(),
                 root = await this.service.root();
             const projectFile = path.join(root, 'project.json'),
-                source = path.join(root, 'records.ndjson');
+                source = path.join(
+                    root,
+                    project.phases.extract?.status === 'succeeded'
+                        ? (project.artifacts
+                              .slice()
+                              .reverse()
+                              .find(
+                                  (a) =>
+                                      a.ownerRunId === project.runId &&
+                                      project.phases.extract.evidence.includes(a.relativePath) &&
+                                      /(?:^|\/)records(?:-[a-f0-9-]+)?\.ndjson$/u.test(a.relativePath),
+                              )?.relativePath ?? 'records.ndjson')
+                        : 'records.ndjson',
+                );
             await createOwnedDirectory(root, 'artifacts');
             let command: string = operation,
                 args: string[] = [];
@@ -518,7 +620,15 @@ export class GraphMigrationTab extends BaseTab {
                     break;
                 }
                 case 'preflight':
-                    args = [projectFile];
+                    args = [
+                        projectFile,
+                        path.join(
+                            ext.context.extensionPath,
+                            'resources',
+                            'graph-migration',
+                            'cosmos-gremlin-source-0.1.0.jar',
+                        ),
+                    ];
                     break;
                 case 'target-probe':
                     command = 'preflight';
@@ -541,7 +651,7 @@ export class GraphMigrationTab extends BaseTab {
                     args = [
                         'derive',
                         projectFile,
-                        'records.ndjson',
+                        path.relative(root, source).replaceAll('\\', '/'),
                         `artifacts/fixtures-${globalThis.crypto.randomUUID()}`,
                         this.graphs(project)[0],
                     ];
@@ -601,7 +711,28 @@ export class GraphMigrationTab extends BaseTab {
                     break;
                 case 'load':
                 case 'resume':
-                    args = [projectFile, source, path.join(root, 'artifacts')];
+                    {
+                        let state = path.join(root, 'artifacts', `state-${project.runId}`);
+                        try {
+                            const legacy = z
+                                .object({ runId: z.string() })
+                                .passthrough()
+                                .parse(
+                                    JSON.parse(
+                                        (
+                                            await readBounded(
+                                                await ownedPath(root, 'artifacts/checkpoint.json'),
+                                                1048576,
+                                            )
+                                        ).toString('utf8'),
+                                    ),
+                                );
+                            if (legacy.runId === project.runId) state = path.join(root, 'artifacts');
+                        } catch (error) {
+                            if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+                        }
+                        args = [projectFile, source, state];
+                    }
                     break;
                 case 'validate':
                     args = [projectFile, source];
@@ -665,7 +796,7 @@ export class GraphMigrationTab extends BaseTab {
                             'cosmos-gremlin-source-0.1.0.jar',
                         ),
                         path.join(root, project.source.identityManifest),
-                        output ? path.join(root, output) : source,
+                        output ? path.join(root, output) : path.join(root, `records-${project.runId}.ndjson`),
                     ];
                     break;
                 }
@@ -682,6 +813,7 @@ export class GraphMigrationTab extends BaseTab {
                 inputHash: inputHash(project),
             };
             await this.service.save(project);
+            this.events.emit({ type: 'project', project });
             if (this.preparationStop) {
                 await this.finish(this.preparationStop);
                 return;
@@ -690,7 +822,39 @@ export class GraphMigrationTab extends BaseTab {
             if (this.preparationStop) this.stop(this.preparationStop);
         } catch (error) {
             try {
-                await this.finish('failed');
+                const project = await this.service.load(),
+                    root = await this.service.root(),
+                    diagnostic = hostDiagnostic(error, operation);
+                this.activeInputHash ??= inputHash(project);
+                const relativePath = `artifacts/host-${operation}-${globalThis.crypto.randomUUID()}.json`;
+                await writeNewArtifact(
+                    root,
+                    relativePath,
+                    JSON.stringify(
+                        {
+                            schemaVersion: 1,
+                            runId: project.runId,
+                            inputHash: this.activeInputHash,
+                            operation,
+                            status: 'blocked',
+                            sensitiveArtifact: true,
+                            result: diagnostic,
+                        },
+                        null,
+                        2,
+                    ),
+                );
+                await this.finish({
+                    status: 'blocked',
+                    inputHash: this.activeInputHash,
+                    diagnostics: [diagnostic],
+                    artifact: {
+                        relativePath,
+                        sha256: await fileHash(await ownedPath(root, relativePath)),
+                        ownerRunId: project.runId,
+                        sensitive: true,
+                    },
+                });
             } catch {
                 this.events.emit({ type: 'diagnostic', code: 'STATE_SAVE_FAILED' });
             }
@@ -888,10 +1052,37 @@ export class GraphMigrationTab extends BaseTab {
             blockers:
                 status === 'succeeded'
                     ? []
-                    : [l10n.t('Review the worker diagnostics and current evidence before continuing.')],
+                    : safeDiagnostics(result).length
+                      ? safeDiagnostics(result).map((d) => `${d.stage} (${d.code}): ${d.remediation}`)
+                      : [l10n.t('Review the worker diagnostics and current evidence before continuing.')],
         };
         await this.service.save(project);
-        this.events.emit({ type: 'project', project });
+        if (
+            operation === 'source-enumerate' &&
+            this.guidedEnumerationOutput &&
+            status === 'succeeded' &&
+            previousHash === inputHash(project)
+        ) {
+            try {
+                const adopted = await adoptEnumeration(
+                    project,
+                    await this.service.root(),
+                    this.guidedEnumerationOutput,
+                );
+                await this.service.save(adopted);
+                this.events.emit({ type: 'project', project: adopted });
+            } catch {
+                project.phases[operation].status = 'blocked';
+                project.phases[operation].blockers = [
+                    l10n.t(
+                        'Inventory adoption could not verify ownership, plan/hash or persistence. Preserve the enumeration artifacts and restart guided Prepare; extraction is not authorized.',
+                    ),
+                ];
+                await this.service.save(project);
+                this.events.emit({ type: 'project', project });
+            }
+        } else this.events.emit({ type: 'project', project });
+        this.guidedEnumerationOutput = undefined;
         this.activeOperation = undefined;
         this.activeInputHash = undefined;
     }

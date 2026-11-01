@@ -34,9 +34,11 @@ import {
     type GraphOperation,
 } from '../../../panels/graphMigration/graphRouter';
 import { type GraphProject } from '../../../services/graphMigration/contracts';
+import { safeDiagnostics } from '../../../services/graphMigration/diagnostics';
 import { graphEvidencePhases } from '../../../services/graphMigration/evidence';
 import { type SetupSuggestions } from '../../../services/graphMigration/setup';
 import { GraphConnectionSetup } from './GraphConnectionSetup';
+import { GraphPreparation } from './GraphPreparation';
 
 const useStyles = makeStyles({
     root: {
@@ -260,7 +262,7 @@ const useStyles = makeStyles({
 });
 
 const operations = (): [GraphOperation, string][] => [
-    ['preflight', l10n.t('Check prerequisites')],
+    ['preflight', l10n.t('Check read-only connections')],
     ['target-probe', l10n.t('Probe approved disposable target graph')],
     ['assess', l10n.t('Assess application')],
     ['source-compatibility', l10n.t('Probe read-only source compatibility')],
@@ -339,10 +341,13 @@ export function GraphMigrationWorkbench() {
         try {
             await work();
         } catch {
-            const message = l10n.t(
-                'The operation could not complete. Check the project schema, configured secret references, scoped approvals and worker artifacts.',
+            setDiagnostic(
+                (current) =>
+                    current ||
+                    l10n.t(
+                        'The operation could not complete. Review the specific saved phase diagnostic; connection and inventory failures are separate.',
+                    ),
             );
-            setDiagnostic(message);
             setBusy(false);
         }
     }, []);
@@ -404,6 +409,9 @@ export function GraphMigrationWorkbench() {
                     );
                 } else if (event.message.type === 'result' || event.message.type === 'error') {
                     setProgress(l10n.t('Worker operation finished. Review the phase status and evidence.'));
+                    const details = safeDiagnostics(event.message.payload);
+                    if (details.length)
+                        setDiagnostic(details.map((d) => `${d.stage} (${d.code}): ${d.remediation}`).join('\n'));
                 }
             },
             onError: () => {
@@ -460,6 +468,11 @@ export function GraphMigrationWorkbench() {
                     <StatusIcon aria-hidden={true} />
                     {phaseLabels()[status]}
                 </span>
+                {project?.phases[operation]?.blockers.map((blocker, index) => (
+                    <p key={index} className={styles.notice}>
+                        {blocker}
+                    </p>
+                ))}
                 {showActions && (
                     <div className={styles.operationActions}>
                         <div className={styles.actionButtons}>
@@ -634,6 +647,7 @@ export function GraphMigrationWorkbench() {
                                 })
                             }
                         />
+                        <GraphPreparation project={project} disabled={disabled} action={action} run={run} />
                         <div className={styles.actionButtons}>
                             <Button disabled={disabled} onClick={() => void action(() => client.credentials.mutate())}>
                                 {l10n.t('Store credentials securely')}

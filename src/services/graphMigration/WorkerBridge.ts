@@ -8,6 +8,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { fileHash, readBounded } from './artifacts';
 import { inputHash, workerMessageSchema, type GraphProject, type WorkerMessage } from './contracts';
+import { GraphDiagnosticError } from './diagnostics';
 
 export class WorkerBridge implements vscode.Disposable {
     private process: ChildProcessWithoutNullStreams | undefined;
@@ -45,14 +46,14 @@ export class WorkerBridge implements vscode.Disposable {
             !('workerSha256' in manifest) ||
             (await fileHash(jar)) !== manifest.workerSha256
         ) {
-            throw new Error('Packaged graph worker integrity check failed');
+            throw new GraphDiagnosticError('WORKER_PACKAGE_INVALID', 'worker-integrity');
         }
         if (
             !('sourceSha256' in manifest) ||
             (await fileHash(path.join(this.resourceDirectory, 'cosmos-gremlin-source-0.1.0.jar'))) !==
                 manifest.sourceSha256
         )
-            throw new Error('Packaged source adapter integrity check failed');
+            throw new GraphDiagnosticError('WORKER_PACKAGE_INVALID', 'source-adapter-integrity');
         if (
             operation === 'test' &&
             arguments_[0] === 'benchmark' &&
@@ -93,7 +94,9 @@ export class WorkerBridge implements vscode.Disposable {
         if (operation === 'test' && arguments_[0] === 'fixtures')
             for (const scope of ['fixture-test', 'application-write', 'application-delete']) scopes.add(scope);
         const references = [
-            ...(sourceOperation ? [project.source?.authenticationRef, project.source?.customCaRef] : []),
+            ...(sourceOperation || (operation === 'preflight' && arguments_[0] !== 'probe')
+                ? [project.source?.authenticationRef, project.source?.customCaRef]
+                : []),
             ...(targetOperation ? [project.target?.authenticationRef, project.target?.customCaRef] : []),
             ...project.approvals
                 .filter((approval) => scopes.has(approval.operation))
@@ -102,7 +105,13 @@ export class WorkerBridge implements vscode.Disposable {
         for (const reference of references) {
             if (!reference) continue;
             const value = (await this.secrets.get(`graph-migration:${reference}`)) ?? process.env[reference.slice(4)];
-            if (!value) throw new Error('A configured credential reference is unavailable');
+            if (!value) {
+                if (operation === 'preflight' && arguments_[0] !== 'probe') continue;
+                throw new GraphDiagnosticError(
+                    'CREDENTIAL_REFERENCE_UNAVAILABLE',
+                    sourceOperation ? 'source-credential' : 'target-credential',
+                );
+            }
             env[reference.slice(4)] = value;
         }
         this.runId = project.runId;

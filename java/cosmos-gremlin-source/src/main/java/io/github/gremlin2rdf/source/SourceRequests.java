@@ -75,7 +75,7 @@ final class SourceRequests implements AutoCloseable {
     Object execute(Attempt request) throws Exception {
         for (int attempt = 0; ; attempt++) {
             if (budget != null && (!chargeObserved || charge.compareTo(budget) >= 0))
-                throw new IOException("No remaining observable source RU budget");
+                throw new Diagnostics.Failure(chargeObserved ? "SOURCE_RU_BUDGET_EXHAUSTED" : "SOURCE_RU_UNOBSERVABLE","source-request");
             try {
                 inFlight = true; persist();
                 Response response = request.run(); account(response.attributes());
@@ -106,7 +106,7 @@ final class SourceRequests implements AutoCloseable {
         }
         persist();
         if (budget != null && (!chargeObserved || charge.compareTo(budget) > 0))
-            throw new IOException("Source RU budget exceeded or cannot be enforced with missing diagnostics");
+            throw new Diagnostics.Failure(chargeObserved ? "SOURCE_RU_BUDGET_EXHAUSTED" : "SOURCE_RU_UNOBSERVABLE","source-request");
     }
     long retries() { return retries; }
     String charge() { return chargeObserved ? charge.toPlainString() : "not-observed"; }

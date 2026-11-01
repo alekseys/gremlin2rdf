@@ -21,6 +21,11 @@ public final class Main {
         System.exit(exit);
     }
     public static Map<String, Object> diagnostic(Exception e) {
+        if (e instanceof Diagnostics.Failure || e instanceof Project.CredentialUnavailable)
+            return Diagnostics.failure(e,"execution");
+        if (!(e instanceof Gremlin.Unsupported || e instanceof PopulationPlan.UnsupportedValue ||
+            e instanceof Validation.InputChanged || TargetHttp.responseExceeded(e) || TargetHttp.authorizationDenied(e)))
+            return Diagnostics.failure(e,"execution");
         // Never echo exception messages: library errors may contain endpoint credentials, queries or records.
         return Map.of("status", "blocked", "code", e instanceof Gremlin.Unsupported unsupported ? unsupported.code()
             : e instanceof PopulationPlan.UnsupportedValue ? "SOURCE_POPULATION_INT64_RANGE"
@@ -28,7 +33,7 @@ public final class Main {
             : TargetHttp.responseExceeded(e) ? "TARGET_RESPONSE_BOUND"
             : TargetHttp.authorizationDenied(e) ? "TARGET_ENDPOINT_AUTHORIZATION"
             : e instanceof SecurityException ? "AUTHORIZATION_REQUIRED" : e instanceof java.io.IOException ? "ARTIFACT_OR_STATE_ERROR"
-            : "OPERATION_FAILED", "remediation", e instanceof Gremlin.Unsupported ? e.getMessage()
+            : "OPERATION_CAUSE_UNKNOWN", "stage","execution", "remediation", e instanceof Gremlin.Unsupported ? "Review the unsupported construct in the local assessment and use the documented supported Gremlin subset."
             : e instanceof SecurityException ? "Supply a valid scoped authorization bound to the current inputs."
             : TargetHttp.authorizationDenied(e) ? "Renew endpoint credentials through approved secret references and grant least-privilege read/update access for the exact run graphs. Verify ambiguous batch markers before resuming; do not retry denied operations."
             : e instanceof Validation.InputChanged ? "Select an unchanged canonical input or re-extract it, then regenerate validation against the current checksum."
@@ -36,7 +41,7 @@ public final class Main {
             : "Inspect sanitized diagnostics; verify configuration, checkpoint integrity and endpoint capabilities.");
     }
     private static Object worker(String command, JsonNode payload, Engine engine) throws Exception {
-        var allowed = Set.of("preflight", "source-enumerate", "source-compatibility", "source-populate", "source-cleanup", "source-recipes", "assess", "mapping", "synthetic", "extract", "load", "resume", "validate",
+        var allowed = Set.of("preflight", "source-check", "source-enumerate", "source-compatibility", "source-populate", "source-cleanup", "source-recipes", "assess", "mapping", "synthetic", "extract", "load", "resume", "validate",
             "translate", "rewrite", "test", "publish", "cleanup", "report");
         if (!allowed.contains(command)) throw new Gremlin.Unsupported("WORKER_OPERATION", "Unsupported worker operation");
         JsonNode args = payload.path("arguments");
@@ -76,7 +81,9 @@ public final class Main {
         } else SafeFiles.atomic(artifact, Map.of("schemaVersion", 1, "runId", project.runId(), "inputHash", project.inputHash(),
             "operation", command, "status", status, "sensitiveArtifact", true, "result", result));
         return Map.of("status", status, "inputHash", project.inputHash(), "artifact", Map.of("relativePath", relative,
-            "sha256", SafeFiles.fileHash(artifact), "ownerRunId", project.runId(), "sensitive", true), "artifacts", produced);
+            "sha256", SafeFiles.fileHash(artifact), "ownerRunId", project.runId(), "sensitive", true), "artifacts", produced,
+            "diagnostics", result.path("diagnostics").isArray() ? result.path("diagnostics")
+                : result.has("code") ? List.of(result) : List.of());
     }
     private static List<Map<String, Object>> producedArtifacts(String[] args, JsonNode result, Project project) throws IOException {
         List<Path> paths = new ArrayList<>();
@@ -258,13 +265,14 @@ public final class Main {
                 require(args, 3); var project = project(args[1]);
                 try (var sink = new Sink(project)) { yield Validation.validate(project, Path.of(args[2]), sink, engine); }
             }
-            case "source-enumerate", "extract", "source-compatibility", "source-populate", "source-cleanup", "source-recipes" -> {
+            case "source-check", "source-enumerate", "extract", "source-compatibility", "source-populate", "source-cleanup", "source-recipes" -> {
                 require(args, 5); var project = project(args[1]);
                 Path sourceJar = Path.of(args[2]).toRealPath(), output = Path.of(args[4]);
                 boolean probe = args[0].equals("source-compatibility");
                 boolean mutation = Set.of("source-populate", "source-cleanup").contains(args[0]);
                 boolean recipes = args[0].equals("source-recipes");
                 boolean enumerate = args[0].equals("source-enumerate");
+                boolean check = args[0].equals("source-check");
                 PopulationPlan populationPlan = null;
                 if (mutation || recipes) {
                     Path root = Path.of(args[1]).toRealPath().getParent();
@@ -287,7 +295,7 @@ public final class Main {
                     throw new IllegalArgumentException("Pinned source adapter required");
                 var process = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin",
                     System.getProperty("os.name").startsWith("Windows") ? "java.exe" : "java").toString(),
-                    "-Xmx256m", "-jar", sourceJar.toString(), enumerate ? "enumerate" : probe ? "probe" : recipes ? "recipes"
+                    "-Xmx256m", "-jar", sourceJar.toString(), check ? "check" : enumerate ? "enumerate" : probe ? "probe" : recipes ? "recipes"
                         : mutation ? args[0].equals("source-populate") ? "populate" : "source-cleanup" : "extract",
                     args[1], args[3], args[4], "--parent-owned")
                     .redirectError(ProcessBuilder.Redirect.INHERIT).start();
@@ -311,8 +319,22 @@ public final class Main {
                                 : "Resume extraction into the same owned output; confirmed prefixes are verified before append.");
                     }
                 }
-                var acknowledgement = Json.MAPPER.readTree(reply.get(2, java.util.concurrent.TimeUnit.SECONDS));
-                if (acknowledgement == null || !acknowledgement.isObject()) throw new IOException("Source did not return a bounded acknowledgement");
+                JsonNode acknowledgement;
+                try { acknowledgement = Json.MAPPER.readTree(reply.get(2, java.util.concurrent.TimeUnit.SECONDS)); }
+                catch (com.fasterxml.jackson.core.JsonProcessingException failure) {
+                    throw new Diagnostics.Failure("SOURCE_PROTOCOL_INVALID","source-worker-protocol");
+                }
+                if (acknowledgement == null || !acknowledgement.isObject())
+                    throw new Diagnostics.Failure("SOURCE_PROTOCOL_INVALID","source-worker-protocol");
+                if (process.exitValue()!=0 && acknowledgement.has("code"))
+                    throw Diagnostics.acknowledged(acknowledgement.path("code").asText(),
+                        check ? "source-connectivity" : enumerate ? "source-enumeration" : "source-operation");
+                if (check) {
+                    if (process.exitValue()!=0 || !acknowledgement.path("sourceReadAccess").asBoolean() ||
+                        !acknowledgement.path("driverVersion").asText().equals("3.4.13"))
+                        throw new Diagnostics.Failure("ENDPOINT_PROVIDER_FAILURE","source-connectivity");
+                    yield acknowledgement;
+                }
                 if (enumerate) {
                     Path directory = SafeFiles.resolve(Path.of(args[1]).toRealPath().getParent(), args[4]);
                     Path manifest = SafeFiles.resolve(directory, "manifest.json");
@@ -365,37 +387,18 @@ public final class Main {
                     var project = project(args[2]);
                     try (var sink = new Sink(project)) { yield TargetProbe.run(project, args[3], sink); }
                 }
-                require(args, 2); var project = project(args[1]);
-                List<String> blockers = new ArrayList<>();
-                boolean target = false;
-                Map<String, Object> visibility = new TreeMap<>();
-                if (project.target() == null) blockers.add("Explicit target endpoint configuration not supplied");
-                else try (var sink = new Sink(project)) {
-                    target = sink.queryAccess();
-                    if (!target) blockers.add("Target did not confirm query access");
-                    for (String role : List.of("canonical", "derived", "metadata", "validation")) {
-                        var query = new org.apache.jena.query.ParameterizedSparqlString("ASK { GRAPH ?graph { ?s ?p ?o } }");
-                        query.setIri("graph", project.graph(role));
-                        visibility.put(role, Map.of("graph", project.graph(role),
-                            "containsVisibleData", sink.connection().queryAsk(query.asQuery()),
-                            "emptyGraphAuthorization", "not-established-by-read-only-query"));
+                if (args.length!=2 && args.length!=3) throw new IllegalArgumentException("Preflight project and optional packaged source adapter required");
+                var project=project(args[1]);Path root=Path.of(args[1]).toRealPath().getParent();
+                engine.deadline(project.limits().maximumOperationMillis()==null ? 60000 : project.limits().maximumOperationMillis());
+                yield Preflight.run(project,root,new Preflight.Connections() {
+                    public boolean target(Project p) throws Exception { try(var sink=new Sink(p)){return sink.queryAccess();} }
+                    public Map<String,Object> source(Project p) throws Exception {
+                        Project.secret(p.source().authenticationRef());
+                        if (args.length!=3) throw new Diagnostics.Failure("SOURCE_ADAPTER_REQUIRED","source-connectivity");
+                        var result=Json.MAPPER.valueToTree(execute(new String[]{"source-check",args[1],args[2],"",""},engine));
+                        return Json.MAPPER.convertValue(result,new com.fasterxml.jackson.core.type.TypeReference<Map<String,Object>>(){});
                     }
-                }
-                Path root = Path.of(args[1]).toRealPath().getParent();
-                long free = Files.getFileStore(root).getUsableSpace();
-                if (free < project.limits().minimumFreeDiskBytes())
-                    blockers.add("Worker artifact filesystem has insufficient free space");
-                if (Runtime.version().feature() < 21) blockers.add("Java 21 or newer is required");
-                try { SourceCompatibility.read(project, Path.of(args[1]).toRealPath().getParent()); }
-                catch (java.io.IOException | IllegalArgumentException e) {
-                    blockers.add("Current owned and checksummed live source compatibility observations are required");
-                }
-                if (project.consistency().equals("best-effort")) blockers.add("Strict equivalence prohibited for writable best-effort source");
-                yield Map.of("status", blockers.isEmpty() ? "succeeded" : "blocked", "targetQueryAccess", target,
-                    "targetWriteAccess", "not-executed-without-authorization", "blockers", blockers,
-                    "java", Runtime.version().feature(), "availableArtifactDiskBytes", free,
-                    "requiredArtifactDiskBytes", project.limits().minimumFreeDiskBytes(),
-                    "namedGraphVisibility", visibility, "connectivityLocation", "current-worker-process");
+                });
             }
             case "authorize" -> {
                 require(args, 7); var project = project(args[1]);

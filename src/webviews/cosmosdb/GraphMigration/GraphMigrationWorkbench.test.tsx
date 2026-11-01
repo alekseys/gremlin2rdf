@@ -111,6 +111,37 @@ function renderWorkbench() {
     return rendered;
 }
 describe('graph workbench boundaries and keyboard access', () => {
+    it('shows a safe failed substep and concrete remedy from the worker acknowledgement', async () => {
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        await screen.findByRole('button', { name: 'Check read-only connections' });
+        act(() =>
+            listener({
+                type: 'worker',
+                message: {
+                    protocolVersion: 1,
+                    type: 'result',
+                    runId: 'fixture',
+                    operationId: 'owned',
+                    sequence: 1,
+                    timestamp: new Date().toISOString(),
+                    phase: 'complete',
+                    payload: {
+                        status: 'blocked',
+                        diagnostics: [
+                            {
+                                status: 'blocked',
+                                code: 'ENDPOINT_AUTHENTICATION',
+                                stage: 'target-connectivity',
+                                remediation: 'Renew the configured credential securely.',
+                            },
+                        ],
+                    },
+                },
+            }),
+        );
+        expect(await screen.findByRole('alert')).toHaveTextContent('target-connectivity (ENDPOINT_AUTHENTICATION)');
+        expect(screen.getByRole('alert')).toHaveTextContent('Renew the configured credential securely.');
+    });
     it('keeps full JSON collapsed by default and saves the visible connection fields independently', async () => {
         mocks.load.mockResolvedValue({
             project,

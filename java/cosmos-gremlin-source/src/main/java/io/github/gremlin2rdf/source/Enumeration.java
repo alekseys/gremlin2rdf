@@ -126,9 +126,10 @@ final class Enumeration {
             }
         }
         long vertices = count(GraphRecord.Kind.vertex, null), edges = count(GraphRecord.Kind.edge, null);
-        if (vertices != state.vertices() || edges != state.edges()
-            || vertices != state.initialVertices() || edges != state.initialEdges())
-            throw new IOException("Partition enumeration does not reconcile complete source counts");
+        if (vertices != state.initialVertices() || edges != state.initialEdges())
+            throw new Diagnostics.Failure("SOURCE_COUNTS_CHANGED","source-enumeration");
+        if (vertices != state.vertices() || edges != state.edges())
+            throw new Diagnostics.Failure("SOURCE_PARTITION_COVERAGE","source-enumeration");
         Map<GraphRecord.Value, long[]> inventory = new HashMap<>();
         for (GraphRecord.Value partition : plan.partitions()) inventory.put(partition, new long[2]);
         for (int i = 0; i < state.segments(); i++) {
@@ -143,7 +144,7 @@ final class Enumeration {
         for (GraphRecord.Value partition : plan.partitions()) {
             if (count(GraphRecord.Kind.vertex, partition) != inventory.get(partition)[0]
                 || count(GraphRecord.Kind.edge, partition) != inventory.get(partition)[1])
-                throw new IOException("Partition source counts changed or coverage is incomplete");
+                throw new Diagnostics.Failure("SOURCE_COUNTS_CHANGED","source-enumeration");
         }
         budget();
         Path output = SafeFiles.resolve(directory, "identities.ndjson");
@@ -203,12 +204,12 @@ final class Enumeration {
     private void budget() throws IOException {
         if (elapsedBase + (System.nanoTime() - started) / 1000000 >= plan.maximumDurationMillis()
             || Files.getFileStore(directory).getUsableSpace() < project.limits().minimumFreeDiskBytes())
-            throw new IOException("Enumeration duration or disk budget exhausted; preserve checkpoint");
+            throw new Diagnostics.Failure("SOURCE_ENUMERATION_DURATION_LIMIT","source-enumeration");
     }
     private void request() throws IOException {
         budget();
         long reserved = project.limits().maxRetries() + 1L;
-        if (reserved > plan.maximumRequests() - state.requests()) throw new IOException("Enumeration request budget exhausted");
+        if (reserved > plan.maximumRequests() - state.requests()) throw new Diagnostics.Failure("SOURCE_ENUMERATION_REQUEST_LIMIT","source-enumeration");
         state = new State(1, state.runId(), state.inputHash(), state.planHash(), state.partition(), state.vertexCursor(),
             state.pendingVertices(), state.owner(), state.edgeCursor(), state.vertices(), state.edges(), state.segments(),
             state.requests() + reserved, elapsed(), state.initialVertices(), state.initialEdges(), "").signed();
