@@ -27,7 +27,7 @@ import {
 } from '@fluentui/react-icons';
 import { useTrpcClient } from '@microsoft/vscode-ext-webview/react';
 import * as l10n from '@vscode/l10n';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     type GraphAppRouter,
     type GraphEvidencePhase,
@@ -321,6 +321,7 @@ export function GraphMigrationWorkbench() {
     const { announce } = useAnnounce();
     const [project, setProject] = useState<GraphProject | null>(null);
     const [currentInputHash, setCurrentInputHash] = useState<string>();
+    const preparationReviewButton = useRef<HTMLButtonElement>(null);
     const [suggestions, setSuggestions] = useState<SetupSuggestions>();
     const [configuration, setConfiguration] = useState('');
     const [trusted, setTrusted] = useState(false);
@@ -456,11 +457,15 @@ export function GraphMigrationWorkbench() {
         });
         await reload();
     };
-    const corePhases = operations().filter(
-        ([operation]) =>
-            coreOperations.has(operation) &&
-            (operation !== 'source-enumerate' || !project || !hasFidelityInventory(project)),
-    );
+    const operationLabels = new Map(operations());
+    const corePhases = workflowGroups
+        .flatMap((group) => group.phases)
+        .map((operation): [GraphOperation, string] => [operation, operationLabels.get(operation)!])
+        .filter(
+            ([operation]) =>
+                coreOperations.has(operation) &&
+                (operation !== 'source-enumerate' || !project || !hasFidelityInventory(project)),
+        );
     const nextPhase =
         corePhases.find(([operation]) => project?.phases[operation]?.status === 'running') ??
         corePhases.find(([operation]) => project?.phases[operation]?.status !== 'succeeded');
@@ -698,7 +703,13 @@ export function GraphMigrationWorkbench() {
                                 })
                             }
                         />
-                        <GraphPreparation project={project} disabled={disabled} action={action} run={run} />
+                        <GraphPreparation
+                            project={project}
+                            disabled={disabled}
+                            action={action}
+                            run={run}
+                            reviewButtonRef={preparationReviewButton}
+                        />
                         <div className={styles.actionButtons}>
                             <Button disabled={disabled} onClick={() => void action(() => client.credentials.mutate())}>
                                 {l10n.t('Store credentials securely')}
@@ -883,13 +894,21 @@ export function GraphMigrationWorkbench() {
                         {nextPhase ? (
                             <section aria-label={l10n.t('Next unfinished migration step')}>
                                 <h3>{l10n.t('Next unfinished step')}</h3>
-                                {renderOperation(nextPhase)}
+                                {renderOperation(nextPhase, nextPhase[0] !== 'source-enumerate')}
                                 {nextPhase[0] === 'source-enumerate' && (
-                                    <p>
-                                        {l10n.t(
-                                            'Review partition values and budgets in the enumeration plan. Plan and output paths are in advanced configuration.',
-                                        )}
-                                    </p>
+                                    <>
+                                        <p>
+                                            {l10n.t(
+                                                'Use guided Prepare to review partition values and request, duration and RU ceilings before enumeration. Resume preserved preparation when available; the advanced Run requires an existing explicit plan.',
+                                            )}
+                                        </p>
+                                        <Button
+                                            disabled={disabled}
+                                            onClick={() => preparationReviewButton.current?.focus()}
+                                        >
+                                            {l10n.t('Review guided read-only preparation')}
+                                        </Button>
+                                    </>
                                 )}
                             </section>
                         ) : (

@@ -211,6 +211,17 @@ it.skipIf(!process.env.GRAPH_WORKER_SMOKE)(
             { encoding: 'utf8', timeout: 10000, windowsHide: true },
         );
         expect(probe.status).toBe(0);
+        const missingPlan = spawnSync(
+            path.join(jdk, 'bin', `java${executableSuffix}`),
+            ['-jar', jar, 'enumerate', file, 'enumeration-plan.json', 'artifacts/missing-plan-output'],
+            { encoding: 'utf8', timeout: 10000, windowsHide: true },
+        );
+        expect(missingPlan.status).toBe(2);
+        expect(JSON.parse(missingPlan.stdout)).toMatchObject({
+            status: 'blocked',
+            code: 'SOURCE_ENUMERATION_PLAN_MISSING',
+            stage: 'source-enumeration-plan',
+        });
         const prepared = await freshPreparation(configured, run, {
             partitions: ['fixture'],
             maximumRequests: 20,

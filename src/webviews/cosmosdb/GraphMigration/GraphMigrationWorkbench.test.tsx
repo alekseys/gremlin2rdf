@@ -27,6 +27,9 @@ const mocks = vi.hoisted(() => ({
     openArtifact: vi.fn(),
     importEvidence: vi.fn(),
     subscribe: vi.fn(),
+    preparation: vi.fn(),
+    prepareSource: vi.fn(),
+    resumePreparation: vi.fn(),
 }));
 vi.mock('@microsoft/vscode-ext-webview/react', () => ({
     useTrpcClient: () => client,
@@ -44,6 +47,9 @@ const client = {
     openArtifact: { mutate: mocks.openArtifact },
     importEvidence: { mutate: mocks.importEvidence },
     events: { subscribe: mocks.subscribe },
+    preparation: { query: mocks.preparation },
+    prepareSource: { mutate: mocks.prepareSource },
+    resumePreparation: { mutate: mocks.resumePreparation },
 };
 const project = graphProjectSchema.parse({
     schemaVersion: 1,
@@ -83,6 +89,41 @@ const project = graphProjectSchema.parse({
     artifacts: [],
 });
 let listener: (event: GraphEvent) => void;
+function bootstrapProject() {
+    const source = {
+        scope: 'fixture',
+        host: 'localhost',
+        port: 443,
+        database: 'db',
+        container: 'graph',
+        partitionKeyPath: '/pk',
+        authenticationRef: null,
+        extractionStrategy: 'verified-identity-manifest',
+        identityManifest: 'identities.ndjson',
+        identityManifestHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+        compatibilityEvidence: 'artifacts/fidelity.json',
+        ruBudget: '1000',
+        customCaRef: null,
+        syntheticTestContainer: false,
+    };
+    const configured = graphProjectSchema.parse({ ...project, source });
+    const passed = { status: 'succeeded', inputHash: inputHash(configured), evidence: [], blockers: [] };
+    return graphProjectSchema.parse({
+        ...configured,
+        phases: {
+            preflight: passed,
+            assess: passed,
+            mapping: passed,
+            'source-enumerate': {
+                status: 'blocked',
+                inputHash: inputHash(configured),
+                evidence: [],
+                blockers: ['source-operation (ARTIFACT_MISSING): Missing local artifact.'],
+            },
+            'source-compatibility': { status: 'stale', inputHash: '0'.repeat(64), evidence: [], blockers: [] },
+        },
+    });
+}
 beforeEach(() => {
     vi.clearAllMocks();
     mocks.load.mockResolvedValue({ project, trusted: true });
@@ -111,6 +152,67 @@ function renderWorkbench() {
     return rendered;
 }
 describe('graph workbench boundaries and keyboard access', () => {
+    it('routes the next enumeration step to guided review and preserved resume, never the default raw plan', async () => {
+        const current = bootstrapProject();
+        mocks.load.mockResolvedValue({ project: current, trusted: true, currentInputHash: inputHash(current) });
+        mocks.preparation.mockResolvedValue({
+            partitions: ['fixture'],
+            origins: [],
+            notices: [],
+            coverage: 'unverified-candidates',
+            resume: { plan: 'artifacts/enumeration-plan-fixture.json', output: 'artifacts/source-enumeration-fixture' },
+        });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        const next = await screen.findByRole('region', { name: 'Next unfinished migration step' });
+        expect(within(next).getByRole('heading', { name: 'Enumerate read-only source identities' })).toBeVisible();
+        expect(
+            within(next).queryByRole('button', { name: 'Run for Enumerate read-only source identities' }),
+        ).toBeNull();
+        const review = within(next).getByRole('button', { name: 'Review guided read-only preparation' });
+        expect(review).toHaveTextContent('Review guided read-only preparation');
+        await userEvent.setup().click(review);
+        const find = screen.getByRole('button', { name: 'Find partition candidates' });
+        expect(find).toHaveFocus();
+        expect(mocks.run).not.toHaveBeenCalled();
+        await userEvent.setup().click(find);
+        await userEvent
+            .setup()
+            .click(await screen.findByRole('button', { name: 'Resume preserved read-only preparation' }));
+        expect(mocks.resumePreparation).toHaveBeenCalledOnce();
+        expect(mocks.prepareSource).not.toHaveBeenCalled();
+        expect(mocks.run).not.toHaveBeenCalled();
+    });
+    it('keeps bounded preparation disabled until candidate, ceilings and stable-source review are supplied', async () => {
+        mocks.load.mockResolvedValue({ project: bootstrapProject(), trusted: true });
+        mocks.preparation.mockResolvedValue({
+            partitions: ['fixture'],
+            origins: [],
+            notices: [],
+            coverage: 'unverified-candidates',
+        });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        await userEvent.setup().click(await screen.findByRole('button', { name: 'Find partition candidates' }));
+        const start = await screen.findByRole('button', { name: 'Start bounded read-only preparation' });
+        expect(start).toBeDisabled();
+        await userEvent.setup().clear(screen.getByRole('spinbutton', { name: 'Maximum reserved request attempts' }));
+        await userEvent
+            .setup()
+            .type(screen.getByRole('spinbutton', { name: 'Maximum reserved request attempts' }), '20');
+        await userEvent.setup().clear(screen.getByRole('spinbutton', { name: 'Maximum duration (seconds)' }));
+        await userEvent.setup().type(screen.getByRole('spinbutton', { name: 'Maximum duration (seconds)' }), '10');
+        await userEvent.setup().click(screen.getByRole('checkbox', { name: /I confirm source writes are paused/ }));
+        expect(start).not.toBeDisabled();
+        await userEvent.setup().click(start);
+        expect(mocks.prepareSource).toHaveBeenCalledWith({
+            partitions: ['fixture'],
+            maximumRequests: 20,
+            maximumDurationSeconds: 10,
+            ruBudget: '1000',
+            confirmStableSource: true,
+        });
+        expect(mocks.run).not.toHaveBeenCalled();
+        expect(mocks.resumePreparation).not.toHaveBeenCalled();
+    });
     it('uses the host input snapshot to enable extraction only for current owned fidelity', async () => {
         const supplied = graphProjectSchema.parse({
             ...project,

@@ -173,6 +173,20 @@ public final class SourceMain implements AutoCloseable {
         }
         return new PopulationScripts.Script(selection+".order().by(id(),asc).limit(g2rPageSize).id().fold()",Map.copyOf(bindings));
     }
+    static Enumeration.Plan readEnumerationPlan(Path root,String reference) throws IOException {
+        Path planPath=io.github.gremlin2rdf.SafeFiles.resolve(root,reference);
+        if (!Files.isRegularFile(planPath))
+            throw new io.github.gremlin2rdf.Diagnostics.Failure("SOURCE_ENUMERATION_PLAN_MISSING","source-enumeration-plan");
+        if (Files.size(planPath)>1048576)
+            throw new io.github.gremlin2rdf.Diagnostics.Failure("SOURCE_ENUMERATION_PLAN_INVALID","source-enumeration-plan");
+        try {
+            var plan=io.github.gremlin2rdf.Json.MAPPER.readValue(Files.readAllBytes(planPath),Enumeration.Plan.class);
+            if (plan==null) throw new io.github.gremlin2rdf.Diagnostics.Failure("SOURCE_ENUMERATION_PLAN_INVALID","source-enumeration-plan");
+            return plan;
+        } catch (com.fasterxml.jackson.core.JsonProcessingException failure) {
+            throw new io.github.gremlin2rdf.Diagnostics.Failure("SOURCE_ENUMERATION_PLAN_INVALID","source-enumeration-plan");
+        }
+    }
     public static void main(String[] args) {
         try {
             if (args.length == 5 && args[0].equals("plan")) {
@@ -195,9 +209,7 @@ public final class SourceMain implements AutoCloseable {
             var parsed = io.github.gremlin2rdf.Json.MAPPER.readValue(Files.readAllBytes(configuration), io.github.gremlin2rdf.Project.class);
             Path root = configuration.toRealPath().getParent();
             if (args[0].equals("enumerate")) {
-                Path planPath = io.github.gremlin2rdf.SafeFiles.resolve(root, args[2]);
-                if (Files.size(planPath) > 1048576) throw new IOException("Enumeration plan exceeds bound");
-                var plan = io.github.gremlin2rdf.Json.MAPPER.readValue(Files.readAllBytes(planPath), Enumeration.Plan.class);
+                var plan = readEnumerationPlan(root,args[2]);
                 Path directory = io.github.gremlin2rdf.SafeFiles.resolve(root, args[3]);
                 try (var source = new SourceMain(io.github.gremlin2rdf.Json.MAPPER.valueToTree(parsed))) {
                     source.requests.attachJournal(parsed, root);

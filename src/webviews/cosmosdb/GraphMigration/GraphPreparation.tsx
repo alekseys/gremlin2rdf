@@ -6,7 +6,7 @@
 import { Button, Checkbox, Field, Input, Textarea } from '@fluentui/react-components';
 import { useTrpcClient } from '@microsoft/vscode-ext-webview/react';
 import * as l10n from '@vscode/l10n';
-import { useState } from 'react';
+import { useState, type Ref } from 'react';
 import { type GraphAppRouter, type GraphOperation } from '../../../panels/graphMigration/graphRouter';
 import { type GraphProject } from '../../../services/graphMigration/contracts';
 import { hasFidelityInventory } from '../../../services/graphMigration/diagnostics';
@@ -16,11 +16,13 @@ export function GraphPreparation({
     disabled,
     action,
     run,
+    reviewButtonRef,
 }: {
     project: GraphProject;
     disabled: boolean;
     action: (work: () => Promise<unknown>) => Promise<void>;
     run: (operation: GraphOperation) => Promise<void>;
+    reviewButtonRef?: Ref<HTMLButtonElement>;
 }) {
     const client = useTrpcClient<GraphAppRouter>();
     const [candidates, setCandidates] = useState<PreparationCandidates>();
@@ -59,6 +61,7 @@ export function GraphPreparation({
                 {l10n.t('Store credentials securely')}
             </Button>
             <Button
+                ref={reviewButtonRef}
                 disabled={disabled || !project.source}
                 onClick={() =>
                     void action(async () => {
