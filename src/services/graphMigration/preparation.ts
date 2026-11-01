@@ -284,9 +284,9 @@ export async function adoptEnumeration(p: GraphProject, root: string, directory:
         manifest.inputHash !== oldHash ||
         manifest.sha256 !== checksum ||
         manifest.planHash !== planHash ||
-        manifest.vertices + manifest.edges === 0
+        (manifest.vertices + manifest.edges === 0 && manifest.sourceCountsReconciled !== true)
     )
-        throw new Error('Unconfirmed, empty or wrong-run enumeration cannot be adopted');
+        throw new Error('Unconfirmed or wrong-run enumeration cannot be adopted');
     const archive = `artifacts/enumerated-run-${p.runId}.json`;
     await writeNewArtifact(root, archive, JSON.stringify(p, null, 2));
     const runId = globalThis.crypto.randomUUID();

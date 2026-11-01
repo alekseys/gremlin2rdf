@@ -9,6 +9,7 @@ import * as l10n from '@vscode/l10n';
 import { useState } from 'react';
 import { type GraphAppRouter, type GraphOperation } from '../../../panels/graphMigration/graphRouter';
 import { type GraphProject } from '../../../services/graphMigration/contracts';
+import { hasFidelityInventory } from '../../../services/graphMigration/diagnostics';
 import { type PreparationCandidates } from '../../../services/graphMigration/preparation';
 export function GraphPreparation({
     project,
@@ -181,8 +182,15 @@ export function GraphPreparation({
                     'After reconciled enumeration, the inventory and checksum are selected automatically. Then check actual source fidelity before extraction.',
                 )}
             </p>
+            {!hasFidelityInventory(project) && (
+                <p>
+                    {l10n.t(
+                        'Source fidelity needs a completed inventory. Review any enumeration failure first; no source capability conclusion can be drawn from an empty bootstrap file.',
+                    )}
+                </p>
+            )}
             <Button
-                disabled={disabled || !project.source}
+                disabled={disabled || !hasFidelityInventory(project)}
                 onClick={() => void action(() => run('source-compatibility'))}
             >
                 {l10n.t('Check read-only source fidelity')}

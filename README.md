@@ -10,7 +10,7 @@ not a Microsoft Marketplace release.
 
 ## Install and choose your target
 
-1. Install **`vscode-cosmosdb-0.39.3.vsix`** using VS Code's **Extensions > Install from VSIX**, then reload.
+1. Install **`vscode-cosmosdb-0.39.4.vsix`** using VS Code's **Extensions > Install from VSIX**, then reload.
    Stop active migrations before upgrading; this replaces the extension, not its saved projects.
 2. Open your application's folder as a trusted workspace and enable:
 
@@ -61,6 +61,10 @@ Save its actual query/update/graph-store paths (custom paths are in advanced set
 is absent. **Stale** results are previous input-bound evidence, not a new connection failure.
 Version 0.39.3 fixes the extension-owned Gremlin driver pool constructor defect; inventory or credential edits
 cannot fix that defect in older builds.
+If enumeration is blocked, open its Evidence before checking fidelity. Version 0.39.4 retains the exact
+bounded enumeration substep and safe numeric Gremlin/source statuses, without exposing scripts or values.
+An empty bootstrap inventory cannot establish fidelity; a reconciled empty source is reported separately
+as empty, not as a successful capability check.
 
 ## Start small
 

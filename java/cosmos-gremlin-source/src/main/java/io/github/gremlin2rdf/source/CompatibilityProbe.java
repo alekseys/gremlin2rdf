@@ -6,11 +6,43 @@ import java.nio.file.*;
 import java.util.*;
 
 final class CompatibilityProbe {
+    static void requireInventory(Project project,Path manifest) throws Exception {
+        if (!Files.isRegularFile(manifest) || !SafeFiles.fileHash(manifest).equals(project.source().identityManifestHash()))
+            throw new Diagnostics.Failure("SOURCE_INVENTORY_REQUIRED","source-fidelity-inventory");
+        if (Files.size(manifest)>0) return;
+        Path root=manifest.toRealPath();
+        String relative=project.source().identityManifest();
+        for (String component:relative.split("/")) root=root.getParent();
+        for (var artifact:project.artifacts()) {
+            if (!artifact.relativePath().startsWith("artifacts/adopted-inventory-") || !artifact.ownerRunId().equals(project.runId())) continue;
+            Path receipt=SafeFiles.resolve(root,artifact.relativePath());
+            if (!Files.isRegularFile(receipt) || Files.size(receipt)>1048576 || !SafeFiles.fileHash(receipt).equals(artifact.sha256())) continue;
+            var proof=Json.MAPPER.readTree(Files.readAllBytes(receipt));
+            if (proof.path("runId").asText().equals(project.runId()) && proof.path("inputHash").asText().equals(project.inputHash())
+                && proof.path("identityManifest").asText().equals(relative)
+                && proof.path("sha256").asText().equals(project.source().identityManifestHash())
+                && proof.path("coverage").asText().equals("live-global-and-partition-counts-reconciled")
+                && proof.path("vertices").isIntegralNumber() && proof.path("vertices").asLong(-1)==0
+                && proof.path("edges").isIntegralNumber() && proof.path("edges").asLong(-1)==0) return;
+        }
+        throw new Diagnostics.Failure("SOURCE_INVENTORY_REQUIRED","source-fidelity-inventory");
+    }
     static Map<String, Object> run(Project project, Path manifest, Extraction.Reader reader) throws Exception {
+        requireInventory(project,manifest);
         String hash = SafeFiles.fileHash(manifest);
         if (!hash.equals(project.source().identityManifestHash())) throw new IOException("Probe enumeration changed");
         SourceCompatibility.authorizeMode(project);
         long beforeVertices = reader.count(GraphRecord.Kind.vertex, null, null), beforeEdges = reader.count(GraphRecord.Kind.edge, null, null);
+        if (Files.size(manifest)==0) {
+            boolean empty=beforeVertices==0 && beforeEdges==0
+                && reader.count(GraphRecord.Kind.vertex,null,null)==0 && reader.count(GraphRecord.Kind.edge,null,null)==0;
+            var result=new TreeMap<String,Object>(Diagnostics.report(empty ? "SOURCE_EMPTY_VERIFIED" : "SOURCE_COUNTS_CHANGED","source-fidelity-inventory"));
+            result.put("sourceManifestHash",hash);result.put("sourceCountsReconciled",empty);
+            result.put("observedVertices",0);result.put("observedEdges",0);result.put("fidelity","not-established");
+            result.put("emptySourceVerified",empty);result.put("diagnostics",List.of(Diagnostics.report(
+                empty ? "SOURCE_EMPTY_VERIFIED" : "SOURCE_COUNTS_CHANGED","source-fidelity-inventory")));
+            return result;
+        }
         long vertices = 0, edges = 0;
         Set<String> valueTypes = new TreeSet<>(), scopes = new TreeSet<>(), edgePairs = new HashSet<>();
         Map<String, String> vertexPartitions = new HashMap<>();
@@ -20,7 +52,7 @@ final class CompatibilityProbe {
             byte[] bytes; String previous = "";
             while ((bytes = Extraction.frame(input)) != null) {
                 SourceCompatibility.authorizeMode(project);
-                if (vertices + edges >= 2000) throw new IOException("Compatibility probe requires a bounded semantic manifest of at most 2000 records");
+                if (vertices + edges >= 2000) throw new Diagnostics.Failure("SOURCE_FIDELITY_RECORD_LIMIT","source-fidelity-observations");
                 var entry = Json.MAPPER.readValue(bytes, IdentityEntry.class);
                 if (entry.orderingKey().compareTo(previous) <= 0) throw new IOException("Probe manifest identities must be unique and ordered");
                 previous = entry.orderingKey();
@@ -73,6 +105,11 @@ final class CompatibilityProbe {
         result.put("sourceMutations", "not-executed");
         result.put("remediation", passing ? "Register this owned checksum-bound observation artifact; extraction still performs full reconciliation."
             : "Use a bounded authorized semantic corpus containing repeated partition-qualified identities, typed values, occurrences/meta and parallel/self/cross-partition edges; unsupported fidelity requires separate reduced-mode approval.");
+        if (!passing) {
+            result.putAll(Diagnostics.report(inventory ? "SOURCE_FIDELITY_NOT_ESTABLISHED" : "SOURCE_COUNTS_CHANGED","source-fidelity-observations"));
+            result.put("diagnostics",List.of(Diagnostics.report(inventory ? "SOURCE_FIDELITY_NOT_ESTABLISHED" : "SOURCE_COUNTS_CHANGED","source-fidelity-observations")));
+            result.put("fidelity","not-established");
+        }
         return Map.copyOf(result);
     }
 }

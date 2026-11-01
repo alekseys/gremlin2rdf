@@ -255,6 +255,7 @@ public final class SourceMain implements AutoCloseable {
             if (!actual.equals(expected)) throw new IllegalArgumentException("Identity enumeration manifest changed");
             boolean probe = args[0].equals("probe");
             if (probe && Files.exists(output)) throw new IllegalArgumentException("New immutable observation artifact required");
+            if (probe) CompatibilityProbe.requireInventory(parsed,manifest);
             var compatibility = probe ? null : io.github.gremlin2rdf.SourceCompatibility.read(parsed, configuration.toRealPath().getParent());
             io.github.gremlin2rdf.SourceCompatibility.authorizeMode(parsed);
             try (SourceMain source = new SourceMain(project)) {
@@ -264,10 +265,12 @@ public final class SourceMain implements AutoCloseable {
                         if (!probe && entry.kind() == io.github.gremlin2rdf.GraphRecord.Kind.edge
                             && !io.github.gremlin2rdf.SourceCompatibility.supports(compatibility, entry.edgeScope()))
                             throw new IllegalArgumentException("Edge scope was not observed in compatibility evidence");
-                        return source.extract(io.github.gremlin2rdf.Json.MAPPER.valueToTree(entry), actual);
+                        try { return source.extract(io.github.gremlin2rdf.Json.MAPPER.valueToTree(entry),actual); }
+                        catch (Exception failure) { throw new SourceDiagnostics.Context("source-record-read",failure); }
                     }
                     @Override public long count(io.github.gremlin2rdf.GraphRecord.Kind kind, io.github.gremlin2rdf.GraphRecord.Value partition, String label) throws Exception {
-                        return source.count(kind, partition, label);
+                        try { return source.count(kind,partition,label); }
+                        catch (Exception failure) { throw new SourceDiagnostics.Context("source-fidelity-count",failure); }
                     }
                 };
                 if (probe) {
@@ -284,17 +287,8 @@ public final class SourceMain implements AutoCloseable {
                     "sourceHash", result.sha256(), "sourceRetries", source.requests.retries(), "requestCharge", source.requests.charge())));
             }
         } catch (Exception e) {
-            Map<String,Object> diagnostic = io.github.gremlin2rdf.Diagnostics.failure(e,
+            Map<String,Object> diagnostic = SourceDiagnostics.failure(e,
                 args.length > 0 && args[0].equals("check") ? "source-connectivity" : "source-operation");
-            Throwable cause=e;
-            for (int depth=0;cause!=null && depth<16;depth++,cause=cause.getCause()) {
-                if (cause instanceof org.apache.tinkerpop.gremlin.driver.exception.ResponseException response) {
-                    int status=response.getResponseStatusCode().getValue();
-                    diagnostic=io.github.gremlin2rdf.Diagnostics.report(status==401 ? "ENDPOINT_AUTHENTICATION"
-                        : status==403 ? "ENDPOINT_AUTHORIZATION" : status==429 ? "ENDPOINT_THROTTLED"
-                        : "ENDPOINT_PROVIDER_FAILURE","source-request");break;
-                }
-            }
             // Only fixed sanitized diagnostics are returned on stdout; raw driver stderr stays private.
             System.out.println(io.github.gremlin2rdf.Json.text(diagnostic));
             System.exit(2);

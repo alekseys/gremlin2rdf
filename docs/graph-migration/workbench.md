@@ -58,6 +58,21 @@ Successful enumeration verifies producer/run/input ownership and plan/inventory 
 the inventory, creates a fresh extraction run, resets compatibility evidence and clears old approvals. Prior
 project snapshots, budgets, checkpoints and artifacts remain preserved. No advanced JSON/path/hash edits are
 needed for this normal path. Then run **Check read-only source fidelity**; enumeration does not establish it.
+Do not run fidelity after failed enumeration: the unchanged empty bootstrap inventory has no observations.
+Version 0.39.4 disables that follow-on action and reports `SOURCE_INVENTORY_REQUIRED` instead of false capability
+findings. Valid supplied nonempty inventories remain usable. An empty inventory is accepted only with an owned
+successful enumeration receipt proving reconciled global and partition counts; repeated live zero counts then
+report `SOURCE_EMPTY_VERIFIED`, with fidelity **not established**, rather than a migration/capability pass.
+This does not authorize extraction or target writes.
+
+Enumeration failures retain fixed substeps such as `source-enumeration-global-vertex-count`,
+`source-enumeration-vertex-page` and `source-enumeration-edge-page`. Evidence and UI show numeric
+`gremlinStatus`, `sourceStatus` and `sourceSubstatus` only when returned and validated. Provider messages,
+queries, bindings, partition/property values and remote stacks remain redacted. Status-based authentication,
+throttling, serialization, argument and script rejection are distinguished; an unclassified provider status
+reports `SOURCE_PROVIDER_CAUSE_UNKNOWN`, not a guessed schema/permission or paging defect. Preserve the
+checkpoint and share only the safe diagnostic/substep/status evidence for investigation. No unordered
+paging fallback or coverage approximation is performed.
 Existing inventories are never overwritten. Input changes invalidate dependent evidence.
 Stale phase diagnostics are collapsed under **Previous result — not a current connection check**. They are
 historical input-bound evidence; changing the RU budget, inventory or run really does invalidate the old result.
@@ -78,7 +93,7 @@ Stop any active migration before replacing the extension. Settings and workspace
 For a package with the same version as your installed preview, you can force replacement from PowerShell:
 
 ```powershell
-code --install-extension ".\vscode-cosmosdb-0.39.3.vsix" --force
+code --install-extension ".\vscode-cosmosdb-0.39.4.vsix" --force
 ```
 
 If the CLI prints `DEP0169` after reporting that the extension was successfully installed, installation succeeded.

@@ -96,7 +96,9 @@ final class Enumeration {
             GraphRecord.Value partition = plan.partitions().get(state.partition());
             if (!state.owner().isEmpty()) {
                 request();
-                List<String> ids = reader.edges(partition, state.owner(), state.edgeCursor(), plan.pageSize());
+                List<String> ids;
+                try { ids=reader.edges(partition,state.owner(),state.edgeCursor(),plan.pageSize()); }
+                catch (Exception failure) { throw new SourceDiagnostics.Context("source-enumeration-edge-page",failure); }
                 ordered(ids, state.edgeCursor());
                 if (ids.isEmpty()) {
                     update(state.partition(), state.vertexCursor(), state.pendingVertices(), "", "",
@@ -116,7 +118,9 @@ final class Enumeration {
                     state.initialVertices(), state.initialEdges());
             } else {
                 request();
-                List<String> ids = reader.vertices(partition, state.vertexCursor(), plan.pageSize());
+                List<String> ids;
+                try { ids=reader.vertices(partition,state.vertexCursor(),plan.pageSize()); }
+                catch (Exception failure) { throw new SourceDiagnostics.Context("source-enumeration-vertex-page",failure); }
                 ordered(ids, state.vertexCursor());
                 if (!ids.isEmpty()) segment(ids.stream().map(id -> new IdentityEntry(1, GraphRecord.Kind.vertex,
                     partition, string(id), null, null)).toList());
@@ -182,6 +186,7 @@ final class Enumeration {
         result.put("schemaVersion", 1); result.put("status", "succeeded"); result.put("runId", project.runId());
         result.put("inputHash", project.inputHash()); result.put("planHash", Json.hash(plan));
         result.put("sha256", SafeFiles.fileHash(output)); result.put("vertices", vertices); result.put("edges", edges);
+        result.put("sourceCountsReconciled",true);
         result.put("reservedRequestAttempts", state.requests()); result.put("sensitiveArtifact", true);
         result.put("edgeScope", "sourceVertex"); result.put("identityTypes", "string-only");
         result.put("compatibility", "enumeration observations only; run source fidelity probe before extraction");
@@ -197,7 +202,7 @@ final class Enumeration {
         for (String value : values) {
             if (value == null || value.isEmpty() || value.getBytes(StandardCharsets.UTF_8).length > 4096
                 || value.compareTo(previous) <= 0)
-                throw new IOException("Provider string identity/keyset ordering is unsupported");
+                throw new Diagnostics.Failure("SOURCE_REQUEST_REJECTED","source-enumeration-page-validation");
             previous = value;
         }
     }
@@ -216,7 +221,10 @@ final class Enumeration {
         save();
     }
     private long count(GraphRecord.Kind kind, GraphRecord.Value partition) throws Exception {
-        request(); return reader.count(kind, partition);
+        request();
+        try { return reader.count(kind,partition); }
+        catch (Exception failure) { throw new SourceDiagnostics.Context(
+            "source-enumeration-"+(partition==null ? "global-" : "partition-")+kind.name()+"-count",failure); }
     }
     private long elapsed() { return elapsedBase + (System.nanoTime() - started) / 1000000; }
     private void update(int partition, String cursor, List<String> pending, String owner, String edgeCursor,

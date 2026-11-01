@@ -306,6 +306,28 @@ describe('graph workbench boundaries and keyboard access', () => {
         expect(await screen.findByRole('alert')).toHaveTextContent('Reload the project');
     });
     it('dispatches read-only compatibility independently from target approval', async () => {
+        mocks.load.mockResolvedValue({
+            project: {
+                ...project,
+                source: {
+                    scope: 'fixture',
+                    host: 'localhost',
+                    port: 443,
+                    database: 'db',
+                    container: 'graph',
+                    partitionKeyPath: '/pk',
+                    authenticationRef: null,
+                    extractionStrategy: 'verified-identity-manifest',
+                    identityManifest: 'identities.ndjson',
+                    identityManifestHash: '1'.repeat(64),
+                    compatibilityEvidence: 'artifacts/compatibility.json',
+                    ruBudget: null,
+                    customCaRef: null,
+                    syntheticTestContainer: false,
+                },
+            },
+            trusted: true,
+        });
         renderWorkbench();
         const button = await screen.findByRole('button', { name: 'Run for Probe read-only source compatibility' });
         expect(button).toHaveTextContent('Run');
@@ -320,6 +342,75 @@ describe('graph workbench boundaries and keyboard access', () => {
             }),
         );
         expect(mocks.approve).not.toHaveBeenCalled();
+    });
+    it('blocks empty-bootstrap fidelity after failed enumeration while keeping connections independently runnable', async () => {
+        mocks.load.mockResolvedValue({
+            project: {
+                ...project,
+                source: {
+                    scope: 'fixture',
+                    host: 'localhost',
+                    port: 443,
+                    database: 'db',
+                    container: 'graph',
+                    partitionKeyPath: '/pk',
+                    authenticationRef: null,
+                    extractionStrategy: 'verified-identity-manifest',
+                    identityManifest: 'identities.ndjson',
+                    identityManifestHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+                    compatibilityEvidence: 'artifacts/compatibility.json',
+                    ruBudget: null,
+                    customCaRef: null,
+                    syntheticTestContainer: false,
+                },
+                phases: {
+                    'source-enumerate': {
+                        status: 'blocked',
+                        inputHash: '1'.repeat(64),
+                        evidence: [],
+                        blockers: [
+                            'source-enumeration-global-vertex-count (SOURCE_PROVIDER_CAUSE_UNKNOWN, Gremlin 500): Cause unknown.',
+                        ],
+                    },
+                },
+            },
+            trusted: true,
+        });
+        renderWorkbench();
+        expect(await screen.findByRole('button', { name: 'Check read-only source fidelity' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Run for Probe read-only source compatibility' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Check read-only connections' })).not.toBeDisabled();
+        expect(screen.getByText(/no source capability conclusion/)).toBeVisible();
+        expect(mocks.run).not.toHaveBeenCalled();
+        act(() =>
+            listener({
+                type: 'worker',
+                message: {
+                    protocolVersion: 1,
+                    type: 'result',
+                    runId: 'fixture',
+                    operationId: 'owned',
+                    sequence: 1,
+                    timestamp: new Date().toISOString(),
+                    phase: 'complete',
+                    payload: {
+                        status: 'blocked',
+                        diagnostics: [
+                            {
+                                status: 'blocked',
+                                code: 'SOURCE_SCRIPT_REJECTED',
+                                stage: 'source-enumeration-vertex-page',
+                                gremlinStatus: 597,
+                                sourceStatus: 400,
+                                sourceSubstatus: 1004,
+                                remediation: 'Share only safe status evidence.',
+                            },
+                        ],
+                    },
+                },
+            }),
+        );
+        expect(await screen.findByRole('alert')).toHaveTextContent('Gremlin 597, source 400, substatus 1004');
     });
     it('keeps reduced-fidelity and best-effort approvals separate from worker execution', async () => {
         mocks.load.mockResolvedValue({

@@ -5,6 +5,7 @@
 
 import * as l10n from '@vscode/l10n';
 import { z } from 'zod';
+import { type GraphProject } from './contracts';
 export const safeDiagnosticSchema = z
     .object({
         status: z.literal('blocked'),
@@ -12,11 +13,20 @@ export const safeDiagnosticSchema = z
         stage: z.string().regex(/^[a-z][a-z0-9-]{0,79}$/u),
         remediation: z.string().min(1).max(1000),
         httpStatus: z.number().int().min(100).max(599).optional(),
+        gremlinStatus: z.number().int().min(100).max(999).optional(),
+        sourceStatus: z.number().int().min(100).max(599).optional(),
+        sourceSubstatus: z.number().int().min(0).max(2147483647).optional(),
     })
     .strict();
 export type SafeDiagnostic = z.infer<typeof safeDiagnosticSchema>;
 export function formatDiagnostic(diagnostic: SafeDiagnostic): string {
-    return `${diagnostic.stage} (${diagnostic.code}${diagnostic.httpStatus ? `, HTTP ${diagnostic.httpStatus}` : ''}): ${diagnostic.remediation}`;
+    const statuses = [
+        diagnostic.httpStatus !== undefined ? `HTTP ${diagnostic.httpStatus}` : '',
+        diagnostic.gremlinStatus !== undefined ? `Gremlin ${diagnostic.gremlinStatus}` : '',
+        diagnostic.sourceStatus !== undefined ? `source ${diagnostic.sourceStatus}` : '',
+        diagnostic.sourceSubstatus !== undefined ? `substatus ${diagnostic.sourceSubstatus}` : '',
+    ].filter(Boolean);
+    return `${diagnostic.stage} (${[diagnostic.code, ...statuses].join(', ')}): ${diagnostic.remediation}`;
 }
 export class GraphDiagnosticError extends Error {
     constructor(
@@ -37,10 +47,23 @@ export function hostDiagnostic(error: unknown, stage = 'preparation'): SafeDiagn
                 )
               : code === 'SOURCE_CONFIGURATION_REQUIRED'
                 ? l10n.t('Save the Gremlin source connection settings first.')
-                : l10n.t(
-                      'Review the saved configuration, owned artifact paths and confirmed state. The cause is not yet classified; do not assume an inventory problem caused it.',
-                  );
+                : code === 'SOURCE_INVENTORY_REQUIRED'
+                  ? l10n.t(
+                        'Complete read-only identity enumeration first. Its prior failure is separate evidence; an empty bootstrap inventory cannot establish source fidelity.',
+                    )
+                  : l10n.t(
+                        'Review the saved configuration, owned artifact paths and confirmed state. The cause is not yet classified; do not assume an inventory problem caused it.',
+                    );
     return { status: 'blocked', code, stage: error instanceof GraphDiagnosticError ? error.stage : stage, remediation };
+}
+export function hasFidelityInventory(project: GraphProject): boolean {
+    return Boolean(
+        project.source &&
+        (project.source.identityManifestHash !== 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' ||
+            project.artifacts.some(
+                (a) => a.ownerRunId === project.runId && a.relativePath.startsWith('artifacts/adopted-inventory-'),
+            )),
+    );
 }
 export function safeDiagnostics(value: unknown): SafeDiagnostic[] {
     if (!value || typeof value !== 'object') return [];

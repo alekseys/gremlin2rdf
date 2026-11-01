@@ -4,12 +4,15 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, expect, it } from 'vitest';
-import { graphProjectSchema, inputHash } from './contracts';
+import { canonicalJson, graphProjectSchema, inputHash } from './contracts';
+import { hasFidelityInventory } from './diagnostics';
 import { GraphProjectService } from './GraphProjectService';
+import { adoptEnumeration, freshPreparation } from './preparation';
 import { applySetup, discoverSetup } from './setup';
 
 let root: string;
@@ -270,4 +273,63 @@ it('finds resource-specific VS Code settings without reading unrelated connectio
     const result = await discoverSetup(root, {});
     expect(result.values.host).toBe('account.gremlin.cosmos.azure.com');
     expect(result.values.datasetUrl).toBe('http://localhost:3030/graph');
+});
+it('rejects failed enumeration adoption and accepts only reconciled owned empty inventory evidence', async () => {
+    const run = await new GraphProjectService(root).root();
+    const original = await applySetup(
+        project(),
+        {
+            host: 'localhost',
+            database: 'fixture',
+            container: 'graph',
+            partitionKeyPath: '/pk',
+            datasetUrl: 'http://localhost:3030/graph',
+            consistency: 'immutable',
+        },
+        run,
+    );
+    expect(hasFidelityInventory(original)).toBe(false);
+    const prepared = await freshPreparation(original, run, {
+        partitions: ['fixture'],
+        maximumRequests: 20,
+        maximumDurationSeconds: 10,
+        ruBudget: '1000',
+        confirmStableSource: true,
+    });
+    await mkdir(path.join(run, prepared.output));
+    await writeFile(path.join(run, prepared.output, 'identities.ndjson'), '');
+    const plan: unknown = JSON.parse(await readFile(path.join(run, prepared.plan), 'utf8'));
+    const manifest = {
+        schemaVersion: 1,
+        status: 'blocked',
+        runId: prepared.project.runId,
+        inputHash: inputHash(prepared.project),
+        sha256: original.source!.identityManifestHash,
+        planHash: createHash('sha256').update(canonicalJson(plan)).digest('hex'),
+        vertices: 0,
+        edges: 0,
+        identityTypes: 'string-only',
+        edgeScope: 'sourceVertex',
+        sourceCountsReconciled: true,
+    };
+    await writeFile(path.join(run, prepared.output, 'manifest.json'), JSON.stringify(manifest));
+    await expect(adoptEnumeration(prepared.project, run, prepared.output)).rejects.toThrow();
+    expect(prepared.project.source?.identityManifest).toBe(original.source?.identityManifest);
+    expect(hasFidelityInventory(prepared.project)).toBe(false);
+    await writeFile(
+        path.join(run, prepared.output, 'manifest.json'),
+        JSON.stringify({ ...manifest, status: 'succeeded', sourceCountsReconciled: false }),
+    );
+    await expect(adoptEnumeration(prepared.project, run, prepared.output)).rejects.toThrow();
+    await writeFile(
+        path.join(run, prepared.output, 'manifest.json'),
+        JSON.stringify({ ...manifest, status: 'succeeded' }),
+    );
+    const adopted = await adoptEnumeration(prepared.project, run, prepared.output);
+    expect(hasFidelityInventory(adopted)).toBe(true);
+    expect(adopted.source?.identityManifest).toBe(`${prepared.output}/identities.ndjson`);
+    expect(adopted.artifacts.some((a) => a.relativePath.startsWith('artifacts/adopted-inventory-'))).toBe(true);
+    expect(
+        hasFidelityInventory({ ...original, source: { ...original.source!, identityManifestHash: '1'.repeat(64) } }),
+    ).toBe(true);
 });

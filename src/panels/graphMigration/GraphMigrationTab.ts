@@ -31,7 +31,12 @@ import {
     relativePathSchema,
     type GraphProject,
 } from '../../services/graphMigration/contracts';
-import { formatDiagnostic, hostDiagnostic, safeDiagnostics } from '../../services/graphMigration/diagnostics';
+import {
+    formatDiagnostic,
+    GraphDiagnosticError,
+    hostDiagnostic,
+    safeDiagnostics,
+} from '../../services/graphMigration/diagnostics';
 import { GraphProjectService } from '../../services/graphMigration/GraphProjectService';
 import {
     adoptEnumeration,
@@ -786,6 +791,16 @@ export class GraphMigrationTab extends BaseTab {
                     const output = operation === 'source-compatibility' ? project.source.compatibilityEvidence : null;
                     if (operation === 'source-compatibility' && !output)
                         throw new Error(l10n.t('Configure a new relative compatibility evidence path first.'));
+                    if (
+                        operation === 'source-compatibility' &&
+                        (await lstat(await ownedPath(root, project.source.identityManifest))).size === 0 &&
+                        !project.artifacts.some(
+                            (a) =>
+                                a.ownerRunId === project.runId &&
+                                a.relativePath.startsWith('artifacts/adopted-inventory-'),
+                        )
+                    )
+                        throw new GraphDiagnosticError('SOURCE_INVENTORY_REQUIRED', 'source-fidelity-inventory');
                     command = operation;
                     args = [
                         projectFile,

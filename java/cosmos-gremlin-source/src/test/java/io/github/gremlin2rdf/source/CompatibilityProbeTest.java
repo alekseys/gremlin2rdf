@@ -54,4 +54,30 @@ class CompatibilityProbeTest {
         assertEquals(false, result.get("float32Observed"));
         assertEquals("blocked", CompatibilityProbe.run(project, manifest, reader(project, true)).get("status"));
     }
+    @Test void bootstrapEmptyInventoryBlocksBeforeAnyReaderRequests() throws Exception {
+        Path manifest=root.resolve("identities.ndjson");Files.writeString(manifest,"");
+        var p=project(manifest);
+        var failure=assertThrows(Diagnostics.Failure.class,()->CompatibilityProbe.run(p,manifest,new Extraction.Reader(){
+            public GraphRecord read(IdentityEntry entry){throw new AssertionError("No bootstrap reads");}
+            public long count(GraphRecord.Kind kind,GraphRecord.Value partition,String label){throw new AssertionError("No bootstrap counts");}
+        }));
+        assertEquals("SOURCE_INVENTORY_REQUIRED",Diagnostics.failure(failure,"execution").get("code"));
+    }
+    @Test void ownedReconciledEmptyInventoryReportsNotEstablishedRatherThanFalseCapabilities() throws Exception {
+        Path manifest=root.resolve("identities.ndjson");Files.writeString(manifest,"");Files.createDirectory(root.resolve("artifacts"));
+        var p=project(manifest);
+        Path receipt=root.resolve("artifacts/adopted-inventory-fixture.json");
+        SafeFiles.atomic(receipt,Map.of("runId",p.runId(),"inputHash",p.inputHash(),"identityManifest","identities.ndjson",
+            "sha256",SafeFiles.fileHash(manifest),"coverage","live-global-and-partition-counts-reconciled","vertices",0,"edges",0));
+        p=new Project(p.schemaVersion(),p.migrationKind(),p.baselineRepositorySha(),p.runId(),p.protocolVersion(),p.workerVersion(),
+            p.mapping(),p.source(),p.target(),p.limits(),p.consistency(),p.phases(),p.approvals(),p.applicationHashes(),
+            List.of(new Project.Artifact("artifacts/adopted-inventory-fixture.json",SafeFiles.fileHash(receipt),p.runId(),true)));
+        var report=CompatibilityProbe.run(p,manifest,new Extraction.Reader(){
+            public GraphRecord read(IdentityEntry entry){throw new AssertionError();}
+            public long count(GraphRecord.Kind kind,GraphRecord.Value partition,String label){return 0;}
+        });
+        assertEquals("SOURCE_EMPTY_VERIFIED",report.get("code"));assertEquals("not-established",report.get("fidelity"));
+        assertEquals(true,report.get("emptySourceVerified"));assertFalse(report.containsKey("typedValuesPreserved"));
+        assertFalse(report.containsKey("propertyFidelity"));assertEquals("blocked",report.get("status"));
+    }
 }

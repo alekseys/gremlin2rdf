@@ -82,7 +82,8 @@ final class SourceRequests implements AutoCloseable {
                 if (response.values().size() != 1) throw new IOException("Unexpected bounded source result shape");
                 return response.values().getFirst();
             } catch (Failure failure) {
-                account(failure.attributes);
+                try { account(failure.attributes); }
+                catch (Diagnostics.Failure budgetFailure) { budgetFailure.initCause(failure);throw budgetFailure; }
                 if (!failure.retryable || attempt >= maximum) throw failure;
                 long wait = Math.min(2000, 100L << attempt);
                 Object after = failure.attributes.get("x-ms-retry-after-ms");

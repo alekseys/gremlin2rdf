@@ -34,7 +34,7 @@ import {
     type GraphOperation,
 } from '../../../panels/graphMigration/graphRouter';
 import { type GraphProject } from '../../../services/graphMigration/contracts';
-import { formatDiagnostic, safeDiagnostics } from '../../../services/graphMigration/diagnostics';
+import { formatDiagnostic, hasFidelityInventory, safeDiagnostics } from '../../../services/graphMigration/diagnostics';
 import { graphEvidencePhases } from '../../../services/graphMigration/evidence';
 import { type SetupSuggestions } from '../../../services/graphMigration/setup';
 import { GraphConnectionSetup } from './GraphConnectionSetup';
@@ -500,7 +500,11 @@ export function GraphMigrationWorkbench() {
                     <div className={styles.operationActions}>
                         <div className={styles.actionButtons}>
                             <Button
-                                disabled={disabled}
+                                disabled={
+                                    disabled ||
+                                    (operation === 'source-compatibility' &&
+                                        Boolean(project && !hasFidelityInventory(project)))
+                                }
                                 aria-label={l10n.t('{action} for {phase}', { action: runLabel, phase: label })}
                                 icon={<PlayRegular aria-hidden={true} />}
                                 onClick={() => void action(() => run(operation))}

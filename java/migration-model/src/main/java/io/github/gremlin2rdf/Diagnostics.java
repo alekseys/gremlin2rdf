@@ -9,6 +9,7 @@ public final class Diagnostics {
         private final String code;
         private final String stage;
         private final Integer httpStatus;
+        private Map<String,Object> sourceStatus = Map.of();
         public Failure(String code, String stage) { this(code,stage,null); }
         public Failure(String code,String stage,Integer httpStatus) {
             super(code); this.code=code; this.stage=stage; this.httpStatus=httpStatus;
@@ -24,6 +25,13 @@ public final class Diagnostics {
         Map.entry("SOURCE_PROTOCOL_INVALID", "The isolated source worker did not return a valid bounded acknowledgement. Reinstall the complete VSIX or rebuild the pinned workers; missing inventory is not inferred from this failure."),
         Map.entry("TARGET_CONFIGURATION_REQUIRED", "Save the existing Fuseki dataset URL in the connection form."),
         Map.entry("SOURCE_INVENTORY_REQUIRED", "Use guided Prepare to discover candidate partitions and run read-only identity enumeration. Empty bootstrap files are not extraction inventories."),
+        Map.entry("SOURCE_EMPTY_VERIFIED", "Read-only counts and owned enumeration confirm an empty source. Fidelity is not established without records; no migration load or capability pass is implied."),
+        Map.entry("SOURCE_FIDELITY_NOT_ESTABLISHED", "The bounded observations do not establish all required fidelity semantics. Review the specific observation fields; missing examples are not proof the source lacks those capabilities. Do not extract or silently reduce fidelity."),
+        Map.entry("SOURCE_FIDELITY_RECORD_LIMIT", "The current fidelity probe supports at most 2000 reviewed semantic identities. Preserve the complete extraction inventory; do not claim full coverage from a smaller sample or run an exhaustive unbounded probe. A separate bounded compatibility corpus needs explicit review."),
+        Map.entry("SOURCE_REQUEST_REJECTED", "The source rejected a bounded request or its arguments. Preserve the checkpoint and share only this safe diagnostic code, substep and numeric statuses for adapter investigation; do not change paging semantics or fabricate an inventory."),
+        Map.entry("SOURCE_SCRIPT_REJECTED", "The source returned a script-evaluation error for this adapter substep. Share the safe substep and numeric statuses to investigate supported request syntax; raw scripts/provider messages are redacted. No unsupported paging cause is inferred."),
+        Map.entry("SOURCE_SERIALIZATION_REJECTED", "The source returned a serialization error. Verify the complete pinned GraphSON v2 adapter package; share only safe substep/status evidence. Do not coerce or drop source values."),
+        Map.entry("SOURCE_PROVIDER_CAUSE_UNKNOWN", "The source returned an unclassified provider failure. Preserve the checkpoint and share only this substep, Gremlin status, source status and substatus if present. The rejected request's cause remains unknown; inventory or permission defects are not inferred."),
         Map.entry("SOURCE_FIDELITY_EVIDENCE_REQUIRED", "Complete reconciled identity enumeration, then run the read-only source fidelity check before extracting."),
         Map.entry("SOURCE_PARTITION_COVERAGE", "The candidate partitions do not cover live source counts. Add missing live partition values in guided Prepare and re-enumerate; seed candidates alone never prove coverage."),
         Map.entry("SOURCE_COUNTS_CHANGED", "Source counts changed during enumeration. Confirm paused writes or an immutable source and repeat the bounded read-only run; preserve its checkpoint."),
@@ -60,7 +68,9 @@ public final class Diagnostics {
     public static Map<String,Object> failure(Throwable error,String stage) {
         Throwable current = error;
         for (int depth=0; current!=null && depth<16; depth++,current=current.getCause()) {
-            if (current instanceof Failure f) return report(f.code,f.stage,f.httpStatus);
+            if (current instanceof Failure f) {
+                var report=new TreeMap<>(report(f.code,f.stage,f.httpStatus));report.putAll(f.sourceStatus);return report;
+            }
             if (current instanceof Project.CredentialUnavailable) return report("CREDENTIAL_REFERENCE_UNAVAILABLE",stage);
             if (current instanceof com.fasterxml.jackson.core.JsonProcessingException) return report("CONFIGURATION_INVALID",stage);
             if (current instanceof java.nio.file.NoSuchFileException || current instanceof java.io.FileNotFoundException)
@@ -87,7 +97,16 @@ public final class Diagnostics {
         if (!stage.matches("[a-z][a-z0-9-]{0,79}")) stage=fallbackStage;
         String code=diagnostic.path("code").asText();
         var status=diagnostic.path("httpStatus");
-        return new Failure(REMEDIES.containsKey(code) ? code : "OPERATION_CAUSE_UNKNOWN",stage,
+        var failure=new Failure(REMEDIES.containsKey(code) ? code : "OPERATION_CAUSE_UNKNOWN",stage,
             status.isIntegralNumber() && status.canConvertToInt() ? status.intValue() : null);
+        var fields=new TreeMap<String,Object>();
+        for (String name:List.of("gremlinStatus","sourceStatus","sourceSubstatus")) {
+            var value=diagnostic.path(name);
+            int max=name.equals("gremlinStatus") ? 999 : name.equals("sourceStatus") ? 599 : Integer.MAX_VALUE;
+            int min=name.equals("sourceSubstatus") ? 0 : 100;
+            if (value.isIntegralNumber() && value.canConvertToInt() && value.intValue()>=min && value.intValue()<=max)
+                fields.put(name,value.intValue());
+        }
+        failure.sourceStatus=Map.copyOf(fields);return failure;
     }
 }
