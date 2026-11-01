@@ -9,11 +9,12 @@ The fixed `source-keyset-page-v1` template identifier and sanitized numeric stat
 Offline pinned Groovy syntax parsing does not establish Cosmos dialect or ordered paging acceptance; there is no
 unordered-paging fallback. Do not share full project configuration, queries, bindings or secrets.
 
-Version 0.39.6 routes the next enumeration step to guided Prepare instead of submitting the advanced default
+Version 0.39.7 routes every webview enumeration action, including **All phases and tools**, to guided Prepare instead of submitting the advanced default
 `enumeration-plan.json` (which guided Prepare does not create). Select **Find partition candidates**, then
 **Resume preserved read-only preparation** if offered. Otherwise explicitly review the listed ceilings and
-stable-source assertion before **Start bounded read-only preparation**. Advanced enumeration still accepts an
-existing explicit plan; missing/invalid plans now block at `source-enumeration-plan` before source construction.
+stable-source assertion before **Start bounded read-only preparation**. The independent CLI still accepts an
+existing explicit plan; missing/invalid plans block at `source-enumeration-plan` before source construction.
+The webview no longer offers a duplicate raw enumeration Run or unused default plan/output fields.
 
 ## Simplified connection setup
 

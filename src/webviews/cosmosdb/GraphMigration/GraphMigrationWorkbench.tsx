@@ -331,8 +331,6 @@ export function GraphMigrationWorkbench() {
     const [query, setQuery] = useState('g.V().count()');
     const [sourcePath, setSourcePath] = useState('');
     const [outputPath, setOutputPath] = useState('artifacts/rewritten/GraphRepository.java');
-    const [enumerationPlan, setEnumerationPlan] = useState('enumeration-plan.json');
-    const [enumerationOutput, setEnumerationOutput] = useState('artifacts/source-enumeration');
     const [probeGraph, setProbeGraph] = useState('');
     const [progress, setProgress] = useState('');
     const [evidencePath, setEvidencePath] = useState('');
@@ -443,17 +441,16 @@ export function GraphMigrationWorkbench() {
     const runLabel = l10n.t('Run'),
         authorizationLabel = l10n.t('Authorize');
     const run = async (operation: GraphOperation) => {
+        if (operation === 'source-enumerate') {
+            preparationReviewButton.current?.focus();
+            return;
+        }
         setBusy(true);
         await client.run.mutate({
             operation,
             query,
-            sourcePath: operation === 'source-enumerate' ? enumerationPlan : sourcePath,
-            outputPath:
-                operation === 'source-enumerate'
-                    ? enumerationOutput
-                    : operation === 'target-probe'
-                      ? probeGraph
-                      : outputPath,
+            sourcePath,
+            outputPath: operation === 'target-probe' ? probeGraph : outputPath,
         });
         await reload();
     };
@@ -470,6 +467,8 @@ export function GraphMigrationWorkbench() {
         corePhases.find(([operation]) => project?.phases[operation]?.status === 'running') ??
         corePhases.find(([operation]) => project?.phases[operation]?.status !== 'succeeded');
     const renderOperation = ([operation, label]: [GraphOperation, string], showActions = true) => {
+        const operationActionLabel =
+            operation === 'source-enumerate' ? l10n.t('Review guided read-only preparation') : runLabel;
         const extractionPrerequisite =
             operation === 'extract' && project && !hasCurrentSourceCompatibility(project, currentInputHash)
                 ? l10n.t(
@@ -532,12 +531,15 @@ export function GraphMigrationWorkbench() {
                                     (operation === 'source-compatibility' &&
                                         Boolean(project && !hasFidelityInventory(project)))
                                 }
-                                aria-label={l10n.t('{action} for {phase}', { action: runLabel, phase: label })}
+                                aria-label={l10n.t('{action} for {phase}', {
+                                    action: operationActionLabel,
+                                    phase: label,
+                                })}
                                 aria-description={extractionPrerequisite}
                                 icon={<PlayRegular aria-hidden={true} />}
                                 onClick={() => void action(() => run(operation))}
                             >
-                                {runLabel}
+                                {operationActionLabel}
                             </Button>
                             {(operation === 'load' ||
                                 operation === 'resume' ||
@@ -758,25 +760,11 @@ export function GraphMigrationWorkbench() {
                                 >
                                     {l10n.t('Save configuration')}
                                 </Button>
-                                <Field label={l10n.t('Run-relative source enumeration plan path')}>
-                                    <Input
-                                        value={enumerationPlan}
-                                        disabled={busy}
-                                        onChange={(_, data) => setEnumerationPlan(data.value)}
-                                    />
-                                </Field>
                                 <Field label={l10n.t('Dedicated target probe graph IRI')}>
                                     <Input
                                         value={probeGraph}
                                         disabled={busy}
                                         onChange={(_, data) => setProbeGraph(data.value)}
-                                    />
-                                </Field>
-                                <Field label={l10n.t('Run-relative source enumeration output directory')}>
-                                    <Input
-                                        value={enumerationOutput}
-                                        disabled={busy}
-                                        onChange={(_, data) => setEnumerationOutput(data.value)}
                                     />
                                 </Field>
                                 <p>

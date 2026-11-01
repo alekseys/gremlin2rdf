@@ -182,6 +182,21 @@ describe('graph workbench boundaries and keyboard access', () => {
         expect(mocks.prepareSource).not.toHaveBeenCalled();
         expect(mocks.run).not.toHaveBeenCalled();
     });
+    it('routes the enumeration card in all phases to the same guided review without submitting a default plan', async () => {
+        mocks.load.mockResolvedValue({ project: bootstrapProject(), trusted: true });
+        renderWorkbench();
+        const button = await screen.findByRole('button', {
+            name: 'Review guided read-only preparation for Enumerate read-only source identities',
+        });
+        expect(button).toHaveTextContent('Review guided read-only preparation');
+        expect(screen.queryByRole('button', { name: 'Run for Enumerate read-only source identities' })).toBeNull();
+        await userEvent.setup().click(button);
+        expect(screen.getByRole('button', { name: 'Find partition candidates' })).toHaveFocus();
+        expect(mocks.run).not.toHaveBeenCalled();
+        expect(mocks.prepareSource).not.toHaveBeenCalled();
+        expect(mocks.resumePreparation).not.toHaveBeenCalled();
+        expect(screen.queryByLabelText('Run-relative source enumeration plan path')).toBeNull();
+    });
     it('keeps bounded preparation disabled until candidate, ceilings and stable-source review are supplied', async () => {
         mocks.load.mockResolvedValue({ project: bootstrapProject(), trusted: true });
         mocks.preparation.mockResolvedValue({

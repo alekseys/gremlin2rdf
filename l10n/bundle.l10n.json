@@ -1766,8 +1766,6 @@
   "Run your query": "Run your query",
   "Run-relative new Java output path": "Run-relative new Java output path",
   "Run-relative reviewed report path": "Run-relative reviewed report path",
-  "Run-relative source enumeration output directory": "Run-relative source enumeration output directory",
-  "Run-relative source enumeration plan path": "Run-relative source enumeration plan path",
   "Running": "Running",
   "Running all of them at once may produce ambiguous results.": "Running all of them at once may produce ambiguous results.",
   "Running the query in the Query Editor…": "Running the query in the Query Editor…",
