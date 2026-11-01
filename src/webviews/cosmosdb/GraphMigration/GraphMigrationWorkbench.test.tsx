@@ -11,7 +11,7 @@ import userEvent from '@testing-library/user-event';
 import { type PropsWithChildren } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type GraphEvent } from '../../../panels/graphMigration/graphRouter';
-import { graphProjectSchema } from '../../../services/graphMigration/contracts';
+import { graphProjectSchema, inputHash } from '../../../services/graphMigration/contracts';
 import { GraphMigrationWorkbench } from './GraphMigrationWorkbench';
 
 const mocks = vi.hoisted(() => ({
@@ -111,6 +111,54 @@ function renderWorkbench() {
     return rendered;
 }
 describe('graph workbench boundaries and keyboard access', () => {
+    it('uses the host input snapshot to enable extraction only for current owned fidelity', async () => {
+        const supplied = graphProjectSchema.parse({
+            ...project,
+            source: {
+                scope: 'fixture',
+                host: 'localhost',
+                port: 443,
+                database: 'db',
+                container: 'graph',
+                partitionKeyPath: '/pk',
+                authenticationRef: null,
+                extractionStrategy: 'verified-identity-manifest',
+                identityManifest: 'identities.ndjson',
+                identityManifestHash: '1'.repeat(64),
+                compatibilityEvidence: 'artifacts/fidelity.json',
+                ruBudget: null,
+                customCaRef: null,
+                syntheticTestContainer: false,
+            },
+        });
+        const current = graphProjectSchema.parse({
+            ...supplied,
+            phases: {
+                'source-compatibility': {
+                    status: 'succeeded',
+                    inputHash: inputHash(supplied),
+                    blockers: [],
+                    evidence: ['artifacts/fidelity.json'],
+                },
+            },
+            artifacts: [
+                {
+                    relativePath: 'artifacts/fidelity.json',
+                    ownerRunId: supplied.runId,
+                    sha256: '2'.repeat(64),
+                    sensitive: true,
+                },
+            ],
+        });
+        mocks.load.mockResolvedValue({ project: current, trusted: true, currentInputHash: inputHash(current) });
+        renderWorkbench();
+        const button = await screen.findByRole('button', { name: 'Run for Extract read-only source' });
+        expect(button).not.toBeDisabled();
+        act(() => listener({ type: 'project', project: current, currentInputHash: '0'.repeat(64) }));
+        expect(button).toBeDisabled();
+        expect(button).toHaveAccessibleDescription(/current, succeeded source fidelity/);
+        expect(mocks.run).not.toHaveBeenCalled();
+    });
     it('shows a safe failed substep and concrete remedy from the worker acknowledgement', async () => {
         render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
         await screen.findByRole('button', { name: 'Check read-only connections' });
@@ -369,7 +417,7 @@ describe('graph workbench boundaries and keyboard access', () => {
                         inputHash: '1'.repeat(64),
                         evidence: [],
                         blockers: [
-                            'source-enumeration-global-vertex-count (SOURCE_PROVIDER_CAUSE_UNKNOWN, Gremlin 500): Cause unknown.',
+                            'source-enumeration-vertex-page (SOURCE_SCRIPT_REJECTED, source-keyset-page-v1, Gremlin 597, source 400): Template rejection; exact cause unknown.',
                         ],
                     },
                 },
@@ -379,6 +427,10 @@ describe('graph workbench boundaries and keyboard access', () => {
         renderWorkbench();
         expect(await screen.findByRole('button', { name: 'Check read-only source fidelity' })).toBeDisabled();
         expect(screen.getByRole('button', { name: 'Run for Probe read-only source compatibility' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Run for Extract read-only source' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Run for Extract read-only source' })).toHaveAccessibleDescription(
+            /current, succeeded source fidelity/,
+        );
         expect(screen.getByRole('button', { name: 'Check read-only connections' })).not.toBeDisabled();
         expect(screen.getByText(/no source capability conclusion/)).toBeVisible();
         expect(mocks.run).not.toHaveBeenCalled();

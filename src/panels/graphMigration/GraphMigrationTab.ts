@@ -34,6 +34,7 @@ import {
 import {
     formatDiagnostic,
     GraphDiagnosticError,
+    hasCurrentSourceCompatibility,
     hostDiagnostic,
     safeDiagnostics,
 } from '../../services/graphMigration/diagnostics';
@@ -166,7 +167,7 @@ export class GraphMigrationTab extends BaseTab {
             if (!vscode.workspace.isTrusted || inputHash(await this.service.load()) !== hash)
                 throw new Error(l10n.t('Project inputs changed while creating the local preparation plan.'));
             await this.service.save(prepared.project);
-            this.events.emit({ type: 'project', project: prepared.project });
+            this.emitProject(prepared.project);
             this.guidedEnumerationOutput = prepared.output;
             await this.run('source-enumerate', '', prepared.plan, prepared.output, true);
         } finally {
@@ -212,7 +213,15 @@ export class GraphMigrationTab extends BaseTab {
             workspacePath,
         );
     }
-    private async load(): Promise<{ project: GraphProject | null; trusted: boolean; setup?: SetupSuggestions }> {
+    private emitProject(project: GraphProject): void {
+        this.events.emit({ type: 'project', project, currentInputHash: inputHash(project) });
+    }
+    private async load(): Promise<{
+        project: GraphProject | null;
+        trusted: boolean;
+        setup?: SetupSuggestions;
+        currentInputHash?: string;
+    }> {
         if (vscode.workspace.isTrusted && !this.setup)
             this.setup = await discoverSetup(this.workspacePath, process.env);
         try {
@@ -229,7 +238,12 @@ export class GraphMigrationTab extends BaseTab {
                     }
                 await this.service.save(project);
             }
-            return { project, trusted: vscode.workspace.isTrusted, setup: this.setup };
+            return {
+                project,
+                trusted: vscode.workspace.isTrusted,
+                setup: this.setup,
+                currentInputHash: inputHash(project),
+            };
         } catch (error) {
             if (error instanceof Error && 'code' in error && error.code === 'ENOENT')
                 return { project: null, trusted: vscode.workspace.isTrusted, setup: this.setup };
@@ -530,7 +544,7 @@ export class GraphMigrationTab extends BaseTab {
             project.approvals = [...project.approvals.filter((a) => a.operation !== grant), approval];
         }
         await this.service.save(project);
-        this.events.emit({ type: 'project', project });
+        this.emitProject(project);
     }
     private async credentials(): Promise<void> {
         if (!vscode.workspace.isTrusted) throw new Error(l10n.t('Workspace trust is required.'));
@@ -786,6 +800,11 @@ export class GraphMigrationTab extends BaseTab {
                 }
                 case 'extract':
                 case 'source-compatibility': {
+                    if (operation === 'extract' && !hasCurrentSourceCompatibility(project, inputHash(project)))
+                        throw new GraphDiagnosticError(
+                            'SOURCE_COMPATIBILITY_NOT_CURRENT',
+                            'source-compatibility-prerequisite',
+                        );
                     if (!project.source)
                         throw new Error(l10n.t('Configure the source and verified identity manifest first.'));
                     const output = operation === 'source-compatibility' ? project.source.compatibilityEvidence : null;
@@ -828,7 +847,7 @@ export class GraphMigrationTab extends BaseTab {
                 inputHash: inputHash(project),
             };
             await this.service.save(project);
-            this.events.emit({ type: 'project', project });
+            this.emitProject(project);
             if (this.preparationStop) {
                 await this.finish(this.preparationStop);
                 return;
@@ -988,7 +1007,7 @@ export class GraphMigrationTab extends BaseTab {
             ],
         };
         await this.service.save(project);
-        this.events.emit({ type: 'project', project });
+        this.emitProject(project);
     }
     private async finish(result: unknown): Promise<void> {
         if (this.finishing) return this.finishing;
@@ -1085,7 +1104,7 @@ export class GraphMigrationTab extends BaseTab {
                     this.guidedEnumerationOutput,
                 );
                 await this.service.save(adopted);
-                this.events.emit({ type: 'project', project: adopted });
+                this.emitProject(adopted);
             } catch {
                 project.phases[operation].status = 'blocked';
                 project.phases[operation].blockers = [
@@ -1094,9 +1113,9 @@ export class GraphMigrationTab extends BaseTab {
                     ),
                 ];
                 await this.service.save(project);
-                this.events.emit({ type: 'project', project });
+                this.emitProject(project);
             }
-        } else this.events.emit({ type: 'project', project });
+        } else this.emitProject(project);
         this.guidedEnumerationOutput = undefined;
         this.activeOperation = undefined;
         this.activeInputHash = undefined;

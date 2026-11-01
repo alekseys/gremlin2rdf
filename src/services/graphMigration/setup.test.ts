@@ -9,13 +9,16 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, expect, it } from 'vitest';
-import { canonicalJson, graphProjectSchema, inputHash } from './contracts';
-import { hasFidelityInventory } from './diagnostics';
+import { canonicalJson, graphProjectSchema, inputHash, type GraphProject } from './contracts';
+import { hasCurrentSourceCompatibility as hasCompatibilityForHash, hasFidelityInventory } from './diagnostics';
 import { GraphProjectService } from './GraphProjectService';
 import { adoptEnumeration, freshPreparation } from './preparation';
 import { applySetup, discoverSetup } from './setup';
 
 let root: string;
+function hasCurrentSourceCompatibility(value: GraphProject): boolean {
+    return hasCompatibilityForHash(value, inputHash(value));
+}
 beforeEach(async () => {
     root = await mkdtemp(path.join(tmpdir(), 'graph-setup-'));
 });
@@ -208,9 +211,116 @@ it.skipIf(!process.env.GRAPH_WORKER_SMOKE)(
             { encoding: 'utf8', timeout: 10000, windowsHide: true },
         );
         expect(probe.status).toBe(0);
+        const prepared = await freshPreparation(configured, run, {
+            partitions: ['fixture'],
+            maximumRequests: 20,
+            maximumDurationSeconds: 10,
+            ruBudget: '1000',
+            confirmStableSource: true,
+        });
+        await mkdir(path.join(run, prepared.output), { recursive: true });
+        const identities =
+            canonicalJson({
+                schemaVersion: 1,
+                kind: 'vertex',
+                partition: { type: 'string', lexical: 'fixture' },
+                id: { type: 'string', lexical: 'one' },
+                ownerId: null,
+                edgeScope: null,
+            }) + '\n';
+        await writeFile(path.join(run, prepared.output, 'identities.ndjson'), identities);
+        const plan: unknown = JSON.parse(await readFile(path.join(run, prepared.plan), 'utf8'));
+        await writeFile(
+            path.join(run, prepared.output, 'manifest.json'),
+            JSON.stringify({
+                schemaVersion: 1,
+                status: 'succeeded',
+                runId: prepared.project.runId,
+                inputHash: inputHash(prepared.project),
+                sha256: createHash('sha256').update(identities).digest('hex'),
+                planHash: createHash('sha256').update(canonicalJson(plan)).digest('hex'),
+                vertices: 1,
+                edges: 0,
+                identityTypes: 'string-only',
+                edgeScope: 'sourceVertex',
+                sourceCountsReconciled: true,
+            }),
+        );
+        const adopted = await adoptEnumeration(prepared.project, run, prepared.output);
+        expect(adopted.runId).not.toBe(prepared.project.runId);
+        expect(hasCurrentSourceCompatibility(adopted)).toBe(false);
+        const evidencePath = adopted.source!.compatibilityEvidence!;
+        // Mock observations exist only in this isolated offline fixture, never a production capability claim.
+        const evidence = JSON.stringify({
+            schemaVersion: 1,
+            runId: adopted.runId,
+            inputHash: inputHash(adopted),
+            operation: 'source-compatibility',
+            status: 'succeeded',
+            result: {
+                status: 'succeeded',
+                sourceManifestHash: adopted.source!.identityManifestHash,
+                driverVersion: '3.4.13',
+                serializer: 'GraphSONMessageSerializerV2d0',
+                liveEndpointObserved: true,
+                tlsHostnameVerified: true,
+                partitionQualifiedLookup: true,
+                typedValuesPreserved: true,
+                edgeFidelity: true,
+                propertyFidelity: true,
+                edgeScopes: ['sourceVertex'],
+                sourceCountsReconciled: true,
+                stableRepeatedReads: true,
+                systemMetadataFidelity: true,
+            },
+        });
+        await mkdir(path.dirname(path.join(run, evidencePath)), { recursive: true });
+        await writeFile(path.join(run, evidencePath), evidence);
+        const current = graphProjectSchema.parse({
+            ...adopted,
+            phases: {
+                ...adopted.phases,
+                'source-compatibility': {
+                    status: 'succeeded',
+                    inputHash: inputHash(adopted),
+                    evidence: [evidencePath],
+                    blockers: [],
+                },
+            },
+            artifacts: [
+                ...adopted.artifacts,
+                {
+                    relativePath: evidencePath,
+                    sha256: createHash('sha256').update(evidence).digest('hex'),
+                    ownerRunId: adopted.runId,
+                    sensitive: true,
+                },
+            ],
+        });
+        expect(hasCurrentSourceCompatibility(current)).toBe(true);
+        await writeFile(file, JSON.stringify(current));
+        const extraction = spawnSync(
+            path.join(jdk, 'bin', `java${executableSuffix}`),
+            [
+                '-cp',
+                [jar, root].join(path.delimiter),
+                'io.github.gremlin2rdf.source.FormClusterProbe',
+                file,
+                '--extract-fixture',
+            ],
+            { encoding: 'utf8', timeout: 10000, windowsHide: true },
+        );
+        expect(extraction.status).toBe(0);
+        expect(JSON.parse(extraction.stdout)).toMatchObject({
+            status: 'succeeded',
+            requestsSubmitted: 0,
+            connectionsOpened: 0,
+            fixtureRecords: 1,
+        });
         const response: unknown = JSON.parse(probe.stdout);
         expect(response).toEqual({
             status: 'succeeded',
+            fixtureRecords: 0,
             inputHash: inputHash(configured),
             requestsSubmitted: 0,
             connectionsOpened: 0,
@@ -316,6 +426,7 @@ it('rejects failed enumeration adoption and accepts only reconciled owned empty 
     await expect(adoptEnumeration(prepared.project, run, prepared.output)).rejects.toThrow();
     expect(prepared.project.source?.identityManifest).toBe(original.source?.identityManifest);
     expect(hasFidelityInventory(prepared.project)).toBe(false);
+    expect(hasCurrentSourceCompatibility(prepared.project)).toBe(false);
     await writeFile(
         path.join(run, prepared.output, 'manifest.json'),
         JSON.stringify({ ...manifest, status: 'succeeded', sourceCountsReconciled: false }),
@@ -327,9 +438,71 @@ it('rejects failed enumeration adoption and accepts only reconciled owned empty 
     );
     const adopted = await adoptEnumeration(prepared.project, run, prepared.output);
     expect(hasFidelityInventory(adopted)).toBe(true);
+    expect(hasCurrentSourceCompatibility(adopted)).toBe(false);
     expect(adopted.source?.identityManifest).toBe(`${prepared.output}/identities.ndjson`);
     expect(adopted.artifacts.some((a) => a.relativePath.startsWith('artifacts/adopted-inventory-'))).toBe(true);
     expect(
         hasFidelityInventory({ ...original, source: { ...original.source!, identityManifestHash: '1'.repeat(64) } }),
     ).toBe(true);
+});
+it('requires owned current fidelity after a supplied inventory without changing reviewed state', async () => {
+    const run = await new GraphProjectService(root).root();
+    const configured = await applySetup(
+        project(),
+        {
+            host: 'localhost',
+            database: 'fixture',
+            container: 'graph',
+            partitionKeyPath: '/pk',
+            datasetUrl: 'http://localhost:3030/graph',
+            consistency: 'immutable',
+        },
+        run,
+    );
+    const supplied = graphProjectSchema.parse({
+        ...configured,
+        source: {
+            ...configured.source!,
+            identityManifestHash: '1'.repeat(64),
+            compatibilityEvidence: 'artifacts/fidelity.json',
+        },
+    });
+    const current = graphProjectSchema.parse({
+        ...supplied,
+        phases: {
+            'source-compatibility': {
+                status: 'succeeded',
+                inputHash: inputHash(supplied),
+                evidence: ['artifacts/fidelity.json'],
+                blockers: [],
+            },
+        },
+        artifacts: [
+            {
+                relativePath: 'artifacts/fidelity.json',
+                ownerRunId: supplied.runId,
+                sha256: '2'.repeat(64),
+                sensitive: true,
+            },
+        ],
+    });
+    const before = canonicalJson(current);
+    expect(hasCurrentSourceCompatibility(current)).toBe(true);
+    expect(
+        hasCurrentSourceCompatibility({
+            ...current,
+            artifacts: [{ ...current.artifacts[0], ownerRunId: 'prior-run' }],
+        }),
+    ).toBe(false);
+    expect(hasCurrentSourceCompatibility({ ...current, limits: { ...current.limits, batchRecords: 99 } })).toBe(false);
+    expect(
+        hasCurrentSourceCompatibility({
+            ...current,
+            phases: {
+                ...current.phases,
+                'source-compatibility': { ...current.phases['source-compatibility'], status: 'stale' },
+            },
+        }),
+    ).toBe(false);
+    expect(canonicalJson(current)).toBe(before);
 });

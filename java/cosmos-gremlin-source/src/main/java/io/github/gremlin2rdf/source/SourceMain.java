@@ -143,9 +143,23 @@ public final class SourceMain implements AutoCloseable {
     }
     private List<String> enumeratePage(io.github.gremlin2rdf.GraphRecord.Value partition, String owner,
                                        String after, int limit) throws Exception {
+        var request=enumerationPage(typedProject.source().partitionKeyPath().substring(1),
+            SourceCodec.scalar(io.github.gremlin2rdf.Json.MAPPER.valueToTree(partition)),owner,after,limit);
+        Object result=query(request.text(),request.bindings());
+        if (!(result instanceof List<?> values) || values.size()>limit)
+            throw new io.github.gremlin2rdf.Diagnostics.Failure("SOURCE_REQUEST_REJECTED","source-enumeration-page-validation");
+        List<String> ids=new ArrayList<>();
+        for (Object value:values) {
+            if (!(value instanceof String id))
+                throw new io.github.gremlin2rdf.Diagnostics.Failure("SOURCE_REQUEST_REJECTED","source-enumeration-page-validation");
+            ids.add(id);
+        }
+        return List.copyOf(ids);
+    }
+    static PopulationScripts.Script enumerationPage(String partitionProperty,Object partition,String owner,String after,int limit) {
         Map<String, Object> bindings = new HashMap<>();
-        bindings.put("g2rPartitionProperty", typedProject.source().partitionKeyPath().substring(1));
-        bindings.put("g2rPartition", SourceCodec.scalar(io.github.gremlin2rdf.Json.MAPPER.valueToTree(partition)));
+        bindings.put("g2rPartitionProperty",partitionProperty);
+        bindings.put("g2rPartition",partition);
         bindings.put("g2rPageSize", limit);
         String selection;
         if (owner == null) selection = "g.V().has(g2rPartitionProperty,g2rPartition)";
@@ -157,16 +171,7 @@ public final class SourceMain implements AutoCloseable {
             bindings.put("g2rAfter", after);
             selection += ".hasId(gt(g2rAfter))";
         }
-        Object result = query(selection + ".order().by(id(),asc).limit(g2rPageSize).id().fold()", bindings);
-        if (!(result instanceof List<?> values) || values.size() > limit)
-            throw new IOException("Provider enumeration result is not a bounded page");
-        List<String> ids = new ArrayList<>();
-        for (Object value : values) {
-            if (!(value instanceof String id))
-                throw new IllegalArgumentException("Automatic keyset enumeration currently requires string IDs");
-            ids.add(id);
-        }
-        return List.copyOf(ids);
+        return new PopulationScripts.Script(selection+".order().by(id(),asc).limit(g2rPageSize).id().fold()",Map.copyOf(bindings));
     }
     public static void main(String[] args) {
         try {

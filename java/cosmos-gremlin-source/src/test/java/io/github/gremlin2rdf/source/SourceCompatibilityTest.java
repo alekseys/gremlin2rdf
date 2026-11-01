@@ -31,7 +31,8 @@ class SourceCompatibilityTest {
             List.of(), Map.of(), List.of(new Project.Artifact("compatibility.json", SafeFiles.fileHash(file), base.runId(), true)));
     }
     @Test void pathPresenceNeverEstablishesCompatibility() {
-        assertThrows(Exception.class, () -> SourceCompatibility.read(base(), root));
+        var error=assertThrows(Diagnostics.Failure.class, () -> SourceCompatibility.read(base(), root));
+        assertEquals("SOURCE_COMPATIBILITY_NOT_CURRENT",error.getMessage());
     }
     @Test void verifiesOwnershipHashInputsAndRealObservationFlag() throws Exception {
         var current = evidence(base(), true, null);
@@ -42,6 +43,37 @@ class SourceCompatibilityTest {
         var offline = evidence(base(), false, null);
         assertThrows(Exception.class, () -> SourceCompatibility.read(offline, root));
         var stale = evidence(base(), true, "1".repeat(64));
-        assertThrows(Exception.class, () -> SourceCompatibility.read(stale, root));
+        var error=assertThrows(Diagnostics.Failure.class, () -> SourceCompatibility.read(stale, root));
+        assertEquals("source-compatibility-input",Diagnostics.failure(error,"source-operation").get("stage"));
+    }
+    private Project refreshHash(Project project) throws Exception {
+        var tree=(com.fasterxml.jackson.databind.node.ObjectNode)Json.MAPPER.valueToTree(project);
+        ((com.fasterxml.jackson.databind.node.ObjectNode)tree.path("artifacts").get(0)).put("sha256",SafeFiles.fileHash(root.resolve("compatibility.json")));
+        return Json.MAPPER.treeToValue(tree,Project.class);
+    }
+    @Test void classifiesMissingCorruptAndWrongRunEvidenceWithoutChangingOwnedFiles() throws Exception {
+        var current=evidence(base(),true,null);
+        var file=root.resolve("compatibility.json");
+        var valid=Files.readString(file);
+        Files.delete(file);
+        assertEquals("source-compatibility-file",Diagnostics.failure(assertThrows(Diagnostics.Failure.class,
+            ()->SourceCompatibility.read(current,root)),"source-operation").get("stage"));
+        Files.writeString(file,"[private-malformed-value");
+        var corrupt=refreshHash(current);
+        var error=assertThrows(Diagnostics.Failure.class,()->SourceCompatibility.read(corrupt,root));
+        assertEquals("SOURCE_EVIDENCE_CONTENT",error.getMessage());
+        assertFalse(Json.text(Diagnostics.failure(error,"source-operation")).contains("private-"));
+        assertEquals("[private-malformed-value",Files.readString(file));
+        var tree=(com.fasterxml.jackson.databind.node.ObjectNode)Json.MAPPER.readTree(valid);
+        tree.put("runId","prior-run");Files.writeString(file,Json.text(tree));
+        var prior=refreshHash(current);
+        assertEquals("source-compatibility-run-input",Diagnostics.failure(assertThrows(Diagnostics.Failure.class,
+            ()->SourceCompatibility.read(prior,root)),"source-operation").get("stage"));
+        tree.put("runId",current.runId());
+        ((com.fasterxml.jackson.databind.node.ObjectNode)tree.path("result")).put("serializer","GraphSONv3");
+        Files.writeString(file,Json.text(tree));
+        var incompatible=refreshHash(current);
+        assertEquals("source-compatibility-driver-serializer",Diagnostics.failure(assertThrows(Diagnostics.Failure.class,
+            ()->SourceCompatibility.read(incompatible,root)),"source-operation").get("stage"));
     }
 }

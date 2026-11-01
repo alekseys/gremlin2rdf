@@ -1,5 +1,14 @@
 # Experimental graph workbench
 
+Extraction requires current, owned succeeded source compatibility evidence and a verified selected inventory.
+A blocked enumeration cannot be adopted: an empty bootstrap file leaves fidelity disabled, and mapping/connection
+success does not permit extraction. Existing evidence and acknowledged checkpoints are preserved. Inspect the
+current enumeration evidence first; collapsed stale reports are prior observations only. `SOURCE_SCRIPT_REJECTED`
+with Gremlin 597/source 400 identifies an observed page-script rejection, not its exact unsupported token.
+The fixed `source-keyset-page-v1` template identifier and sanitized numeric statuses survive into saved reports/UI.
+Offline pinned Groovy syntax parsing does not establish Cosmos dialect or ordered paging acceptance; there is no
+unordered-paging fallback. Do not share full project configuration, queries, bindings or secrets.
+
 ## Simplified connection setup
 
 The project page uses source/target connection cards, a numbered sequence overview and status badges with icons.

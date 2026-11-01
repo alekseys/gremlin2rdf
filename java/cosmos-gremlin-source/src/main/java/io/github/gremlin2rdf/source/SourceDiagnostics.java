@@ -21,6 +21,8 @@ final class SourceDiagnostics {
         if (response==null) {
             var report=new TreeMap<>(classified==null ? Diagnostics.failure(error,stage) : classified);
             if (!stage.equals(fallback)) report.put("stage",stage);
+            if (stage.equals("source-enumeration-vertex-page") || stage.equals("source-enumeration-edge-page"))
+                report.put("templateId","source-keyset-page-v1");
             return report;
         }
         int gremlin=response.getResponseStatusCode().getValue();
@@ -37,6 +39,8 @@ final class SourceDiagnostics {
             : gremlin==597 ? "SOURCE_SCRIPT_REJECTED" : "SOURCE_PROVIDER_CAUSE_UNKNOWN";
         var report=new TreeMap<>(classified==null ? Diagnostics.report(code,stage) : classified);
         if (!stage.equals(fallback)) report.put("stage",stage);
+        if (stage.equals("source-enumeration-vertex-page") || stage.equals("source-enumeration-edge-page"))
+            report.put("templateId","source-keyset-page-v1");
         report.put("gremlinStatus",gremlin);
         if (source!=null) report.put("sourceStatus",source);
         if (substatus!=null) report.put("sourceSubstatus",substatus);

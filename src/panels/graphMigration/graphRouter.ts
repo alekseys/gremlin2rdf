@@ -69,10 +69,15 @@ export type GraphEvidencePhase = z.infer<typeof graphEvidencePhaseSchema>;
 export type GraphEvent =
     | { type: 'worker'; message: WorkerMessage }
     | { type: 'diagnostic'; code: string }
-    | { type: 'project'; project: GraphProject };
+    | { type: 'project'; project: GraphProject; currentInputHash?: string };
 export interface GraphRouterContext extends BaseRouterContext {
     eventSink: TypedEventSink<GraphEvent>;
-    load(): Promise<{ project: GraphProject | null; trusted: boolean; setup?: SetupSuggestions }>;
+    load(): Promise<{
+        project: GraphProject | null;
+        trusted: boolean;
+        setup?: SetupSuggestions;
+        currentInputHash?: string;
+    }>;
     create(): Promise<GraphProject>;
     save(json: string): Promise<void>;
     saveSetup(value: ConnectionSetup): Promise<void>;

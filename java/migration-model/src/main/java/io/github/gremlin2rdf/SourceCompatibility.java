@@ -9,35 +9,57 @@ public final class SourceCompatibility {
     private SourceCompatibility() {}
     public static JsonNode read(Project project, Path root) throws IOException {
         if (project.source() == null || project.source().compatibilityEvidence() == null)
-            throw new IOException("Live source compatibility evidence required");
+            throw new Diagnostics.Failure("SOURCE_COMPATIBILITY_NOT_CURRENT","source-compatibility-prerequisite");
         String reference = project.source().compatibilityEvidence();
         var phase = project.phases().get("source-compatibility");
         var artifacts = project.artifacts().stream().filter(a -> a.relativePath().equals(reference)
             && a.ownerRunId().equals(project.runId())).toList();
-        if (artifacts.size() != 1 || phase == null || !phase.status().equals("succeeded")
-            || !project.inputHash().equals(phase.inputHash()) || !phase.evidence().contains(reference))
-            throw new IOException("Current owned source compatibility evidence required");
+        if (artifacts.size()!=1)
+            throw new Diagnostics.Failure("SOURCE_COMPATIBILITY_NOT_CURRENT","source-compatibility-ownership");
+        if (phase == null || !phase.status().equals("succeeded") || !phase.evidence().contains(reference))
+            throw new Diagnostics.Failure("SOURCE_COMPATIBILITY_NOT_CURRENT","source-compatibility-prerequisite");
+        if (!project.inputHash().equals(phase.inputHash()))
+            throw new Diagnostics.Failure("SOURCE_COMPATIBILITY_NOT_CURRENT","source-compatibility-input");
         Path file = SafeFiles.resolve(root, reference);
-        if (!Files.isRegularFile(file) || Files.size(file) > 1048576 || !SafeFiles.fileHash(file).equals(artifacts.getFirst().sha256()))
-            throw new IOException("Source compatibility evidence checksum or bounds failed");
-        JsonNode envelope = Json.MAPPER.readTree(Files.readAllBytes(file)), result = envelope.path("result");
-        if (envelope.path("schemaVersion").asInt() != 1 || !envelope.path("runId").asText().equals(project.runId())
-            || !envelope.path("inputHash").asText().equals(project.inputHash())
-            || !envelope.path("operation").asText().equals("source-compatibility")
+        if (!Files.isRegularFile(file))
+            throw new Diagnostics.Failure("SOURCE_EVIDENCE_INTEGRITY","source-compatibility-file");
+        if (Files.size(file)>1048576)
+            throw new Diagnostics.Failure("SOURCE_EVIDENCE_INTEGRITY","source-compatibility-size");
+        if (!SafeFiles.fileHash(file).equals(artifacts.getFirst().sha256()))
+            throw new Diagnostics.Failure("SOURCE_EVIDENCE_INTEGRITY","source-compatibility-artifact");
+        JsonNode envelope;
+        try { envelope=Json.MAPPER.readTree(Files.readAllBytes(file)); }
+        catch (com.fasterxml.jackson.core.JsonProcessingException failure) {
+            throw new Diagnostics.Failure("SOURCE_EVIDENCE_CONTENT","source-compatibility-envelope");
+        }
+        if (envelope==null || !envelope.isObject())
+            throw new Diagnostics.Failure("SOURCE_EVIDENCE_CONTENT","source-compatibility-envelope");
+        JsonNode result=envelope.path("result");
+        if (envelope.path("schemaVersion").asInt() != 1)
+            throw new Diagnostics.Failure("SOURCE_EVIDENCE_CONTENT","source-compatibility-schema");
+        if (!envelope.path("runId").asText().equals(project.runId()) || !envelope.path("inputHash").asText().equals(project.inputHash()))
+            throw new Diagnostics.Failure("SOURCE_EVIDENCE_CONTENT","source-compatibility-run-input");
+        if (!result.path("driverVersion").asText().equals("3.4.13") ||
+            !result.path("serializer").asText().equals("GraphSONMessageSerializerV2d0"))
+            throw new Diagnostics.Failure("SOURCE_EVIDENCE_CONTENT","source-compatibility-driver-serializer");
+        if (!result.path("sourceManifestHash").asText().equals(project.source().identityManifestHash()))
+            throw new Diagnostics.Failure("SOURCE_EVIDENCE_CONTENT","source-compatibility-inventory");
+        if (
+            !envelope.path("operation").asText().equals("source-compatibility")
             || !envelope.path("status").asText().equals("succeeded")
             || !result.path("status").asText().equals("succeeded")
-            || !result.path("sourceManifestHash").asText().equals(project.source().identityManifestHash())
-            || !result.path("driverVersion").asText().equals("3.4.13")
-            || !result.path("serializer").asText().equals("GraphSONMessageSerializerV2d0")
             || !yes(result, "liveEndpointObserved") || !yes(result, "tlsHostnameVerified")
             || !yes(result, "partitionQualifiedLookup") || !yes(result, "typedValuesPreserved") || !yes(result, "edgeFidelity")
             || !yes(result, "sourceCountsReconciled") || !yes(result, "stableRepeatedReads")
             || !yes(result, "systemMetadataFidelity")
             || project.mapping().fidelity().equals("strict") && !yes(result, "propertyFidelity"))
-            throw new IOException("Source compatibility observations do not establish requested fidelity");
+            throw new Diagnostics.Failure("SOURCE_EVIDENCE_CONTENT","source-compatibility-fidelity");
         if (!result.path("edgeScopes").isArray() || result.path("edgeScopes").isEmpty())
-            throw new IOException("Observed edge identity scopes required");
-        for (var scope : result.path("edgeScopes")) GraphRecord.EdgeScope.valueOf(scope.asText());
+            throw new Diagnostics.Failure("SOURCE_EVIDENCE_EDGE_SCOPE","source-compatibility-edge-scopes");
+        for (var scope : result.path("edgeScopes")) {
+            try { GraphRecord.EdgeScope.valueOf(scope.asText()); }
+            catch (IllegalArgumentException failure) { throw new Diagnostics.Failure("SOURCE_EVIDENCE_EDGE_SCOPE","source-compatibility-edge-scopes"); }
+        }
         return result;
     }
     private static boolean yes(JsonNode result, String key) { return result.path(key).isBoolean() && result.path(key).booleanValue(); }

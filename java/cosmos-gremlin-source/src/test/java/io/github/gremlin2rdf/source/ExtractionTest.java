@@ -48,14 +48,20 @@ class ExtractionTest {
     @Test void refusesChangedInputsCorruptPrefixesUnownedFilesAndInsufficientDisk() throws Exception {
         Path manifest = manifest(), output = root.resolve("records.ndjson"); Project project = project(manifest, 0);
         assertThrows(IOException.class, () -> Extraction.run(project, manifest, output, reader(project, 2)));
-        assertThrows(IOException.class, () -> Extraction.run(project(manifest, 1), manifest, output, reader(project, -1)));
+        var checkpoint=Files.readString(root.resolve("records.ndjson.checkpoint.json"));
+        assertEquals("SOURCE_EXTRACTION_CHECKPOINT",assertThrows(Diagnostics.Failure.class,
+            () -> Extraction.run(project(manifest, 1), manifest, output, reader(project, -1))).getMessage());
+        assertEquals(checkpoint,Files.readString(root.resolve("records.ndjson.checkpoint.json")));
         Files.writeString(output, "corrupt");
-        assertThrows(IOException.class, () -> Extraction.run(project, manifest, output, reader(project, -1)));
+        assertEquals("SOURCE_EXTRACTION_PREFIX",assertThrows(Diagnostics.Failure.class,
+            () -> Extraction.run(project, manifest, output, reader(project, -1))).getMessage());
         Path unowned = root.resolve("unowned.ndjson"); Files.writeString(unowned, "preserve");
-        assertThrows(IOException.class, () -> Extraction.run(project, manifest, unowned, reader(project, -1)));
+        assertEquals("SOURCE_EXTRACTION_OUTPUT_UNOWNED",assertThrows(Diagnostics.Failure.class,
+            () -> Extraction.run(project, manifest, unowned, reader(project, -1))).getMessage());
         assertEquals("preserve", Files.readString(unowned));
         Path disk = root.resolve("disk.ndjson"); Project impossible = project(manifest, Long.MAX_VALUE);
-        assertThrows(IOException.class, () -> Extraction.run(impossible, manifest, disk, reader(impossible, -1)));
+        assertEquals("SOURCE_EXTRACTION_DISK",assertThrows(Diagnostics.Failure.class,
+            () -> Extraction.run(impossible, manifest, disk, reader(impossible, -1))).getMessage());
         assertFalse(Files.exists(disk));
     }
     @Test void refusesPendingCorruptionAndCompetingWriters() throws Exception {

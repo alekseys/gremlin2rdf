@@ -51,7 +51,7 @@ final class SourceRequests implements AutoCloseable {
                     var old = readState(journal);
                     if (new BigDecimal(candidate.charge()).compareTo(new BigDecimal(old.charge())) < 0
                         || !old.chargeObserved() && candidate.chargeObserved() || candidate.retries() < old.retries())
-                        throw new IOException("Non-monotonic pending source request budget");
+                        throw new Diagnostics.Failure("SOURCE_REQUEST_JOURNAL","source-request-pending-journal");
                 }
                 Files.move(pending, journal, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
             }
@@ -62,11 +62,14 @@ final class SourceRequests implements AutoCloseable {
         } catch (IOException | RuntimeException e) { close(); throw e; }
     }
     private State readState(Path path) throws IOException {
-        if (Files.size(path) > 65536) throw new IOException("Source request journal exceeds bound");
-        var state = Json.MAPPER.readValue(Files.readAllBytes(path), State.class);
-        if (state.schemaVersion() != 1 || !state.runId().equals(project.runId()) || !state.inputHash().equals(project.inputHash())
+        if (Files.size(path) > 65536) throw new Diagnostics.Failure("SOURCE_REQUEST_JOURNAL","source-request-journal");
+        State state;
+        try { state=Json.MAPPER.readValue(Files.readAllBytes(path),State.class); }
+        catch (com.fasterxml.jackson.core.JsonProcessingException failure) { throw new Diagnostics.Failure("SOURCE_REQUEST_JOURNAL","source-request-journal"); }
+        if (state==null || state.runId()==null || state.inputHash()==null || state.integrity()==null ||
+            state.schemaVersion() != 1 || !state.runId().equals(project.runId()) || !state.inputHash().equals(project.inputHash())
             || !state.integrity().equals(state.calculatedIntegrity()) || new BigDecimal(state.charge()).signum() < 0 || state.retries() < 0)
-            throw new IOException("Corrupt or changed-input source request budget");
+            throw new Diagnostics.Failure("SOURCE_REQUEST_JOURNAL","source-request-journal");
         return state;
     }
     private void persist() throws IOException {

@@ -827,6 +827,8 @@
   "Extension dependency with id \"{0}\" must be updated.": "Extension dependency with id \"{0}\" must be updated.",
   "Extension diagnostics, not Azure Resource Health. HTTP 5xx errors, availability, latency, storage limits, and index health are not assessed by this badge.": "Extension diagnostics, not Azure Resource Health. HTTP 5xx errors, availability, latency, storage limits, and index health are not assessed by this badge.",
   "Extract read-only source": "Extract read-only source",
+  "Extraction needs a succeeded source fidelity check for the current inputs. Resolve the enumeration blocker first, then run fidelity. Connection and mapping success do not replace that evidence.": "Extraction needs a succeeded source fidelity check for the current inputs. Resolve the enumeration blocker first, then run fidelity. Connection and mapping success do not replace that evidence.",
+  "Extraction needs current, succeeded source fidelity evidence. Resolve the Prepare enumeration blocker first, then run fidelity. Mapping and connectivity success alone do not permit extraction.": "Extraction needs current, succeeded source fidelity evidence. Resolve the Prepare enumeration blocker first, then run fidelity. Mapping and connectivity success alone do not permit extraction.",
   "Fabric Service is not initialized": "Fabric Service is not initialized",
   "Fail": "Fail",
   "Failed": "Failed",

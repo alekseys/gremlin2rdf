@@ -10,7 +10,7 @@ not a Microsoft Marketplace release.
 
 ## Install and choose your target
 
-1. Install **`vscode-cosmosdb-0.39.4.vsix`** using VS Code's **Extensions > Install from VSIX**, then reload.
+1. Install **`vscode-cosmosdb-0.39.5.vsix`** using VS Code's **Extensions > Install from VSIX**, then reload.
    Stop active migrations before upgrading; this replaces the extension, not its saved projects.
 2. Open your application's folder as a trusted workspace and enable:
 
@@ -65,6 +65,9 @@ If enumeration is blocked, open its Evidence before checking fidelity. Version 0
 bounded enumeration substep and safe numeric Gremlin/source statuses, without exposing scripts or values.
 An empty bootstrap inventory cannot establish fidelity; a reconciled empty source is reported separately
 as empty, not as a successful capability check.
+Version 0.39.5 keeps failed enumeration in the main Prepare sequence and disables extraction until current
+source fidelity evidence exists. Connection, application assessment and mapping success alone do not authorize
+extraction. Evidence/checkpoints remain preserved; paging rejection reports the fixed adapter template ID.
 
 ## Start small
 

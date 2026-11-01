@@ -34,7 +34,12 @@ import {
     type GraphOperation,
 } from '../../../panels/graphMigration/graphRouter';
 import { type GraphProject } from '../../../services/graphMigration/contracts';
-import { formatDiagnostic, hasFidelityInventory, safeDiagnostics } from '../../../services/graphMigration/diagnostics';
+import {
+    formatDiagnostic,
+    hasCurrentSourceCompatibility,
+    hasFidelityInventory,
+    safeDiagnostics,
+} from '../../../services/graphMigration/diagnostics';
 import { graphEvidencePhases } from '../../../services/graphMigration/evidence';
 import { type SetupSuggestions } from '../../../services/graphMigration/setup';
 import { GraphConnectionSetup } from './GraphConnectionSetup';
@@ -315,6 +320,7 @@ export function GraphMigrationWorkbench() {
     const client = useTrpcClient<GraphAppRouter>();
     const { announce } = useAnnounce();
     const [project, setProject] = useState<GraphProject | null>(null);
+    const [currentInputHash, setCurrentInputHash] = useState<string>();
     const [suggestions, setSuggestions] = useState<SetupSuggestions>();
     const [configuration, setConfiguration] = useState('');
     const [trusted, setTrusted] = useState(false);
@@ -337,7 +343,7 @@ export function GraphMigrationWorkbench() {
     }, []);
 
     const workflowGroups: { title: string; phases: GraphOperation[] }[] = [
-        { title: l10n.t('Prepare'), phases: ['preflight', 'assess'] },
+        { title: l10n.t('Prepare'), phases: ['preflight', 'source-enumerate', 'assess'] },
         { title: l10n.t('Check live source and mapping'), phases: ['source-compatibility', 'mapping'] },
         { title: l10n.t('Transfer graph'), phases: ['extract', 'load'] },
         { title: l10n.t('Verify migration'), phases: ['validate', 'functional', 'report'] },
@@ -362,6 +368,7 @@ export function GraphMigrationWorkbench() {
         const value = await client.load.query();
         setTrusted(value.trusted);
         setSuggestions(value.setup);
+        setCurrentInputHash(value.currentInputHash);
         applyProject(value.project);
     }, [client, applyProject]);
     useEffect(() => {
@@ -377,6 +384,7 @@ export function GraphMigrationWorkbench() {
             onData: (event) => {
                 if (event.type === 'project') {
                     applyProject(event.project);
+                    setCurrentInputHash(event.currentInputHash);
                     setDiagnostic('');
                     announce(l10n.t('Graph project state updated.'));
                 } else if (event.type === 'diagnostic') {
@@ -448,11 +456,21 @@ export function GraphMigrationWorkbench() {
         });
         await reload();
     };
-    const corePhases = operations().filter(([operation]) => coreOperations.has(operation));
+    const corePhases = operations().filter(
+        ([operation]) =>
+            coreOperations.has(operation) &&
+            (operation !== 'source-enumerate' || !project || !hasFidelityInventory(project)),
+    );
     const nextPhase =
         corePhases.find(([operation]) => project?.phases[operation]?.status === 'running') ??
         corePhases.find(([operation]) => project?.phases[operation]?.status !== 'succeeded');
     const renderOperation = ([operation, label]: [GraphOperation, string], showActions = true) => {
+        const extractionPrerequisite =
+            operation === 'extract' && project && !hasCurrentSourceCompatibility(project, currentInputHash)
+                ? l10n.t(
+                      'Extraction needs current, succeeded source fidelity evidence. Resolve the Prepare enumeration blocker first, then run fidelity. Mapping and connectivity success alone do not permit extraction.',
+                  )
+                : undefined;
         const status = project?.phases[operation]?.status ?? 'not-started';
         const statusClass =
             status === 'succeeded'
@@ -502,10 +520,15 @@ export function GraphMigrationWorkbench() {
                             <Button
                                 disabled={
                                     disabled ||
+                                    (operation === 'extract' &&
+                                        Boolean(
+                                            project && !hasCurrentSourceCompatibility(project, currentInputHash),
+                                        )) ||
                                     (operation === 'source-compatibility' &&
                                         Boolean(project && !hasFidelityInventory(project)))
                                 }
                                 aria-label={l10n.t('{action} for {phase}', { action: runLabel, phase: label })}
+                                aria-description={extractionPrerequisite}
                                 icon={<PlayRegular aria-hidden={true} />}
                                 onClick={() => void action(() => run(operation))}
                             >
@@ -575,6 +598,7 @@ export function GraphMigrationWorkbench() {
                                 );
                             })}
                         </div>
+                        {extractionPrerequisite && <p>{extractionPrerequisite}</p>}
                     </div>
                 )}
             </article>

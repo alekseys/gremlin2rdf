@@ -33,6 +33,19 @@ public final class Diagnostics {
         Map.entry("SOURCE_SERIALIZATION_REJECTED", "The source returned a serialization error. Verify the complete pinned GraphSON v2 adapter package; share only safe substep/status evidence. Do not coerce or drop source values."),
         Map.entry("SOURCE_PROVIDER_CAUSE_UNKNOWN", "The source returned an unclassified provider failure. Preserve the checkpoint and share only this substep, Gremlin status, source status and substatus if present. The rejected request's cause remains unknown; inventory or permission defects are not inferred."),
         Map.entry("SOURCE_FIDELITY_EVIDENCE_REQUIRED", "Complete reconciled identity enumeration, then run the read-only source fidelity check before extracting."),
+        Map.entry("SOURCE_COMPATIBILITY_NOT_CURRENT", "Extraction requires a succeeded source fidelity check for the current run and inputs. Complete failed enumeration first, then run fidelity; mapping and connection success do not replace source evidence. Existing evidence/checkpoints are preserved."),
+        Map.entry("SOURCE_EVIDENCE_INTEGRITY", "The selected source evidence failed checksum, size or ownership checks. Preserve the file and recorded checksum; rerun the current read-only fidelity check to produce fresh owned evidence rather than editing a success flag."),
+        Map.entry("SOURCE_EVIDENCE_CONTENT", "The source evidence envelope, driver/serializer version or requested fidelity observations do not match current inputs. Review its sanitized report and rerun the supported source fidelity check; no compatibility pass is inferred."),
+        Map.entry("SOURCE_EVIDENCE_EDGE_SCOPE", "The current evidence does not establish a required edge identity scope. Preserve identities and review a supported source fidelity observation; do not silently change edge scopes."),
+        Map.entry("SOURCE_EXTRACTION_CHECKPOINT", "Extraction checkpoint ownership, input/manifest hash or integrity validation failed. Preserve checkpoint and output; restore the exact acknowledged inputs or perform reviewed reconciliation, not a blind retry/delete."),
+        Map.entry("SOURCE_EXTRACTION_PREFIX", "The acknowledged extraction output prefix is missing, truncated or changed. Preserve output and checkpoint and perform reviewed reconciliation; no progress can be advanced."),
+        Map.entry("SOURCE_EXTRACTION_OUTPUT_UNOWNED", "An extraction output exists without its owned checkpoint or completion evidence. Preserve it; use a separately reviewed run/output rather than adopting or overwriting it."),
+        Map.entry("SOURCE_EXTRACTION_BUSY", "Another process owns the extraction lock. Pause or stop the owning operation and verify it exited; do not remove locks or acknowledged state blindly."),
+        Map.entry("SOURCE_EXTRACTION_BOUND", "Extraction input, checkpoint or output exceeded the documented byte/record/partition bound. Preserve state and use a supported bounded plan; no truncated success is returned."),
+        Map.entry("SOURCE_EXTRACTION_COUNTS", "Live source counts do not reconcile with the selected inventory or acknowledged snapshot. Preserve progress, verify paused writes/immutable source and review a fresh inventory; do not accept partial coverage."),
+        Map.entry("SOURCE_EXTRACTION_DISK", "The artifact filesystem lacks the required free space. Free sufficient local space without removing acknowledged migration state, then resume the same owned inputs."),
+        Map.entry("SOURCE_EXTRACTION_RECORD", "A source record or identity/order/fidelity observation failed validation. Preserve the checkpoint and review supported source fidelity; source values are not echoed or approximated."),
+        Map.entry("SOURCE_REQUEST_JOURNAL", "The RU request journal is unowned, incompatible or corrupt for these inputs. Preserve it and its budgets; review exact run/input ownership before continuing. Do not delete the journal to bypass an exhausted or unobservable ceiling."),
         Map.entry("SOURCE_PARTITION_COVERAGE", "The candidate partitions do not cover live source counts. Add missing live partition values in guided Prepare and re-enumerate; seed candidates alone never prove coverage."),
         Map.entry("SOURCE_COUNTS_CHANGED", "Source counts changed during enumeration. Confirm paused writes or an immutable source and repeat the bounded read-only run; preserve its checkpoint."),
         Map.entry("SOURCE_ENUMERATION_REQUEST_LIMIT", "The reviewed enumeration request ceiling was reached. Preserve the checkpoint and review a new request budget before resuming."),
@@ -100,6 +113,8 @@ public final class Diagnostics {
         var failure=new Failure(REMEDIES.containsKey(code) ? code : "OPERATION_CAUSE_UNKNOWN",stage,
             status.isIntegralNumber() && status.canConvertToInt() ? status.intValue() : null);
         var fields=new TreeMap<String,Object>();
+        if (diagnostic.path("templateId").asText().equals("source-keyset-page-v1"))
+            fields.put("templateId","source-keyset-page-v1");
         for (String name:List.of("gremlinStatus","sourceStatus","sourceSubstatus")) {
             var value=diagnostic.path(name);
             int max=name.equals("gremlinStatus") ? 999 : name.equals("sourceStatus") ? 599 : Integer.MAX_VALUE;
