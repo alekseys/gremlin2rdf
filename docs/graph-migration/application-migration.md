@@ -1,5 +1,12 @@
 # Applications, typed query evidence and fixtures
 
+Assessment now associates literal submission/binding presence with enclosing Java symbols and inventories
+graph-client construction and typed declarations. Methods containing graph access receive explicit result-decoding,
+blocking/asynchronous, ordering/pagination and multiplicity indicators, plus exception/loop retry review actions.
+These are syntactic findings with bounded confidence, not full interprocedural symbol/data-flow resolution.
+Bindings and initializer expressions are never evaluated or copied into routine diagnostics.
+Assessment iterates files without retaining the full filesystem inventory and bounds output findings.
+
 The Java parser inventories dependency/serializer configuration, submission sites, traversal construction and mutations
 without evaluating application code or Groovy. Findings contain file/symbol/line ranges, fingerprints, confidence and
 specific manual actions. Other languages receive discovery and assessment, not a claim of automated rewriting.

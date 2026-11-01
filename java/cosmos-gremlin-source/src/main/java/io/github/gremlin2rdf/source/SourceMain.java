@@ -127,6 +127,33 @@ public final class SourceMain implements AutoCloseable {
         if (label != null) { bindings.put("g2rObservedLabel", label); selection += ".hasLabel(g2rObservedLabel)"; }
         return SourceCodec.count(query(selection + ".count()", bindings));
     }
+    private List<String> enumeratePage(io.github.gremlin2rdf.GraphRecord.Value partition, String owner,
+                                       String after, int limit) throws Exception {
+        Map<String, Object> bindings = new HashMap<>();
+        bindings.put("g2rPartitionProperty", typedProject.source().partitionKeyPath().substring(1));
+        bindings.put("g2rPartition", SourceCodec.scalar(io.github.gremlin2rdf.Json.MAPPER.valueToTree(partition)));
+        bindings.put("g2rPageSize", limit);
+        String selection;
+        if (owner == null) selection = "g.V().has(g2rPartitionProperty,g2rPartition)";
+        else {
+            bindings.put("g2rOwner", owner);
+            selection = "g.V([g2rPartition,g2rOwner]).outE()";
+        }
+        if (!after.isEmpty()) {
+            bindings.put("g2rAfter", after);
+            selection += ".hasId(gt(g2rAfter))";
+        }
+        Object result = query(selection + ".order().by(id(),asc).limit(g2rPageSize).id().fold()", bindings);
+        if (!(result instanceof List<?> values) || values.size() > limit)
+            throw new IOException("Provider enumeration result is not a bounded page");
+        List<String> ids = new ArrayList<>();
+        for (Object value : values) {
+            if (!(value instanceof String id))
+                throw new IllegalArgumentException("Automatic keyset enumeration currently requires string IDs");
+            ids.add(id);
+        }
+        return List.copyOf(ids);
+    }
     public static void main(String[] args) {
         try {
             if (args.length == 5 && args[0].equals("plan")) {
@@ -140,7 +167,7 @@ public final class SourceMain implements AutoCloseable {
                 System.out.println(io.github.gremlin2rdf.Json.text(Map.of("status", "succeeded", "planHash", plan.hash(), "estimatedWrites", plan.estimatedWrites())));
                 return;
             }
-            if ((args.length != 4 && args.length != 5) || !Set.of("extract", "probe", "populate", "source-cleanup", "recipes").contains(args[0])
+            if ((args.length != 4 && args.length != 5) || !Set.of("enumerate", "extract", "probe", "populate", "source-cleanup", "recipes").contains(args[0])
                 || args.length == 5 && !args[4].equals("--parent-owned"))
                 throw new IllegalArgumentException("extract or probe project manifest output required");
             if (args.length == 5) monitorParent();
@@ -148,6 +175,28 @@ public final class SourceMain implements AutoCloseable {
             if (Files.size(configuration) > 1048576) throw new IllegalArgumentException("Invalid config bounds");
             var parsed = io.github.gremlin2rdf.Json.MAPPER.readValue(Files.readAllBytes(configuration), io.github.gremlin2rdf.Project.class);
             Path root = configuration.toRealPath().getParent();
+            if (args[0].equals("enumerate")) {
+                Path planPath = io.github.gremlin2rdf.SafeFiles.resolve(root, args[2]);
+                if (Files.size(planPath) > 1048576) throw new IOException("Enumeration plan exceeds bound");
+                var plan = io.github.gremlin2rdf.Json.MAPPER.readValue(Files.readAllBytes(planPath), Enumeration.Plan.class);
+                Path directory = io.github.gremlin2rdf.SafeFiles.resolve(root, args[3]);
+                try (var source = new SourceMain(io.github.gremlin2rdf.Json.MAPPER.valueToTree(parsed))) {
+                    source.requests.attachJournal(parsed, root);
+                    var result = Enumeration.run(parsed, plan, directory, new Enumeration.Reader() {
+                        public List<String> vertices(io.github.gremlin2rdf.GraphRecord.Value partition, String after, int limit) throws Exception {
+                            return source.enumeratePage(partition, null, after, limit);
+                        }
+                        public List<String> edges(io.github.gremlin2rdf.GraphRecord.Value partition, String owner, String after, int limit) throws Exception {
+                            return source.enumeratePage(partition, owner, after, limit);
+                        }
+                        public long count(io.github.gremlin2rdf.GraphRecord.Kind kind, io.github.gremlin2rdf.GraphRecord.Value partition) throws Exception {
+                            return source.count(kind, partition, null);
+                        }
+                    });
+                    System.out.println(io.github.gremlin2rdf.Json.text(result));
+                }
+                return;
+            }
             if (args[0].equals("recipes")) {
                 Path selected = io.github.gremlin2rdf.SafeFiles.resolve(root, args[2]);
                 if (Files.size(selected) > 65536) throw new IOException("Bounded source plan required");

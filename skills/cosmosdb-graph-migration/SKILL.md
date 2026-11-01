@@ -7,6 +7,8 @@ description: Experimental, identity-preserving Cosmos DB Gremlin to Apache Jena 
 
 This skill is separate from relational migration. Read `.cosmosdb-graph-migration/project.json`,
 the generated graph schemas and `docs/graph-migration/compatibility.md` before choosing an operation.
+In an installed VSIX, the schemas and operational documentation are bundled under
+`resources/graph-migration/schemas` and `resources/graph-migration/docs` in the extension installation.
 Never rename or reuse `.cosmosdb-migration` state or relational source/target fields.
 
 Use the pinned Java worker prepared with `npm run graph:prepare`. Run Java 21 or newer.

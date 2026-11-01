@@ -2,6 +2,21 @@
   "schemaVersion": 1,
   "status": "blocked",
   "scope": "integrated offline finalization; not release or live acceptance",
+  "postAcceptanceSourceChanges": {
+    "status": "offline-smoke-passed",
+    "reason": "Implemented without tests as originally requested; subsequently ran only quick offline smoke checks at the user's request.",
+    "currentEvidence": "docs/graph-migration/evidence/six-gap-smoke.json",
+    "changes": [
+      "Bounded read-only source identity enumeration and CLI/editor wiring",
+      "Batched exact canonical RDF reconciliation",
+      "Expanded read-only preflight and separately approved disposable graph probe",
+      "Optional domain value mapping and generated domain SHACL occurrence constraints",
+      "AST-scoped application binding/result/retry/lifecycle assessment",
+      "Editor overall operation deadline and cumulative confirmed-load progress"
+    ],
+    "priorPassingEvidence": "Historical for these modified source files; quick smoke is not full acceptance.",
+    "existingVsix": "Rebuilt vscode-cosmosdb-0.39.0.vsix includes all six gaps, simplified setup, fork README and the graphical workbench; current package receipt and incomplete full-unit validation are recorded in visual-workbench.json. Earlier package receipts are historical; current package was not installed into the user profile."
+  },
   "recoveryIterationsUsed": 4,
   "recoveryIterationLimit": 4,
   "additionalRecoveryAuthorization": "User explicitly approved one additional iteration after the original three; fourth integrated run passed.",
@@ -97,7 +112,7 @@
     "Pinned Maven JAR forceCreation prevents incremental re-shading of previous shaded output"
   ],
   "remainingBlockers": [
-    "Current full-load acceptance is still running; the current continuous two-hour semantic-profile soak passed.",
+    "Full-load acceptance was interrupted and remains unconfirmed; the historical continuous two-hour semantic-profile soak passed. No benchmark is currently claimed to be running.",
     "Dependency review and live compatibility remain explicitly blocked.",
     "Corrected Linux and Windows remote offline CI passed. Dependency collection executes successfully but its release gate remains blocked by actual findings."
   ],
@@ -121,7 +136,7 @@
     "acceptance": "not-passed"
   },
   "currentReferenceRuns": {
-    "status": "running",
+    "status": "interrupted-load-unconfirmed-historical-soak-passed",
     "authorization": "User explicitly requested restart/resume and completion of acceptance on 2026-10-31.",
     "testkitSha256": "095401a89d07dc7a5fb469ad6c1e598daec51b52cd9be100a3f396d1a3a12136",
     "loadSnapshot": "reference-load-JVTeGv",

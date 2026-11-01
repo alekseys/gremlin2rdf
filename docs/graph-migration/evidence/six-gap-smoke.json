@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "status": "passed",
+  "scope": "Quick offline smoke for product gaps 1-6; not full specification acceptance or release approval",
+  "date": "2026-11-01",
+  "java": {
+    "command": "java\\mvnw.cmd -f java\\pom.xml -pl migration-engine,cosmos-gremlin-source -am test -Dtest=GapSmokeTest,EnumerationSmokeTest,ValidationTest,MappingTest,ProtocolTest,SourceRequestsTest,ExtractionTest -Dsurefire.failIfNoSpecifiedTests=false -q",
+    "environment": "GRAPH_TEST_APPROVAL_KEY set to a synthetic local-test-only key; no service credentials",
+    "exitCode": 0,
+    "tests": 29,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "reports": ["java/migration-engine/target/surefire-reports", "java/cosmos-gremlin-source/target/surefire-reports"]
+  },
+  "editor": {
+    "command": "npx vitest run src\\services\\graphMigration\\contracts.test.ts src\\services\\graphMigration\\WorkerBridge.test.ts",
+    "exitCode": 0,
+    "files": 2,
+    "tests": 19,
+    "failures": 0
+  },
+  "packaging": {
+    "historical": true,
+    "supersededBy": "docs/graph-migration/evidence/installer-overview.json",
+    "command": "npm run package",
+    "exitCode": 0,
+    "typeCheckCommand": "npm run build",
+    "typeCheckExitCode": 0,
+    "typeCheckTargets": 3,
+    "localizationCommand": "npm run l10n",
+    "localizationExitCode": 0,
+    "schemaCommand": "node scripts/generate-graph-schemas.mjs",
+    "schemaExitCode": 0,
+    "vsix": "vscode-cosmosdb-0.39.0.vsix",
+    "bytes": 76032493,
+    "sha256": "37d5538b44342101bd4a2cb74e0d09d7a9ad2f1fe34793fe6e7ab78b7f717999",
+    "workerSha256": "7791db790a5b6308e8272bda18d78d7a40db931d214d46863c7f19f42715b1cd",
+    "sourceSha256": "fb2b242c24d099a7b644e13dfc5e5f4034d1a840897915ac834a9730a775a93b",
+    "testkitSha256": "d0758419236d1cb9824a96bcdca60964b63bcf38aa0720aba03ece3a9edcb78c",
+    "verified": [
+      "All three embedded JAR hashes match the VSIX manifest and current rebuilt resource bytes",
+      "Enumeration and domain-shape classes are present in the embedded JARs",
+      "Current mapping/project/enumeration schemas and operational documentation are included",
+      "Compiled workbench progress and extension deadline controls are present",
+      "Private acceptance evidence is excluded",
+      "Packaged Java CLI tiny translation command exits with code 0"
+    ],
+    "publication": "Local package only; no commit, push, marketplace publication or merge"
+  },
+  "coverage": [
+    "1: Two vertices and one owner-qualified edge; bounded enumeration, confirmed-output reopen, unsupported ordering and request exhaustion",
+    "2: Twelve vertices and twelve edges; at most two CONSTRUCT requests per ten-record batch, exact success and single-record corruption attribution",
+    "3: Ephemeral loopback Fuseki preflight; approval denial, scoped two-marker probe, exact cleanup and foreign-content preservation",
+    "4: Equal-valued distinct property occurrences, datatype projection, missing-projection rejection and generated SHACL CLI export",
+    "5: Java AST lifecycle, binding, result and retry findings without query-value disclosure",
+    "6: Confirmed checkpoint/progress at deadline, resume and fake-time editor pause/owned-worker termination"
+  ],
+  "smokeCorrections": [
+    "Domain value shapes now target canonical property occurrences with conditional key matching, so removing every projection cannot remove the validation target",
+    "Endpoint-only validation context excludes domain classes to avoid applying occurrence constraints to intentionally partial endpoint observations",
+    "Engine deadline fields are volatile for protocol control-thread visibility"
+  ],
+  "notExecuted": [
+    "Full test suites",
+    "Load benchmarks",
+    "Soak benchmarks",
+    "Live source or target probes",
+    "Full release acceptance"
+  ],
+  "liveProviderCompatibility": "Blocked: no live service credentials supplied; local tests do not establish Cosmos query compatibility"
+}

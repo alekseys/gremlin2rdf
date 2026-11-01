@@ -32,6 +32,7 @@ import {
     type GraphProject,
 } from '../../services/graphMigration/contracts';
 import { GraphProjectService } from '../../services/graphMigration/GraphProjectService';
+import { applySetup, discoverSetup, type SetupSuggestions } from '../../services/graphMigration/setup';
 import { WorkerBridge } from '../../services/graphMigration/WorkerBridge';
 import { BaseTab } from '../BaseTab';
 import {
@@ -52,6 +53,7 @@ export class GraphMigrationTab extends BaseTab {
     private activeInputHash: string | undefined;
     private finishing: Promise<void> | undefined;
     private preparationStop: 'paused' | 'cancelled' | undefined;
+    private setup: SetupSuggestions | undefined;
     constructor(
         panel: vscode.WebviewPanel,
         private readonly workspacePath: string,
@@ -85,6 +87,13 @@ export class GraphMigrationTab extends BaseTab {
                     throw new Error(l10n.t('Pause or cancel the worker before changing inputs.'));
                 await this.service.save(graphProjectSchema.parse(JSON.parse(json)));
             },
+            saveSetup: async (value) => {
+                if (!vscode.workspace.isTrusted) throw new Error(l10n.t('Workspace trust is required.'));
+                if (this.activeOperation || this.bridge.active)
+                    throw new Error(l10n.t('Pause or cancel the worker before changing inputs.'));
+                const project = await applySetup(await this.service.load(), value, await this.service.root());
+                await this.service.save(project);
+            },
             run: (operation: GraphOperation, query: string, sourcePath: string, outputPath: string) =>
                 this.run(operation, query, sourcePath, outputPath),
             approve: (operation: GraphApprovalOperation, outputPath: string) => this.approve(operation, outputPath),
@@ -115,7 +124,9 @@ export class GraphMigrationTab extends BaseTab {
             workspacePath,
         );
     }
-    private async load(): Promise<{ project: GraphProject | null; trusted: boolean }> {
+    private async load(): Promise<{ project: GraphProject | null; trusted: boolean; setup?: SetupSuggestions }> {
+        if (vscode.workspace.isTrusted && !this.setup)
+            this.setup = await discoverSetup(this.workspacePath, process.env);
         try {
             const project = await this.service.load();
             if (!this.activeOperation && Object.values(project.phases).some((phase) => phase.status === 'running')) {
@@ -130,20 +141,29 @@ export class GraphMigrationTab extends BaseTab {
                     }
                 await this.service.save(project);
             }
-            return { project, trusted: vscode.workspace.isTrusted };
+            return { project, trusted: vscode.workspace.isTrusted, setup: this.setup };
         } catch (error) {
             if (error instanceof Error && 'code' in error && error.code === 'ENOENT')
-                return { project: null, trusted: vscode.workspace.isTrusted };
+                return { project: null, trusted: vscode.workspace.isTrusted, setup: this.setup };
             throw new Error(l10n.t('The graph project could not be read. Check its schema and artifact paths.'));
         }
     }
     private async create(): Promise<GraphProject> {
         if (!vscode.workspace.isTrusted) throw new Error(l10n.t('Workspace trust is required.'));
         if ((await this.load()).project) throw new Error(l10n.t('A graph project already exists.'));
+        const git = vscode.extensions.getExtension<{
+            getAPI(version: 1): { repositories: { rootUri: vscode.Uri; state: { HEAD?: { commit?: string } } }[] };
+        }>('vscode.git');
+        const baseline = git?.isActive
+            ? git.exports.getAPI(1).repositories.find((repository) => {
+                  const relative = path.relative(repository.rootUri.fsPath, this.workspacePath);
+                  return !relative.startsWith('..') && !path.isAbsolute(relative);
+              })?.state.HEAD?.commit
+            : undefined;
         const project = graphProjectSchema.parse({
             schemaVersion: 1,
             migrationKind: 'cosmos-gremlin-to-jena',
-            baselineRepositorySha: '22e3f2cccbfcc6622cacbf1873b9c620acba085e',
+            baselineRepositorySha: baseline ?? '22e3f2cccbfcc6622cacbf1873b9c620acba085e',
             runId: globalThis.crypto.randomUUID(),
             protocolVersion: 1,
             workerVersion: '0.1.0',
@@ -265,6 +285,7 @@ export class GraphMigrationTab extends BaseTab {
                         operation === 'best-effort-source' ||
                         operation === 'source-populate' ||
                         operation === 'source-cleanup' ||
+                        operation === 'target-probe' ||
                         operation === 'fixture-test'
                       ? operation
                       : operation === 'rewrite-apply'
@@ -272,7 +293,11 @@ export class GraphMigrationTab extends BaseTab {
                         : undefined;
         if (!scope) throw new Error(l10n.t('This operation does not have a graph-write approval scope.'));
         let resources: string[];
-        if (scope === 'rewrite') {
+        if (scope === 'target-probe') {
+            if (!project.target || !outputPath.startsWith(`${project.target.graphNamespace}${project.runId}:probe:`))
+                throw new Error(l10n.t('Select a dedicated run-owned probe graph.'));
+            resources = [outputPath];
+        } else if (scope === 'rewrite') {
             const { plan } = await this.rewritePlan(project);
             const output = await this.rewriteOutput(outputPath);
             resources = [
@@ -495,6 +520,10 @@ export class GraphMigrationTab extends BaseTab {
                 case 'preflight':
                     args = [projectFile];
                     break;
+                case 'target-probe':
+                    command = 'preflight';
+                    args = ['probe', projectFile, outputPath];
+                    break;
                 case 'mapping': {
                     const file = await writeNewArtifact(
                         root,
@@ -526,6 +555,20 @@ export class GraphMigrationTab extends BaseTab {
                 case 'source-generate':
                     command = 'synthetic';
                     args = ['source-generate', 'semantic', '42', projectFile, path.join(root, 'source-fixture.ndjson')];
+                    break;
+                case 'source-enumerate':
+                    command = 'source-enumerate';
+                    args = [
+                        projectFile,
+                        path.join(
+                            ext.context.extensionPath,
+                            'resources',
+                            'graph-migration',
+                            'cosmos-gremlin-source-0.1.0.jar',
+                        ),
+                        sourcePath.replaceAll('\\', '/'),
+                        outputPath.replaceAll('\\', '/'),
+                    ];
                     break;
                 case 'source-plan':
                     command = 'synthetic';

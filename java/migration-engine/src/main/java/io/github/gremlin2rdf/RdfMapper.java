@@ -53,6 +53,12 @@ public final class RdfMapper {
     public Mapped map(GraphRecord record) {
         if (mapping.fidelity().equals("strict") && (!record.complete() || !mapping.exclusions().isEmpty()))
             throw new IllegalArgumentException("Strict mapping cannot discard required fidelity");
+        if (record.kind() == GraphRecord.Kind.vertex) for (var rule : mapping.domainRules()) {
+            if (!record.label().equals(rule.label())) continue;
+            long count = record.properties().stream().filter(property -> property.key().equals(rule.property())).count();
+            if (count < rule.minimumOccurrences() || rule.maximumOccurrences() != null && count > rule.maximumOccurrences())
+                throw new IllegalArgumentException("Canonical property occurrence count violates domain mapping rule");
+        }
         Model model = ModelFactory.createDefaultModel(), derived = ModelFactory.createDefaultModel();
         Resource entity = model.createResource(entity(record));
         entity.addProperty(RDF.type, model.createResource(CANONICAL + (record.kind() == GraphRecord.Kind.vertex ? "Vertex" : "Edge")));
@@ -99,6 +105,21 @@ public final class RdfMapper {
             if (property.id() != null) typed(model, p, "id", property.id());
             p.addProperty(predicate(model, "domainPredicate"),
                 model.createResource(mapping.properties().getOrDefault(property.key(), domain("property", property.key()))));
+            Mapping.ValueRule rule = mapping.valueRules().get(property.key());
+            if (rule != null) {
+                if (!property.value().type().name().equals(rule.sourceType()))
+                    throw new IllegalArgumentException("Source value type differs from explicit domain mapping rule");
+                var domainPredicate = model.createProperty(mapping.properties().getOrDefault(property.key(), domain("property", property.key())));
+                if (rule.representation().equals("resource")) {
+                    Mapping.iri(property.value().lexical());
+                    p.addProperty(domainPredicate, model.createResource(property.value().lexical()));
+                } else {
+                    var datatype = org.apache.jena.datatypes.TypeMapper.getInstance().getSafeTypeByName(rule.datatype());
+                    if (!datatype.isValid(property.value().lexical()))
+                        throw new IllegalArgumentException("Source lexical value cannot satisfy declared domain datatype");
+                    p.addLiteral(domainPredicate, model.createTypedLiteral(property.value().lexical(), datatype));
+                }
+            }
             int metaIndex = 0;
             for (var meta : new java.util.TreeMap<>(property.metaProperties()).entrySet()) {
                 Resource m = model.createResource(p.getURI() + ":meta:" + metaIndex++);

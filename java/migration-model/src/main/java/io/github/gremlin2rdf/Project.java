@@ -54,13 +54,22 @@ public record Project(
         }
     }
     public record Limits(int batchRecords, int batchBytes, int maxRecordBytes, int requestTimeoutMillis,
-                         int maxRetries, int queueCapacity, int writerConcurrency, long minimumFreeDiskBytes) {
+                         int maxRetries, int queueCapacity, int writerConcurrency, long minimumFreeDiskBytes,
+                         @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+                         Long maximumOperationMillis) {
+        public Limits(int batchRecords, int batchBytes, int maxRecordBytes, int requestTimeoutMillis,
+                      int maxRetries, int queueCapacity, int writerConcurrency, long minimumFreeDiskBytes) {
+            this(batchRecords, batchBytes, maxRecordBytes, requestTimeoutMillis, maxRetries, queueCapacity,
+                writerConcurrency, minimumFreeDiskBytes, null);
+        }
         public Limits {
             if (batchRecords < 1 || batchRecords > 1000 || batchBytes < 1024 || batchBytes > 8388608
                 || maxRecordBytes < 128 || maxRecordBytes > 1048576 || maxRecordBytes > batchBytes
                 || requestTimeoutMillis < 100 || requestTimeoutMillis > 300000 || maxRetries < 0 || maxRetries > 10
                 || queueCapacity < 1 || queueCapacity > 1000 || writerConcurrency != 1 || minimumFreeDiskBytes < 0)
                 throw new IllegalArgumentException("Invalid bounded migration limits; only one writer is supported");
+            if (maximumOperationMillis != null && (maximumOperationMillis < 1000 || maximumOperationMillis > 86400000))
+                throw new IllegalArgumentException("Operation deadline must be between one second and 24 hours");
         }
         public static Limits standard() { return new Limits(100, 1048576, 262144, 30000, 3, 100, 1, 104857600); }
     }

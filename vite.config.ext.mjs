@@ -210,6 +210,16 @@ export default ({ mode }) => {
                     },
                     { src: 'resources', dest: '.' },
                     {
+                        src: 'schemas/graph-migration/*.json',
+                        dest: 'resources/graph-migration/schemas',
+                        rename: { stripBase: true },
+                    },
+                    {
+                        src: 'docs/graph-migration/*.md',
+                        dest: 'resources/graph-migration/docs',
+                        rename: { stripBase: true },
+                    },
+                    {
                         src: 'package.json',
                         dest: '.',
                         transform: (content) => {

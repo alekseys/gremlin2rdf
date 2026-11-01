@@ -54,6 +54,33 @@ function project() {
     });
 }
 describe('separate graph migration contracts', () => {
+    it('accepts optional domain rules and duration budgets without changing legacy omission', () => {
+        const input = project();
+        expect(JSON.stringify(input.mapping)).not.toContain('valueRules');
+        const parsed = graphProjectSchema.parse({
+            ...input,
+            limits: { ...input.limits, maximumOperationMillis: 1000 },
+            mapping: {
+                ...input.mapping,
+                valueRules: {
+                    tag: {
+                        sourceType: 'string',
+                        representation: 'literal',
+                        datatype: 'http://www.w3.org/2001/XMLSchema#string',
+                    },
+                },
+                domainRules: [{ label: 'person', property: 'tag', minimumOccurrences: 2, maximumOccurrences: 2 }],
+            },
+        });
+        expect(parsed.mapping.domainRules?.[0].minimumOccurrences).toBe(2);
+        expect(inputHash(parsed)).not.toBe(inputHash(input));
+        expect(
+            graphProjectSchema.safeParse({
+                ...parsed,
+                limits: { ...parsed.limits, maximumOperationMillis: 999 },
+            }).success,
+        ).toBe(false);
+    });
     it('rejects queue and payload settings outside the fixed worker memory envelope', () => {
         const input = project();
         for (const limits of [

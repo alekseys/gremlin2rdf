@@ -1,5 +1,111 @@
 # Experimental graph workbench
 
+## Simplified connection setup
+
+The project page uses source/target connection cards, a numbered sequence overview and status badges with icons.
+Required inputs and core migration steps are highlighted; application adaptation, reviewed-report import and
+advanced tools are collapsed by default. The sequence overview is not a progress claim: phase badges reflect
+persisted project state. Open **All phases and tools** to run a different phase, review its approval or open
+its evidence. Identity enumeration is a discovery option when you need an inventory; an already reviewed
+inventory does not require enumeration again. Local fixtures and benchmarks remain explicit manual actions.
+
+New projects show a connection form for Gremlin host, database, graph, partition key and Fuseki dataset URL.
+Source consistency is a separate explicit choice: pausing writes and immutable snapshots are operator assertions,
+not environment-derived guarantees. Full project JSON, custom mapping and lower-level controls remain under the
+collapsed **Advanced configuration and mapping** section.
+
+Recognized environment keys include `GREMLIN_HOST`, `GREMLIN_ENDPOINT`, `GREMLIN_DATABASE`, `GREMLIN_CONTAINER`,
+`GREMLIN_PARTITION_KEY_PATH`, `FUSEKI_DATASET_URL`, `FUSEKI_ENDPOINT`, `GRAPH_SOURCE_HOST` and
+`GRAPH_TARGET_DATASET_URL`, plus supported Cosmos Gremlin/Jena aliases. Only non-secret connection keys are used.
+The extension reads at most 256 KiB per known configuration file, refuses symlink paths, and never evaluates code:
+`.env`, `.env.local`, `application.properties`, `src/main/resources/application.properties`,
+`appsettings.json`, `appsettings.Development.json`, `local.settings.json`, `config.json`, `config/gremlin.json`,
+`gremlin.json`, `.vscode/settings.json`, `gremlin.yaml`, `gremlin.yml`, `conf/remote.yaml`,
+`src/main/resources/gremlin.yaml`, `application.yml`, `application.yaml`, and
+`src/main/resources/application.yml`.
+
+JSON permits comments/trailing commas but rejects duplicate keys. YAML discovery handles simple scalar settings
+and a single inline driver `hosts` entry; complex collections, tags, interpolation and evaluated configuration
+remain manual. Conventional Cosmos driver `/dbs/<database>/colls/<graph>` usernames supply routing names only;
+password values are never surfaced. Unsupported/malformed files and conflicting recognized values produce notices,
+not a guessed endpoint. Suggestions are collected in the trusted workspace and identify their origin; existing
+saved connection values take precedence. Discovery makes no network request and does not establish compatibility.
+
+Saving the form derives standard `/query`, `/update` and `/data` endpoints for the supplied Fuseki dataset URL.
+Existing custom endpoints remain unchanged when the dataset URL is unchanged. Mapping, run graphs, protocol
+versions, batching and request limits retain defaults; the active built-in Git API supplies the workspace baseline
+commit when available, otherwise the legacy baseline stays available for advanced review.
+
+New source setup creates an empty `identities.ndjson` only if no inventory exists; its SHA-256 is the actual file
+checksum, not fabricated evidence. Empty bootstrap inventories allow discovery but cannot establish source fidelity.
+After reviewing discovery, select its inventory in advanced settings and save the connection form to refresh the
+selected checksum. Existing inventories are never overwritten. Input changes invalidate dependent evidence.
+This action does not populate source data, authorize target writes, or remove existing source/target configuration.
+
+## Installing or replacing the VSIX
+
+In VS Code, select **Extensions → … → Install from VSIX**, choose the new package and reload the window.
+Stop any active migration before replacing the extension. Settings and workspace migration files are retained.
+For a package with the same version as your installed preview, you can force replacement from PowerShell:
+
+```powershell
+code --install-extension ".\vscode-cosmosdb-0.39.0.vsix" --force
+```
+
+If the CLI prints `DEP0169` after reporting that the extension was successfully installed, installation succeeded.
+The warning was reproduced with VS Code 1.144.0 in isolated extensions/user-data directories. Its stack points to
+VS Code's own gallery-request proxy helper (`getProxyAgent` in `src/vs/platform/request/node/proxy.ts`), not this
+extension. That helper uses deprecated `url.parse()` even when no proxy is configured. Rebuilding this VSIX or
+changing this repository's dependencies cannot repair the CLI. Do not disable warnings, TLS checks or proxy security.
+
+The corrective fix belongs in VS Code: migrate its proxy/request URL parsing to the WHATWG `URL` API, preserving
+proxy authentication and request behavior, then install a VS Code release containing that fix. No fixed release
+was verified; the upstream `main` proxy helper still used `url.parse()` when checked. The successful installation
+needs no rollback or reinstall solely because of this warning. Use **Help → Report Issue** in VS Code to report
+the installer warning with a deprecation stack trace if it persists.
+
+For diagnostics, set `NODE_OPTIONS=--trace-deprecation` only for the installation command and restore its previous
+value afterward. This reports the actual caller instead of suppressing the warning.
+
+## Execution budgets and meaningful progress
+
+Set optional `limits.maximumOperationMillis` between 1,000 and 86,400,000 milliseconds to impose a per-operation
+editor worker deadline. Old projects without this field retain their existing behavior. Changing the budget changes
+the input hash, so review stale approvals/checkpoints before attempting resume; a deadline is not a migration pass.
+The editor requests pause at the deadline, rejects subsequent completion as accepted evidence, and requests
+termination after five seconds if the owned worker remains active. Actual closure, not a kill request, releases ownership.
+This is extension worker control; it does not fix cancellation in the Copilot desktop app itself.
+
+Headless load and main-CLI validation check the same deadline at record/batch boundaries. Source-child operations
+check it while supervising the child; an in-flight target request still uses its configured request timeout.
+Artifact hashing/preparation and commands without cooperative engine checks are not a hard headless-process deadline.
+Use an external supervisor for a strict wall-clock process ceiling. Do not mistake request deadlines for an overall limit.
+
+Checkpoint-confirmed load batches emit cumulative record counts, request-body bytes, retry/queue observations and
+elapsed milliseconds over bounded `progress` protocol frames. The editor displays counts/bytes/time in its live status.
+Request-body bytes exclude transport overhead; these fields do not claim target CPU/RSS or per-HTTP latency.
+
+## Read-only discovery and operational preflight
+
+Use **Enumerate read-only source identities** with the dedicated run-relative plan/output fields.
+The bounded plan lists known typed partitions and explicit request/duration limits; see
+[source enumeration](source-extraction.md). Review the generated manifest and configure a new extraction run,
+then collect source fidelity evidence. Discovery does not silently update configuration or authorize any mutation.
+
+**Check prerequisites** also reports the worker filesystem's available/required disk bytes and read visibility
+of each configured run graph. An empty graph result cannot prove write authorization or distinguish an inaccessible
+graph from an empty one. The reachability observation belongs to the current worker execution location.
+
+For a separately authorized capability probe, set a dedicated graph IRI with the form
+`<graphNamespace><runId>:probe:<UUID>`, then select **Authorize** and **Run** on
+**Probe approved disposable target graph**. It inserts two ownership/input marker statements, verifies their
+exact content, deletes only those exact statements and verifies the graph is empty. Foreign content blocks the
+operation. Ambiguous outcomes preserve the graph for reconciliation; repeating the same approved probe can reconcile
+its exact marker. It never drops an unreviewed graph or proves remote compound-transaction rollback semantics.
+
+Headless equivalent: `preflight probe <project.json> <dedicated-probe-graph>`, with a current `target-probe` approval
+whose sole resource is that exact graph IRI. Live execution still needs separately supplied endpoint credentials.
+
 The graph tab owns `.cosmosdb-graph-migration/project.json`; relational migration state and fields are not reused.
 Trust the workspace before executing anything. Credentials are stored in VS Code SecretStorage and only applicable
 references are passed to each operation. Packaged JAR hashes are checked with streaming reads before execution.

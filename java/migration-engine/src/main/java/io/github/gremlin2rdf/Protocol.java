@@ -63,7 +63,19 @@ public final class Protocol {
                     executor.submit(() -> {
                         try {
                             String command = message.payload().path("operation").asText();
+                            long started = System.nanoTime();
+                            long[] records = {0}, bytes = {0};
+                            engine.measure(metric -> {
+                                records[0] += metric.records(); bytes[0] += metric.requestBodyBytes();
+                                emit(output, outgoing, "progress", message.runId(), message.operationId(), command,
+                                    Map.of("recordsConfirmed", records[0], "requestBodyBytes", bytes[0],
+                                        "queueDepth", metric.queueDepth(), "retries", metric.retries(),
+                                        "elapsedMillis", (System.nanoTime() - started) / 1000000));
+                            });
                             Object result = operation.execute(command, message.payload(), engine);
+                            if (engine.deadlineExceeded()) emit(output, outgoing, "warning", message.runId(),
+                                message.operationId(), command, Map.of("code", "OPERATION_DEADLINE",
+                                    "remediation", "Review preserved checkpoints before resuming with a separately reviewed execution budget."));
                             emit(output, outgoing, "result", message.runId(), message.operationId(), command, result);
                         } catch (Exception e) {
                             emit(output, outgoing, "error", message.runId(), message.operationId(), "execution", Main.diagnostic(e));

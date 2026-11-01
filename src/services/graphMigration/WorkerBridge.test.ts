@@ -121,6 +121,51 @@ function bridge() {
     return new WorkerBridge('package', storage(), vi.fn(), vi.fn());
 }
 describe('worker credential isolation', () => {
+    it('enforces the overall deadline and terminates only the owned worker after pause grace', async () => {
+        vi.useFakeTimers();
+        const failure = vi.fn();
+        const worker = new WorkerBridge('package', storage(), vi.fn(), failure);
+        const input = project();
+        input.limits.maximumOperationMillis = 1000;
+        await worker.start(input, 'run', 'synthetic', []);
+        const child = mocks.spawn.mock.results[0].value;
+        await vi.advanceTimersByTimeAsync(999);
+        expect(failure).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(failure).toHaveBeenCalledWith('OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED', 'paused');
+        expect(child.kill).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(child.kill).toHaveBeenCalledOnce();
+        child.emit('close', null);
+        await vi.advanceTimersByTimeAsync(10000);
+        expect(child.kill).toHaveBeenCalledOnce();
+    });
+    it('injects only source enumeration credentials and exact target probe authorization', async () => {
+        mocks.get.mockResolvedValue('test-only-value');
+        await bridge().start(project(), 'run', 'source-enumerate', []);
+        expect(mocks.get.mock.calls.map(([name]) => name)).toEqual([
+            'graph-migration:env:GRAPH_SOURCE_TEST',
+            'graph-migration:env:GRAPH_SOURCE_CA_TEST',
+        ]);
+        mocks.get.mockClear();
+        const input = project();
+        input.approvals.push({
+            schemaVersion: 1,
+            runId: input.runId,
+            operation: 'target-probe',
+            resources: ['urn:probe'],
+            inputHash: hash,
+            expiresAt: '2030-01-01T00:00:00Z',
+            keyRef: 'env:GRAPH_PROBE_TEST',
+            signature: hash,
+        });
+        await bridge().start(input, 'run', 'preflight', ['probe']);
+        expect(mocks.get.mock.calls.map(([name]) => name)).toEqual([
+            'graph-migration:env:GRAPH_TARGET_TEST',
+            'graph-migration:env:GRAPH_TARGET_CA_TEST',
+            'graph-migration:env:GRAPH_PROBE_TEST',
+        ]);
+    });
     it('runs offline operations without requiring configured live secrets', async () => {
         await bridge().start(project(), 'run', 'synthetic', ['generate', 'semantic', '1', 'records.ndjson']);
         expect(mocks.get).not.toHaveBeenCalled();

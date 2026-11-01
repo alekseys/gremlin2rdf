@@ -55,6 +55,7 @@ vi.mock('../../extensionVariables', () => {
     return { ext, default: { ext } };
 });
 vi.mock('vscode', () => ({
+    extensions: { getExtension: vi.fn() },
     workspace: {
         get isTrusted() {
             return mocks.trusted;
@@ -109,6 +110,23 @@ async function complete(payload: WorkerMessage['payload']) {
 }
 
 describe('persisted graph editor workflow', () => {
+    it('saves simple connection settings with derived endpoints and a real bootstrap inventory', async () => {
+        await context.create();
+        await context.saveSetup({
+            host: 'account.gremlin.cosmos.azure.com',
+            database: 'db',
+            container: 'graph',
+            partitionKeyPath: '/tenant',
+            datasetUrl: 'http://localhost:3030/graph',
+            consistency: 'quiesced',
+        });
+        const loaded = await service.load();
+        expect(loaded.source?.authenticationRef).toBe('env:GRAPH_SOURCE_KEY');
+        expect(loaded.target?.queryEndpoint).toBe('http://localhost:3030/graph/query');
+        expect(loaded.consistency).toBe('quiesced');
+        expect(loaded.source?.identityManifestHash).toBe(createHash('sha256').update('').digest('hex'));
+        expect(mocks.start).not.toHaveBeenCalled();
+    });
     it('creates separate graph state and pauses orphaned work after restart without changing relational files', async () => {
         const relational = path.join(workspace, 'relational-project.json');
         await writeFile(relational, '{"untouched":true}');

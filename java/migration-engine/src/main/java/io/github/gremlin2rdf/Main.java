@@ -36,7 +36,7 @@ public final class Main {
             : "Inspect sanitized diagnostics; verify configuration, checkpoint integrity and endpoint capabilities.");
     }
     private static Object worker(String command, JsonNode payload, Engine engine) throws Exception {
-        var allowed = Set.of("preflight", "source-compatibility", "source-populate", "source-cleanup", "source-recipes", "assess", "mapping", "synthetic", "extract", "load", "resume", "validate",
+        var allowed = Set.of("preflight", "source-enumerate", "source-compatibility", "source-populate", "source-cleanup", "source-recipes", "assess", "mapping", "synthetic", "extract", "load", "resume", "validate",
             "translate", "rewrite", "test", "publish", "cleanup", "report");
         if (!allowed.contains(command)) throw new Gremlin.Unsupported("WORKER_OPERATION", "Unsupported worker operation");
         JsonNode args = payload.path("arguments");
@@ -53,6 +53,8 @@ public final class Main {
         JsonNode result;
         try { result = Json.MAPPER.valueToTree(execute(arguments.toArray(String[]::new), engine)); }
         catch (Exception e) { result = Json.MAPPER.valueToTree(diagnostic(e)); }
+        if (engine.deadlineExceeded() && result instanceof com.fasterxml.jackson.databind.node.ObjectNode object)
+            object.put("status", "paused");
         String status = result.path("status").asText("succeeded");
         if (result.path("blockers").isArray() && !result.path("blockers").isEmpty()) status = "blocked";
         if (result.path("readiness").asText().equals("blocked")) status = "blocked";
@@ -112,6 +114,12 @@ public final class Main {
             expected.put(directory.resolve("canonical.nt"), result.path("canonical").path("sha256").asText());
             expected.put(directory.resolve("derived.nt"), result.path("derived").path("sha256").asText());
             manifests.add(directory.resolve("manifest.json"));
+        } else if (args[0].equals("source-enumerate")) {
+            Path directory = Path.of(args[4]);
+            Path identities = directory.resolve("identities.ndjson");
+            paths.add(identities); paths.add(directory.resolve("manifest.json"));
+            expected.put(identities, result.path("sha256").asText());
+            manifests.add(directory.resolve("manifest.json"));
         } else if (Set.of("source-populate", "source-cleanup", "source-recipes").contains(args[0])) {
             paths.add(Path.of(args[4]));
             expected.put(Path.of(args[4]), result.path(args[0].equals("source-recipes") ? "sha256" : "ownershipJournalSha256").asText());
@@ -151,13 +159,33 @@ public final class Main {
     }
     public static Object execute(String[] args, Engine engine) throws Exception {
         if (args.length == 0) throw new Gremlin.Unsupported("COMMAND_REQUIRED", "A documented CLI operation is required");
+        if (args.length > 1 && Set.of("source-enumerate", "source-compatibility", "extract", "load", "migrate",
+            "resume", "validate", "cleanup", "publish", "report").contains(args[0]))
+            engine.deadline(project(args[1]).limits().maximumOperationMillis());
         return switch (args[0]) {
             case "mapping" -> {
+                if (args.length == 4 && args[1].equals("shapes")) {
+                    var mapping = Json.MAPPER.readValue(Files.readAllBytes(Path.of(args[2])), Mapping.class);
+                    Path output = Path.of(args[3]);
+                    if (Files.exists(output)) throw new IOException("New SHACL output required");
+                    var model = org.apache.jena.rdf.model.ModelFactory.createDefaultModel();
+                    try (var resource = Main.class.getResourceAsStream("/canonical-v1.shacl.ttl")) {
+                        if (resource == null) throw new IOException("Canonical shapes resource missing");
+                        org.apache.jena.riot.RDFDataMgr.read(model, resource, org.apache.jena.riot.Lang.TURTLE);
+                        DomainShapes.add(model, mapping);
+                        try (var stream = Files.newOutputStream(output, StandardOpenOption.CREATE_NEW)) {
+                            org.apache.jena.riot.RDFDataMgr.write(stream, model, org.apache.jena.riot.Lang.TURTLE);
+                        }
+                    } finally { model.close(); }
+                    yield Map.of("status", "succeeded", "mappingHash", mapping.hash(), "outputSha256", SafeFiles.fileHash(output));
+                }
                 if (args.length == 5 && args[1].equals("export"))
                     yield RdfExport.run(project(args[2]), Path.of(args[3]), Path.of(args[4]));
                 require(args, 3);
                 if (!args[1].equals("validate")) throw new Gremlin.Unsupported("MAPPING_OPERATION", "Only mapping validate is supported");
                 var mapping = Json.MAPPER.readValue(Files.readAllBytes(Path.of(args[2])), Mapping.class);
+                var shapes = org.apache.jena.rdf.model.ModelFactory.createDefaultModel();
+                try { DomainShapes.add(shapes, mapping); } finally { shapes.close(); }
                 yield Map.of("status", "succeeded", "mappingHash", mapping.hash());
             }
             case "synthetic" -> {
@@ -228,14 +256,15 @@ public final class Main {
             }
             case "validate" -> {
                 require(args, 3); var project = project(args[1]);
-                try (var sink = new Sink(project)) { yield Validation.validate(project, Path.of(args[2]), sink); }
+                try (var sink = new Sink(project)) { yield Validation.validate(project, Path.of(args[2]), sink, engine); }
             }
-            case "extract", "source-compatibility", "source-populate", "source-cleanup", "source-recipes" -> {
+            case "source-enumerate", "extract", "source-compatibility", "source-populate", "source-cleanup", "source-recipes" -> {
                 require(args, 5); var project = project(args[1]);
                 Path sourceJar = Path.of(args[2]).toRealPath(), output = Path.of(args[4]);
                 boolean probe = args[0].equals("source-compatibility");
                 boolean mutation = Set.of("source-populate", "source-cleanup").contains(args[0]);
                 boolean recipes = args[0].equals("source-recipes");
+                boolean enumerate = args[0].equals("source-enumerate");
                 PopulationPlan populationPlan = null;
                 if (mutation || recipes) {
                     Path root = Path.of(args[1]).toRealPath().getParent();
@@ -258,7 +287,7 @@ public final class Main {
                     throw new IllegalArgumentException("Pinned source adapter required");
                 var process = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin",
                     System.getProperty("os.name").startsWith("Windows") ? "java.exe" : "java").toString(),
-                    "-Xmx256m", "-jar", sourceJar.toString(), probe ? "probe" : recipes ? "recipes"
+                    "-Xmx256m", "-jar", sourceJar.toString(), enumerate ? "enumerate" : probe ? "probe" : recipes ? "recipes"
                         : mutation ? args[0].equals("source-populate") ? "populate" : "source-cleanup" : "extract",
                     args[1], args[3], args[4], "--parent-owned")
                     .redirectError(ProcessBuilder.Redirect.INHERIT).start();
@@ -284,6 +313,18 @@ public final class Main {
                 }
                 var acknowledgement = Json.MAPPER.readTree(reply.get(2, java.util.concurrent.TimeUnit.SECONDS));
                 if (acknowledgement == null || !acknowledgement.isObject()) throw new IOException("Source did not return a bounded acknowledgement");
+                if (enumerate) {
+                    Path directory = SafeFiles.resolve(Path.of(args[1]).toRealPath().getParent(), args[4]);
+                    Path manifest = SafeFiles.resolve(directory, "manifest.json");
+                    if (process.exitValue() != 0 || Files.size(manifest) > 1048576
+                        || !acknowledgement.path("status").asText().equals("succeeded")
+                        || !acknowledgement.path("inputHash").asText().equals(project.inputHash())
+                        || !acknowledgement.path("runId").asText().equals(project.runId())
+                        || !acknowledgement.equals(Json.MAPPER.readTree(Files.readAllBytes(manifest)))
+                        || !acknowledgement.path("sha256").asText().equals(SafeFiles.fileHash(SafeFiles.resolve(directory, "identities.ndjson"))))
+                        throw new IOException("Unconfirmed or changed enumeration manifest");
+                    yield acknowledgement;
+                }
                 if (mutation || recipes) {
                     if (process.exitValue() != 0 || !acknowledgement.path("status").asText().equals("succeeded")
                         || !acknowledgement.path("planHash").asText().equals(populationPlan.hash())
@@ -320,18 +361,41 @@ public final class Main {
                 yield extracted;
             }
             case "preflight" -> {
+                if (args.length == 4 && args[1].equals("probe")) {
+                    var project = project(args[2]);
+                    try (var sink = new Sink(project)) { yield TargetProbe.run(project, args[3], sink); }
+                }
                 require(args, 2); var project = project(args[1]);
                 List<String> blockers = new ArrayList<>();
                 boolean target = false;
+                Map<String, Object> visibility = new TreeMap<>();
                 if (project.target() == null) blockers.add("Explicit target endpoint configuration not supplied");
-                else try (var sink = new Sink(project)) { target = sink.queryAccess(); }
+                else try (var sink = new Sink(project)) {
+                    target = sink.queryAccess();
+                    if (!target) blockers.add("Target did not confirm query access");
+                    for (String role : List.of("canonical", "derived", "metadata", "validation")) {
+                        var query = new org.apache.jena.query.ParameterizedSparqlString("ASK { GRAPH ?graph { ?s ?p ?o } }");
+                        query.setIri("graph", project.graph(role));
+                        visibility.put(role, Map.of("graph", project.graph(role),
+                            "containsVisibleData", sink.connection().queryAsk(query.asQuery()),
+                            "emptyGraphAuthorization", "not-established-by-read-only-query"));
+                    }
+                }
+                Path root = Path.of(args[1]).toRealPath().getParent();
+                long free = Files.getFileStore(root).getUsableSpace();
+                if (free < project.limits().minimumFreeDiskBytes())
+                    blockers.add("Worker artifact filesystem has insufficient free space");
+                if (Runtime.version().feature() < 21) blockers.add("Java 21 or newer is required");
                 try { SourceCompatibility.read(project, Path.of(args[1]).toRealPath().getParent()); }
                 catch (java.io.IOException | IllegalArgumentException e) {
                     blockers.add("Current owned and checksummed live source compatibility observations are required");
                 }
                 if (project.consistency().equals("best-effort")) blockers.add("Strict equivalence prohibited for writable best-effort source");
                 yield Map.of("status", blockers.isEmpty() ? "succeeded" : "blocked", "targetQueryAccess", target,
-                    "targetWriteAccess", "not-executed-without-authorization", "blockers", blockers, "java", Runtime.version().feature());
+                    "targetWriteAccess", "not-executed-without-authorization", "blockers", blockers,
+                    "java", Runtime.version().feature(), "availableArtifactDiskBytes", free,
+                    "requiredArtifactDiskBytes", project.limits().minimumFreeDiskBytes(),
+                    "namedGraphVisibility", visibility, "connectivityLocation", "current-worker-process");
             }
             case "authorize" -> {
                 require(args, 7); var project = project(args[1]);

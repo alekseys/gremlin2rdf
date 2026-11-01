@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "scope": "Simplified connection setup and fork-focused README; local preview, not live or release acceptance",
+  "setup": {
+    "status": "implemented",
+    "changes": [
+      "Five basic connection fields and an explicit source-consistency choice",
+      "Bounded, read-only discovery of recognized non-secret environment and workspace configuration values",
+      "Origin hints, explicit conflicts and unsafe-value notices; no live connections or secret resolution",
+      "Standard Fuseki endpoint derivation, true inventory checksums and existing mapping/limits defaults",
+      "Advanced project JSON and mapping controls collapsed by default",
+      "Workspace Git baseline inferred through the active VS Code Git API when available"
+    ]
+  },
+  "readme": {
+    "status": "rewritten",
+    "focus": "Existing Cosmos DB Gremlin databases and applications migrating to Apache Jena/Fuseki",
+    "packagedLinks": "Explicit fork implementation-branch URLs prevent VSCE from rewriting graph documentation links to the upstream repository"
+  },
+  "checks": {
+    "targetedTests": {
+      "command": "npx vitest run src/services/graphMigration/setup.test.ts src/webviews/cosmosdb/GraphMigration/GraphConnectionSetup.test.tsx src/webviews/cosmosdb/GraphMigration/GraphMigrationWorkbench.test.tsx src/panels/graphMigration/GraphMigrationTab.test.ts --reporter=dot",
+      "files": 4,
+      "passed": 29,
+      "exitCode": 0
+    },
+    "typescriptBuild": { "command": "npm run build", "targets": 3, "exitCode": 0 },
+    "localization": { "command": "npm run l10n", "exitCode": 0 },
+    "targetedEslintExitCode": 0,
+    "targetedOxlintExitCode": 0,
+    "fullSuitesLoadSoakAndLiveOperations": "Not executed"
+  },
+  "package": {
+    "status": "historical-superseded",
+    "supersededBy": "docs/graph-migration/evidence/visual-workbench.json",
+    "command": "npm run package",
+    "exitCode": 0,
+    "path": "vscode-cosmosdb-0.39.0.vsix",
+    "bytes": 76036566,
+    "sha256": "2d8ad3dc91aac144fbf6ae86feb6bdfa4a1780d732a118a2d9b9963e7e6c564d",
+    "workbenchChunk": "extension/GraphMigrationWorkbench-V9lDBEBn.js",
+    "verified": [
+      "Simplified connection form and advanced details in compiled webview",
+      "Root README matches source text and fork documentation links",
+      "Bundled setup documentation matches source bytes",
+      "All three embedded worker JAR checksums and current source bytes",
+      "Private evidence excluded from package"
+    ],
+    "installedIntoUserProfile": false
+  },
+  "priorPackageEvidence": "docs/graph-migration/evidence/installer-overview.json",
+  "publication": "Local source and VSIX, uncommitted and unpushed; draft PR is unchanged"
+}

@@ -7,10 +7,17 @@ import { initWebviewTrpc, type BaseRouterContext, type TypedEventSink } from '@m
 import { z } from 'zod';
 import { type GraphProject, type WorkerMessage } from '../../services/graphMigration/contracts';
 import { graphEvidencePhases } from '../../services/graphMigration/evidence';
+import {
+    connectionSetupSchema,
+    type ConnectionSetup,
+    type SetupSuggestions,
+} from '../../services/graphMigration/setup';
 
 export const graphOperationSchema = z.enum([
     'preflight',
+    'target-probe',
     'source-compatibility',
+    'source-enumerate',
     'source-generate',
     'source-plan',
     'source-recipes',
@@ -39,6 +46,7 @@ export const graphOperationSchema = z.enum([
 ]);
 export type GraphOperation = z.infer<typeof graphOperationSchema>;
 export const graphApprovalOperationSchema = z.enum([
+    'target-probe',
     'load',
     'resume',
     'publish',
@@ -59,9 +67,10 @@ export type GraphEvent =
     | { type: 'project'; project: GraphProject };
 export interface GraphRouterContext extends BaseRouterContext {
     eventSink: TypedEventSink<GraphEvent>;
-    load(): Promise<{ project: GraphProject | null; trusted: boolean }>;
+    load(): Promise<{ project: GraphProject | null; trusted: boolean; setup?: SetupSuggestions }>;
     create(): Promise<GraphProject>;
     save(json: string): Promise<void>;
+    saveSetup(value: ConnectionSetup): Promise<void>;
     run(operation: GraphOperation, query: string, sourcePath: string, outputPath: string): Promise<void>;
     approve(operation: GraphApprovalOperation, outputPath: string): Promise<void>;
     openArtifact(relativePath: string): Promise<void>;
@@ -75,6 +84,7 @@ export const graphAppRouter = graph.router({
     load: graph.publicProcedure.query(({ ctx }) => ctx.load()),
     create: graph.publicProcedure.mutation(({ ctx }) => ctx.create()),
     save: graph.publicProcedure.input(z.string().max(1048576)).mutation(({ ctx, input }) => ctx.save(input)),
+    saveSetup: graph.publicProcedure.input(connectionSetupSchema).mutation(({ ctx, input }) => ctx.saveSetup(input)),
     run: graph.publicProcedure
         .input(
             z

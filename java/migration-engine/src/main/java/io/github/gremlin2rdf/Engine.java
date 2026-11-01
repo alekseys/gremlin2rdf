@@ -21,15 +21,25 @@ public final class Engine {
     private final AtomicBoolean paused = new AtomicBoolean();
     private Consumer<Checkpoint> observer = checkpoint -> {};
     private Consumer<BatchMetrics> metrics = metric -> {};
+    private volatile long deadlineNanos = Long.MAX_VALUE;
+    private volatile boolean deadlineExceeded;
+    public void deadline(Long millis) {
+        deadlineNanos = millis == null ? Long.MAX_VALUE : System.nanoTime() + millis * 1000000L;
+    }
+    public boolean deadlineExceeded() { stopping(); return deadlineExceeded; }
     public void observe(Consumer<Checkpoint> observer) { this.observer = observer; }
     public void measure(Consumer<BatchMetrics> metrics) { this.metrics = metrics; }
     public void cancel() { cancelled.set(true); }
     public void pause() { paused.set(true); }
-    public boolean stopping() { return cancelled.get() || paused.get(); }
+    public boolean stopping() {
+        if (System.nanoTime() >= deadlineNanos) { deadlineExceeded = true; paused.set(true); }
+        return cancelled.get() || paused.get();
+    }
     public String stoppedStatus() { return cancelled.get() ? "cancelled" : "paused"; }
     public Result load(Project project, Path source, Path artifacts, Sink sink,
                        Consumer<Checkpoint> progress, FailureHook hook) throws IOException {
         long started = System.nanoTime();
+        if (deadlineNanos == Long.MAX_VALUE) deadline(project.limits().maximumOperationMillis());
         if (project.source() != null) SourceCompatibility.authorizeMode(project);
         Files.createDirectories(artifacts);
         if (Files.getFileStore(artifacts).getUsableSpace() < project.limits().minimumFreeDiskBytes())
@@ -75,7 +85,7 @@ public final class Engine {
                 long pendingBytes = 0;
                 long pendingOffset = checkpoint.offset();
                 GraphRecord record;
-                while (!cancelled.get() && !paused.get() && (record = reader.next()) != null) {
+                while (!stopping() && (record = reader.next()) != null) {
                     if (!record.provenance().consistency().equals(project.consistency()))
                         throw new IOException("Canonical source consistency differs from project");
                     var single = sink.batch(0, reader.offset(), List.of(record));
@@ -96,11 +106,11 @@ public final class Engine {
                         pendingBytes = 0;
                     }
                 }
-                if (!pending.isEmpty() && !cancelled.get() && !paused.get())
+                if (!pending.isEmpty() && !stopping())
                     checkpoint = commit(project, sink, sink.batchFromQuads(checkpoint.batch() + 1, pendingOffset, pending, pendingQuads),
                         checkpoint, checkpointPath, progress, hook);
             }
-            if (!cancelled.get() && !paused.get() && checkpoint.records() != manifest.path("records").asLong())
+            if (!stopping() && checkpoint.records() != manifest.path("records").asLong())
                 throw new IOException("Loaded records do not reconcile extraction manifest count");
             if (!sourceHash.equals(SafeFiles.fileHash(source)))
                 throw new IOException("Selected canonical input changed during load; approved snapshot batches remain checkpointed");
@@ -115,6 +125,7 @@ public final class Engine {
         int retries = 0;
         int requestBytes = sink.serializedBytes(batch);
         if (requestBytes > project.limits().batchBytes()) throw new IOException("Serialized request exceeds approved batch byte bound");
+        if (stopping()) return previous;
         for (int attempt = 0; attempt <= project.limits().maxRetries(); attempt++) {
             retries = attempt;
             try { sink.commit(batch); failure = null; break; }
@@ -124,7 +135,7 @@ public final class Engine {
                 try { sink.reconcile(batch); failure = null; break; }
                 catch (org.apache.jena.atlas.web.HttpException | org.apache.jena.sparql.engine.http.QueryExceptionHTTP | Sink.UnconfirmedBatch unresolved) {
                     if (!(unresolved instanceof Sink.UnconfirmedBatch) && !TargetHttp.transientFailure(unresolved)) throw unresolved;
-                    if (attempt == project.limits().maxRetries() || cancelled.get() || paused.get()) break;
+                    if (attempt == project.limits().maxRetries() || stopping()) break;
                     try { Thread.sleep(Math.min(2000, 100L << Math.min(attempt, 5))); }
                     catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw new IOException("Retry interrupted", interrupted); }
                 }

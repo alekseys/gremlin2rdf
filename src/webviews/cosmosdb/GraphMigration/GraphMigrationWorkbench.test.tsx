@@ -6,7 +6,7 @@
 // @vitest-environment jsdom
 
 import { AriaLiveAnnouncer, FluentProvider, webLightTheme } from '@fluentui/react-components';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { type PropsWithChildren } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
     load: vi.fn(),
     create: vi.fn(),
     save: vi.fn(),
+    saveSetup: vi.fn(),
     run: vi.fn(),
     approve: vi.fn(),
     credentials: vi.fn(),
@@ -34,6 +35,7 @@ const client = {
     load: { query: mocks.load },
     create: { mutate: mocks.create },
     save: { mutate: mocks.save },
+    saveSetup: { mutate: mocks.saveSetup },
     run: { mutate: mocks.run },
     approve: { mutate: mocks.approve },
     credentials: { mutate: mocks.credentials },
@@ -96,9 +98,91 @@ function Wrapper({ children }: PropsWithChildren) {
         </FluentProvider>
     );
 }
+function renderWorkbench() {
+    const rendered = render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+    // Existing boundary tests exercise the advanced controls, not the simplified initial view.
+    void screen.findByText('Advanced configuration and mapping').then((summary) => {
+        act(() => {
+            for (const details of summary.closest('main')?.querySelectorAll('details') ?? []) {
+                details.setAttribute('open', '');
+            }
+        });
+    });
+    return rendered;
+}
 describe('graph workbench boundaries and keyboard access', () => {
-    it('labels configuration/review fields and dispatches only the selected operation by keyboard', async () => {
+    it('keeps full JSON collapsed by default and saves the visible connection fields independently', async () => {
+        mocks.load.mockResolvedValue({
+            project,
+            trusted: true,
+            setup: {
+                values: {
+                    host: 'account.gremlin.cosmos.azure.com',
+                    database: 'db',
+                    container: 'graph',
+                    partitionKeyPath: '/tenant',
+                    datasetUrl: 'http://localhost:3030/graph',
+                    consistency: '',
+                },
+                origins: { host: '.env' },
+                notices: [],
+            },
+        });
         render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        await waitFor(() =>
+            expect(screen.getByRole('textbox', { name: 'Gremlin endpoint' })).toHaveValue(
+                'account.gremlin.cosmos.azure.com',
+            ),
+        );
+        expect(screen.getByText('Advanced configuration and mapping').closest('details')).not.toHaveAttribute('open');
+        expect(screen.getByLabelText('Graph project JSON')).not.toBeVisible();
+        const user = userEvent.setup();
+        await user.selectOptions(screen.getByRole('combobox', { name: 'Source consistency' }), 'quiesced');
+        await user.click(screen.getByRole('button', { name: 'Save connection settings' }));
+        expect(mocks.saveSetup).toHaveBeenCalledWith(
+            expect.objectContaining({
+                host: 'account.gremlin.cosmos.azure.com',
+                partitionKeyPath: '/tenant',
+                consistency: 'quiesced',
+            }),
+        );
+        expect(mocks.run).not.toHaveBeenCalled();
+    });
+    it('introduces the RDF migration workflow while keeping experimental and live-compatibility boundaries clear', async () => {
+        renderWorkbench();
+        expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Gremlin to RDF migration');
+        expect(screen.getByText('Experimental migration workbench')).toBeVisible();
+        expect(screen.getByText(/Move your Cosmos DB Gremlin graph/)).toHaveTextContent(
+            'preserving graph identity and repeated property values',
+        );
+        expect(screen.getByText(/Bring existing databases/)).toHaveTextContent(
+            'Local samples do not verify your live source',
+        );
+        await screen.findByRole('textbox', { name: 'Graph project JSON' });
+        expect(mocks.run).not.toHaveBeenCalled();
+        expect(mocks.approve).not.toHaveBeenCalled();
+    });
+    it('highlights core work while leaving optional tools collapsed and never starting a benchmark', async () => {
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        await screen.findByText('All phases and tools');
+        expect(screen.getByText('All phases and tools').closest('details')).not.toHaveAttribute('open');
+        expect(screen.getByText('Optional application adaptation').closest('details')).not.toHaveAttribute('open');
+        expect(screen.getByText('Optional reviewed evidence import').closest('details')).not.toHaveAttribute('open');
+        expect(screen.getByRole('navigation', { name: 'Migration sequence overview' })).toBeVisible();
+        expect(
+            within(screen.getByRole('region', { name: 'Next unfinished migration step' })).getByRole('button', {
+                name: 'Run for Check prerequisites',
+            }),
+        ).toBeVisible();
+        expect(screen.getByText('Run private two-hour mixed soak')).not.toBeVisible();
+        expect(screen.getByRole('textbox', { name: 'Gremlin endpoint' })).toBeRequired();
+        expect(screen.getByRole('textbox', { name: 'Fuseki dataset URL' })).toBeRequired();
+        expect(screen.getByRole('combobox', { name: 'Source consistency' })).toBeRequired();
+        expect(mocks.run).not.toHaveBeenCalled();
+        expect(mocks.approve).not.toHaveBeenCalled();
+    });
+    it('labels configuration/review fields and dispatches only the selected operation by keyboard', async () => {
+        renderWorkbench();
         expect(await screen.findByRole('textbox', { name: 'Graph project JSON' })).toBeVisible();
         expect(screen.getByRole('textbox', { name: 'Restricted Gremlin read query' })).toBeVisible();
         expect(screen.getByRole('textbox', { name: 'Workspace-relative Java source path' })).toBeVisible();
@@ -118,7 +202,7 @@ describe('graph workbench boundaries and keyboard access', () => {
         expect(mocks.approve).not.toHaveBeenCalled();
     });
     it('separates approval review from executing graph writes', async () => {
-        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        renderWorkbench();
         const button = await screen.findByRole('button', { name: 'Authorize for Load approved target graphs' });
         expect(button).toHaveTextContent('Authorize');
         expect(button).toHaveAccessibleName('Authorize for Load approved target graphs');
@@ -128,18 +212,18 @@ describe('graph workbench boundaries and keyboard access', () => {
     });
     it('blocks executable actions in an untrusted workspace', async () => {
         mocks.load.mockResolvedValue({ project, trusted: false });
-        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        renderWorkbench();
         expect(await screen.findByRole('button', { name: 'Run for Load approved target graphs' })).toBeDisabled();
         expect(screen.getByRole('button', { name: 'Store credentials securely' })).toBeDisabled();
     });
     it('announces worker failure with actionable recovery instead of a success state', async () => {
-        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        renderWorkbench();
         await screen.findByRole('textbox', { name: 'Graph project JSON' });
         act(() => listener({ type: 'diagnostic', code: 'WORKER_DISCONNECTED' }));
         expect(await screen.findByRole('alert')).toHaveTextContent('Reload the project');
     });
     it('dispatches read-only compatibility independently from target approval', async () => {
-        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        renderWorkbench();
         const button = await screen.findByRole('button', { name: 'Run for Probe read-only source compatibility' });
         expect(button).toHaveTextContent('Run');
         button.focus();
@@ -159,7 +243,7 @@ describe('graph workbench boundaries and keyboard access', () => {
             project: { ...project, mapping: { ...project.mapping, fidelity: 'reduced' }, consistency: 'best-effort' },
             trusted: true,
         });
-        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        renderWorkbench();
         await userEvent.setup().click(await screen.findByRole('button', { name: 'Authorize reduced fidelity' }));
         await userEvent.setup().click(screen.getByRole('button', { name: 'Authorize best-effort source' }));
         expect(mocks.approve).toHaveBeenCalledWith('reduced-fidelity');
@@ -167,7 +251,7 @@ describe('graph workbench boundaries and keyboard access', () => {
         expect(mocks.run).not.toHaveBeenCalled();
     });
     it('keeps source fixture writes separate from target writes and explicit approval', async () => {
-        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        renderWorkbench();
         const label = 'Populate approved test container';
         await userEvent.setup().click(await screen.findByRole('button', { name: `Authorize for ${label}` }));
         expect(mocks.approve).toHaveBeenCalledWith('source-populate');
@@ -183,7 +267,7 @@ describe('graph workbench boundaries and keyboard access', () => {
         });
     });
     it('reviews exact new rewrite output separately from applying it and from fixture authorization', async () => {
-        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        renderWorkbench();
         const output = await screen.findByRole('textbox', { name: 'Run-relative new Java output path' });
         const user = userEvent.setup();
         await user.clear(output);
@@ -205,7 +289,7 @@ describe('graph workbench boundaries and keyboard access', () => {
         });
     });
     it('imports a selected reviewed proof without running or authorizing a database operation', async () => {
-        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        renderWorkbench();
         const user = userEvent.setup();
         await user.type(
             await screen.findByRole('textbox', { name: 'Run-relative reviewed report path' }),

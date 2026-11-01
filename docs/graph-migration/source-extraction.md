@@ -163,3 +163,48 @@ No unrestricted `g.V().drop()` or resource provisioning command exists.
 Offline journal/script tests and native fixture determinism are exercised locally. **Actual Cosmos
 population, property-ID/meta-property writes, quiescence, RU behavior and cleanup remain blocked/unverified**
 without a live authorized dedicated container. Generation, mocks, or passing local tests do not satisfy those gates.
+
+# Read-only identity discovery
+
+The source adapter now exposes `enumerate <project.json> <relative-plan.json> <relative-output-directory>`.
+The main CLI exposes the same operation as
+`source-enumerate <project.json> <pinned-source-adapter.jar> <relative-plan.json> <relative-output-directory>`.
+The editor provides **Enumerate read-only source identities**, with separate plan/output path fields.
+
+Use this plan shape; its schema is `schemas/graph-migration/enumeration-plan.schema.json`:
+
+```json
+{
+  "schemaVersion": 1,
+  "partitions": [{"type": "string", "lexical": "partition-0"}],
+  "pageSize": 100,
+  "maximumRequests": 1000,
+  "maximumDurationMillis": 60000
+}
+```
+
+This operation discovers vertex identities and each vertex's outgoing edge identities without source mutations.
+Known typed partition values remain operator-supplied; their coverage is checked against global and partition counts.
+Only nonempty string element IDs are supported by this enumeration strategy. Numeric/mixed IDs, provider ordering
+differences, unsupported scripts, incomplete partition coverage or changed counts stop with a blocker, not a
+success-shaped approximation. A quiesced or independently immutable source is required.
+
+Pages use explicit ID ordering and a strict greater-than boundary, not unordered range pagination or invented
+continuation tokens. Every observed page must respect the declared byte/count and lexical-order constraints.
+Edges retain their owner identity with conservative source-vertex scope. This is enumeration evidence, not a claim
+that the pinned driver's live fidelity/serializer compatibility has been established.
+
+Sorted page segments and checksummed checkpoints persist acknowledged boundaries. Restart with the same project,
+plan and output directory; only an unacknowledged page may need rereading. Changed segments/inputs fail closed.
+Interrupted final merges or pending checkpoints require reviewed reconciliation rather than automatic adoption.
+The final manifest is externally merged with at most sixteen page streams open, never an in-memory graph inventory.
+Duration and disk budgets cover local processing; in-flight reads still obey the configured source request deadline.
+Each logical request reserves all permitted retry attempts against `maximumRequests`. RU enforcement continues
+through the source adapter's persisted journal, and missing charge observations block an enforced RU budget.
+
+Review `identities.ndjson` and `manifest.json`. Configure a **new extraction run** with the generated manifest's
+relative path and SHA-256, then run the read-only source fidelity probe before extraction. Discovery never silently
+edits project configuration, approves writes or treats its result as source compatibility evidence.
+
+Implementation is available in source only: no tests, builds, localization generation or VSIX rebuild were run for
+this change at the user's direction. Live enumeration compatibility remains unverified.

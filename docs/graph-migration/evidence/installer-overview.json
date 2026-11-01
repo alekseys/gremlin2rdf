@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-01",
+  "scope": "Installer deprecation diagnosis and localized workbench overview; not live migration acceptance",
+  "installer": {
+    "status": "reproduced-external-warning-install-succeeded",
+    "vscodeVersion": "1.144.0",
+    "vscodeCommit": "2c33b50b16c472efe58357d1d2a8a5414bc23fbf",
+    "command": "NODE_OPTIONS=--trace-deprecation code --user-data-dir <isolated-test-user-data> --extensions-dir <isolated-test-extensions> --install-extension <current-local-vsix> --force",
+    "exitCode": 0,
+    "userProfileModified": false,
+    "warning": "DEP0169: url.parse() is deprecated",
+    "stack": [
+      "node:url:136:13 urlParse",
+      "VS Code out/vs/code/node/cliProcessMain.js:72:22292 Yy (getProxyAgent)",
+      "VS Code out/vs/code/node/cliProcessMain.js:72:23749 RequestService.request",
+      "VS Code queryRawGalleryExtensions / getAllDepsAndPackExtensions",
+      "VS Code installExtensions / installVSIX"
+    ],
+    "matchingInstalledCode": "import { parse as Jy } from 'url'; async function Yy(i,t,e={}) { let n=Jy(i),r=e.proxyUrl||H1(n,t); if(!r)return null; ... }",
+    "officialSources": [
+      "https://github.com/microsoft/vscode/blob/2c33b50b16c472efe58357d1d2a8a5414bc23fbf/src/vs/platform/request/node/proxy.ts",
+      "https://github.com/microsoft/vscode/blob/2c33b50b16c472efe58357d1d2a8a5414bc23fbf/src/vs/platform/request/node/requestService.ts",
+      "https://github.com/microsoft/vscode/blob/main/src/vs/platform/request/node/proxy.ts"
+    ],
+    "owner": "VS Code CLI's built-in proxy/request URL parsing; not gremlin2rdf extension runtime",
+    "upstreamMainObservation": "proxy.ts still imported and called url.parse when checked",
+    "remedy": "VS Code must replace legacy parsing with WHATWG URL handling while preserving proxy authentication/request semantics. Install a VS Code release carrying that fix; no fixed release was verified. Report persistent warning through VS Code Help > Report Issue with the trace.",
+    "installationAction": "Successful install needs no rollback or reinstall solely because of DEP0169",
+    "notChanged": [
+      "User's installed extensions or settings",
+      "Warning visibility",
+      "TLS or proxy security",
+      "Extension dependencies",
+      "Installed VS Code program files"
+    ]
+  },
+  "overview": {
+    "status": "updated",
+    "changes": [
+      "Workflow-first introduction explaining Gremlin-to-Jena RDF value and identity/property preservation",
+      "Application review, mapping, connections, extraction, target loading, comparison and confirmed-checkpoint resume",
+      "Experimental title retained; existing-database requirement, live compatibility and scoped write approval caveats retained without leading with warnings"
+    ],
+    "targetedTests": {
+      "command": "npx vitest run src/webviews/cosmosdb/GraphMigration/GraphMigrationWorkbench.test.tsx src/panels/graphMigration/GraphMigrationTab.test.ts src/services/graphMigration/WorkerBridge.test.ts src/services/graphMigration/contracts.test.ts",
+      "files": 4,
+      "passed": 39,
+      "exitCode": 0
+    },
+    "localizationExitCode": 0,
+    "targetedEslintExitCode": 0,
+    "targetedOxlintExitCode": 0,
+    "typescriptBuildExitCode": 0,
+    "typescriptTargets": 3
+  },
+  "fullSuitesOrBenchmarks": "Not executed",
+  "package": {
+    "status": "historical-superseded",
+    "supersededBy": "docs/graph-migration/evidence/setup-readme.json",
+    "command": "npm run package",
+    "exitCode": 0,
+    "path": "vscode-cosmosdb-0.39.0.vsix",
+    "bytes": 76033421,
+    "sha256": "e697f4ec0873d3e1f9c7364503f6da992bd4f2126ea78dd69efbf0783eb013d7",
+    "overviewChunk": "extension/GraphMigrationWorkbench-CAh56hb0.js",
+    "verified": [
+      "Updated workflow-first overview and compatibility caveats in compiled webview",
+      "Installer diagnosis in bundled operational documentation",
+      "All three embedded worker JARs match manifest hashes",
+      "Same-version forced replacement into isolated VS Code directories succeeded with exit code 0"
+    ],
+    "remainingWarning": "DEP0169 remains in VS Code CLI; confirmed external owner, not suppressed"
+  },
+  "publication": "Local source and VSIX; existing draft PR does not include these uncommitted edits"
+}

@@ -24,14 +24,14 @@
     "Database",
     "NOSQL"
   ],
-  "homepage": "https://github.com/microsoft/vscode-cosmosdb/blob/main/README.md",
+  "homepage": "https://github.com/alekseys/gremlin2rdf/blob/alekseys-gremlin-to-rdf-workbench/README.md",
   "bugs": {
-    "url": "https://github.com/microsoft/vscode-cosmosdb/issues"
+    "url": "https://github.com/alekseys/gremlin2rdf/issues"
   },
   "license": "SEE LICENSE IN LICENSE.md",
   "repository": {
     "type": "git",
-    "url": "https://github.com/microsoft/vscode-cosmosdb"
+    "url": "https://github.com/alekseys/gremlin2rdf"
   },
   "type": "module",
   "main": "./main.mjs",

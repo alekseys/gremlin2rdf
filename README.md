@@ -1,243 +1,214 @@
-# Azure Cosmos DB for VS Code
+# gremlin2rdf: Cosmos DB for Gremlin to Apache Jena / Fuseki
 
-## Experimental Gremlin-to-RDF fork
+Move an existing **Azure Cosmos DB for Gremlin graph and application** toward an RDF database served by
+**Apache Jena Fuseki**, using a VS Code migration workbench and an independently usable Java CLI.
 
-This `alekseys/gremlin2rdf` fork adds the separately gated `cosmos-gremlin-to-jena` workbench. Enable
-`cosmosDB.experimental.graphMigration.enabled` and open `cosmosDB.graphMigration.open` in a trusted workspace.
-The existing NoSQL and relational workflows remain separate. This is not a Microsoft Marketplace release.
+This fork of [microsoft/vscode-cosmosdb](https://github.com/microsoft/vscode-cosmosdb) focuses on graph migration:
+review your application, configure the source and target, map the graph to RDF, extract and load data, then compare
+the results before changing your application's database connection. It is an **experimental fork**, not a
+Microsoft Marketplace release or a one-click conversion of arbitrary Gremlin applications.
 
-Start with [graph usage and architecture](docs/graph-migration/README.md), [canonical mapping](docs/graph-migration/mapping.md),
-[source compatibility](docs/graph-migration/compatibility.md), [recovery](docs/graph-migration/recovery.md), and
-[performance evidence](docs/graph-migration/performance.md). Live compatibility, scoped mutations and release readiness
-are never inferred from local fixtures, compilation or a short smoke.
+## What the migration preserves
 
-<!-- region exclude-from-marketplace -->
+The default mapping retains typed vertex and edge identities, partition-qualified IDs, edge direction, parallel
+edges, self-loops, property occurrence IDs, repeated equal-valued properties, meta-properties and observed source
+metadata. Unsupported or unobservable source semantics are reported rather than silently approximated.
 
-[![Build Status](https://dev.azure.com/msdata/CosmosDB/_apis/build/status%2FVSCode%20Extensions%2Fvscode-cosmosdb?repoName=microsoft%2Fvscode-cosmosdb&branchName=main)](https://dev.azure.com/msdata/CosmosDB/_build/latest?definitionId=51963&repoName=microsoft%2Fvscode-cosmosdb&branchName=main)
-[![License](https://img.shields.io/github/license/microsoft/vscode-cosmosdb)](LICENSE.md)
+The target keeps two complementary views:
 
-<!-- endregion exclude-from-marketplace -->
+| RDF view        | Purpose                                                                                                                                |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Canonical graph | Identity-preserving records, edges and property occurrences; the authoritative migration representation.                               |
+| Derived graph   | Supplementary RDF relationships for convenient querying. A single relationship triple does not replace distinct parallel source edges. |
 
-Connect to **Azure Cosmos DB for NoSQL** from VS Code to explore accounts, manage databases and containers, edit items, and run queries without leaving your editor. Work with Azure accounts, connection strings, or the local Azure Cosmos DB Emulator.
+Optional domain mappings let you choose vocabulary IRIs, literal datatypes, resource-valued properties and
+occurrence constraints. Generated SHACL shapes help check the resulting RDF.
 
-[Install from the Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-cosmosdb) | [Read the documentation](https://learn.microsoft.com/azure/cosmos-db/) | [Report an issue](https://github.com/microsoft/vscode-cosmosdb/issues/new/choose)
+## Before you begin
 
-![Azure Cosmos DB Extension](resources/readme/overview.gif)
+You need:
 
-## Get Started
+- **VS Code 1.125 or newer** and this fork's VSIX, not the standard Azure Cosmos DB Marketplace extension.
+- **Java 21 or newer** available on the machine running the extension.
+- Your Gremlin application's source folder, opened as a trusted VS Code workspace.
+- An existing Cosmos DB for Gremlin database/graph and an existing Fuseki dataset with reachable endpoints.
+- Approved credential access, and a plan to pause source writes or use an immutable source snapshot while extracting.
 
-<!-- prettier-ignore -->
-1. Install the extension from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-cosmosdb) or search for **Azure Cosmos DB** in the VS Code Extensions view.
-2. Open the **Azure** view in the Activity Bar and choose how to connect:
-   - Sign in to Azure to browse Cosmos DB accounts across your subscriptions.
-   - Select **New Connection…** to attach an account with a connection string.
-   - Select **New Emulator Connection** under **Local Emulators** to use a local development instance.
+You can explore local fixtures and RDF conversion before supplying live database credentials. The tool does not
+provision Cosmos DB resources or a Fuseki server, and it never opens a deployed server's live TDB2 files.
 
-3. Expand an account, database, and container. Use the context menu to create or open items, import documents, or launch the Query Editor.
-4. Run a query such as `SELECT * FROM c`, then inspect the results as a table, JSON, or tree. Query metrics and index recommendations help you tune the request.
+## Install and open the workbench
 
-> Don't have an account? [Create an Azure account](https://azure.microsoft.com/free/) or use the [Azure Cosmos DB Emulator](https://learn.microsoft.com/azure/cosmos-db/emulator) for local development.
+1. In VS Code, open **Extensions**, select **Install from VSIX** from the view's menu, and choose
+   `vscode-cosmosdb-0.39.0.vsix` from your local build. Reload VS Code after installation.
+2. Enable this setting:
 
-## Features
+   ```json
+   {
+     "cosmosDB.experimental.graphMigration.enabled": true
+   }
+   ```
 
-| Capability                 | What you can do                                                                                         |
-| -------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Explore resources          | Browse subscriptions, accounts, databases, containers, items, and server-side scripts.                  |
-| Manage data                | Create, edit, delete, and import JSON documents with validation and syntax highlighting.                |
-| Build and optimize queries | Use completions and diagnostics, compare result views, inspect request charge, and review index advice. |
-| Monitor account health     | Review throughput, RU consumption, partitions, alerts, and recommendations from the account dashboard.  |
-| Work locally               | Attach the Azure Cosmos DB Emulator or a connection string without depending on subscription discovery. |
-| Use GitHub Copilot         | Generate, edit, and explain Azure Cosmos DB for NoSQL queries from natural-language requests.           |
+3. Open your application's workspace, then run **Open Gremlin to RDF Migration (Experimental)** from the
+   Command Palette.
+4. Select **Create graph migration project**.
 
-## Azure Cosmos DB Explorer
+The workbench saves its project in `.cosmosdb-graph-migration/project.json`. Keep this folder with the workspace
+to retain configuration, phase status, checkpoints and reviewable artifacts. It is separate from relational
+migration state.
 
-The Azure Cosmos DB Explorer helps you find, view, and manage your Azure Cosmos DB databases.
+If an older build with the same version is already installed, stop active migrations and force replacement:
 
-- **Discover Database Accounts**: Scan your Azure subscriptions for available database accounts and browse their resources.
+```powershell
+code --install-extension ".\vscode-cosmosdb-0.39.0.vsix" --force
+```
 
-- **Open in Azure Portal**: Open an account directly in the Azure portal for service-level configuration.
+The VS Code CLI may print `DEP0169` from its own deprecated URL parser even when installation succeeds.
+This is not an extension installation failure; see [installation guidance](https://github.com/alekseys/gremlin2rdf/blob/alekseys-gremlin-to-rdf-workbench/docs/graph-migration/workbench.md#installing-or-replacing-the-vsix).
 
-- **Manage Resources**: View, create, and delete databases, containers, stored procedures, triggers, and documents.
+## Configure your source and target
 
-- **Edit Documents and Scripts**: Open documents and stored procedures in the editor, then save changes to the service.
+**Configuration and mapping** starts with a short connection form, not the full project JSON:
 
-- **Filter and Sort**: Narrow large resource trees and choose the order that best fits your workflow.
+| Field                     | What to enter                                                                                                                                      |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Gremlin endpoint          | Your account's Gremlin hostname, such as `my-account.gremlin.cosmos.azure.com`. A credential-free HTTPS/WSS endpoint on port 443 is also accepted. |
+| Cosmos DB database        | The existing database name.                                                                                                                        |
+| Gremlin graph (container) | The existing graph/container name.                                                                                                                 |
+| Partition key path        | Your graph's partition key, such as `/tenantId`. `/pk` is a suggested default, not a detected property of your database.                           |
+| Fuseki dataset URL        | The dataset URL, such as `http://localhost:3030/my-dataset`, not just the server root. Use HTTPS for non-loopback endpoints.                       |
+| Source consistency        | Confirm that you will pause source writes during extraction, or that the source is an immutable snapshot. This is never inferred automatically.    |
 
-- **Workspace Connections**: Attach database accounts with connection strings, including accounts that are not discoverable through your current Azure subscriptions.
+Recognized, unambiguous connection values are suggested from the extension host's environment and supported
+workspace configuration files. Suggestions identify their source; conflicting or unsafe values require manual
+review. No database connection is made during discovery.
 
-## Account Overview Dashboard
+For example, these **non-secret** entries in a workspace `.env` can prefill the form:
 
-The Account Overview Dashboard gives you an at-a-glance view of a Cosmos DB account: inventory, provisioned vs. normalized RU consumption, partition health, active alerts, and recommendations. Open **Account Overview → Overview** from an account node in the Explorer.
+```dotenv
+GREMLIN_HOST=my-account.gremlin.cosmos.azure.com
+GREMLIN_DATABASE=my-database
+GREMLIN_CONTAINER=my-graph
+GREMLIN_PARTITION_KEY_PATH=/tenantId
+FUSEKI_DATASET_URL=http://localhost:3030/my-dataset
+```
 
-The dashboard has three tabs: **Monitoring**, **Databases and Containers**, and **Advisories**. The Account Overview submenu also provides shortcuts to each monitoring metric and to Advisories. Metric shortcuts select the corresponding card and focus its chart in the existing Monitoring tab, preserving the time range and database scope; they do not open separate dashboards.
+Discovery also recognizes graph-specific keys in appsettings/config JSON, Azure Functions `local.settings.json`,
+VS Code workspace settings, supported properties files and simple YAML driver/application settings.
+It does not evaluate application code, expand environment expressions, read arbitrary files, or infer endpoint
+compatibility from configuration. See [setup discovery details](https://github.com/alekseys/gremlin2rdf/blob/alekseys-gremlin-to-rdf-workbench/docs/graph-migration/workbench.md#simplified-connection-setup).
 
-Expand **Account details** for **View Cost**, **View JSON**, and **Additional account properties**. **View Cost** opens Azure Portal Cost Analysis scoped to the account in its Azure cloud. **View JSON** retrieves the account resource from Azure Resource Manager and opens formatted JSON in VS Code without requesting keys or connection strings. The action bar reuses the existing database/container creation wizards and account deletion confirmation. **Add container** uses the database selected in the header; with **All databases**, it first asks you to choose a database within this account, including empty databases. These creation/deletion actions require the corresponding Azure write permissions. **Try Data Modeler** opens the modeler for this account; it requires AI features enabled and available GitHub Copilot models.
+Select **Save connection settings**. Standard Fuseki query, update and graph-store URLs are derived from the dataset
+URL; run graph names, identity-preserving mapping, batching and request timeouts already have defaults.
+Open **Advanced configuration and mapping** only when you need custom endpoints, authentication/CA references,
+an identity inventory, a domain vocabulary, or different limits.
 
-While **Add database** or **Add container** runs its native VS Code wizard, Overview is dimmed and unavailable to mouse and keyboard interaction. Cancel in the wizard to return without changes. After successful creation, Overview unlocks once inventory refresh finishes. Failures appear in a Fluent error message bar and are announced assertively to screen readers without moving focus.
+Use **Store credentials securely** after saving the connection settings. The default source reference is
+`env:GRAPH_SOURCE_KEY`. For a protected Fuseki server, configure its target authentication reference in advanced
+settings, then store that credential securely. SecretStorage or approved `env:GRAPH_*` references hold credentials;
+never paste key/password values into the project JSON, connection fields or migration reports.
 
-Overview loads on opening and does not auto-refresh, including when you return to the editor. **Refresh** reloads every section, including inventory metrics, the selected container's partition telemetry, alerts and advisories. Changing a filter reloads only the data that depends on it. The header shows the local date and time when the displayed metric charts were generated, to the left of the filters; this is not the freshness timestamp for every section or the latest Azure metric sample.
+## Migrate the database and application
 
-The **Refresh** button shows a spinner for an explicit Refresh or a metric time/database-scope change, not for the initial load. Its label stays **Refresh**, with no separate updating text. Refresh and the header's database/time-range selectors are unavailable while data requests finish, including initial loading, so another filter change cannot overlap the current load. They become available again after completion or failure, retaining the selected values. Each section retains its own loading state. User-requested updates are announced to screen readers.
+### 1. Review the application and RDF mapping
 
-Sections read Azure resource metadata, Monitor metrics/alerts, Advisor recommendations and configured diagnostic logs.
-When a source is unavailable, its section shows an explicit state rather than treating missing data as zero:
+Run **Assess application** to find graph-client configuration, Gremlin submissions, bindings, result handling and
+retry assumptions. Review unsupported queries and mutations before choosing a migration approach.
 
-- **No data** — no usable result is available for the selected window/source; this does not establish that the account is healthy.
-- **Not supported** — the section doesn't apply to this account's API (for example, inventory metrics are only available for NoSQL (Core) API accounts).
-- **Access required** — your Azure role doesn't grant permission to read the underlying data.
+The default RDF mapping preserves graph identities and property occurrences without requiring a custom ontology.
+Run **Validate mapping**; customize labels, properties, relationships and optional domain SHACL rules in advanced
+settings if your application needs a particular RDF vocabulary.
 
-### Required Azure roles
+### 2. Discover source identities and check compatibility
 
-Data is fetched with your Azure credentials. The table lists typical read roles; equivalent custom permissions
-and assignment scope also determine access. A permission failure is shown for the affected source while
-independent sections remain usable.
+Saving a new source creates a real empty bootstrap identity inventory if none exists. This permits setup and
+discovery; **it is not an extraction-ready inventory or compatibility evidence**.
 
-| Dashboard section                                      | Typical read role               |
-| ------------------------------------------------------ | ------------------------------- |
-| Account header, inventory, throughput                  | Reader on the Cosmos DB account |
-| RU trends, partition health, Tier-1 derived advisories | Monitoring Reader               |
-| Tier-2 (log-based) derived advisories                  | Log Analytics Reader            |
-| Active alerts                                          | Monitoring Reader               |
-| Advisor recommendations                                | Reader on the subscription      |
+For a stable source with string element IDs, use **Enumerate read-only source identities** with a bounded plan
+listing your known partition values. Review the output, then select the reviewed inventory in advanced settings.
+Saving the connection settings recalculates the checksum of the selected inventory; it does not manufacture a
+passing compatibility report. Other supported typed identities require a correctly prepared inventory.
 
-Tier-2 derived advisories (cross-partition query fan-out, shard-key misalignment, uncontrolled ingestion, and shared-throughput starvation) additionally read the account's resource-specific `CDB*` diagnostic-log tables. They require diagnostic-log collection and effective query access, such as [Log Analytics Reader](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/monitor#log-analytics-reader). Missing log evidence leaves successful independent findings visible and reports the gap as **Partial coverage**. See the [guide's log setup and permissions](./docs/account-overview-dashboard.md#permissions).
+Run **Check prerequisites** and follow the [source compatibility and extraction guide](https://github.com/alekseys/gremlin2rdf/blob/alekseys-gremlin-to-rdf-workbench/docs/graph-migration/source-extraction.md)
+to collect endpoint-specific evidence before loading live source data. A local sample does not verify Cosmos DB
+driver behavior, system metadata fidelity or your live endpoint.
 
-Derived advisory explanations, suggested actions and threshold references highlight numeric evidence and its units on a subtle theme-aware background. Their underlying strings remain readable plain text: paired backticks mark a highlighted phrase (for example, `` `400 RU/s` ``), not HTML or general Markdown. Translations retain those delimiters around the complete value and unit in the translated word order. Literal backticks and backslashes in resource names or query text are escaped before interpolation. Highlights remain ordinary inline text for screen readers, without extra announcements or keyboard stops.
+### 3. Extract and load
 
-Learn more about assigning roles in [Azure role-based access control](https://learn.microsoft.com/azure/role-based-access-control/overview).
+Run **Extract read-only source** to produce bounded canonical NDJSON and its completion manifest. Extraction
+does not change source records. Incomplete extraction is not loadable.
 
-For explanations of health, charts, alerts and everyday use, read the [Account Overview guide](./docs/account-overview-dashboard.md).
-When implementing or changing Account Overview calculations, refresh behavior, actions or diagnostics, use the
-[implementation specification](./specs/account-overview.md) for exact rules, rationale and regression requirements.
+Review the exact target run graphs, select **Authorize** for **Load approved target graphs**, then run the load.
+Approvals are scoped to the operation, run, inputs, resources and expiry; storing a credential is not write approval.
+The optional disposable target capability probe has its own approval.
 
-## Data Modeler
+Confirmed batches advance checkpoints. Use **Pause** or **Cancel** to stop work; use **Resume from confirmed
+checkpoint** only after reviewing preserved state. Changing endpoints, mappings or other hashed inputs invalidates
+dependent evidence and approvals, and may require a new run rather than adopting old checkpoints.
 
-**Data Modeler (Preview)** helps you choose partition keys for Azure Cosmos DB for NoSQL using GitHub Copilot.
-The `cosmosDB.experimental.dataModeler.enabled` setting defaults to `true`. Set it to `false` to hide the
-Command Palette entry and Account Overview promotion without disabling other AI features. Changes take effect immediately;
-existing modeler tabs and the command to delete saved modeler data remain available.
-Open it with **Try Data Modeler** in **Account Overview**, from an account in **Explorer**, or run
-**Data Modeling Wizard** from the Command Palette. Requires available
-GitHub Copilot models and AI features enabled.
+For bounded editor execution, set `limits.maximumOperationMillis` in advanced settings. Progress displays confirmed
+record counts and elapsed time. A paused operation is not a successful migration.
 
-1. Choose a workload template or define your own schemas, queries, and scale estimates.
-2. Compare single-path partition-key recommendations, query routing, and warnings. Review assumptions before deploying.
-3. Deploy selected databases and containers directly, or export editable **Bicep**, **Terraform**, or **C# SDK** code.
-   Deployment requires resource-creation permissions and may incur Azure charges; it does not upload documents.
+### 4. Validate behavior and adapt the application
 
-Work is saved locally per account so you can resume later; saved sessions expire 30 days after their last save.
-To permanently clear local Data Modeler data for every account, run **Cosmos DB: Delete All Data Modeler Data**
-from the Command Palette and confirm. This closes all Data Modeler tabs and removes saved sessions, including legacy
-data. It does not delete deployed databases or containers, saved container schemas, or query history.
-See [modeling details](docs/data-modeler-scale.md) and the [telemetry inventory](docs/data-modeler-telemetry.md) for more.
+Run **Validate structural fidelity** to compare canonical RDF in batches, reconcile counts/endpoints and check SHACL.
+Compare supported queries with typed expected results, including multiplicity and ordering where applicable.
 
-## Query Editor
+The translator supports a restricted Gremlin read subset, not arbitrary Groovy or dynamic query assembly.
+The Java rewrite workflow supports documented AST patterns and writes only to a separately reviewed new file.
+Use **Review Java rewrite plan** before authorizing a rewrite. Broader application changes remain manual.
+The Java `GraphAccess` layer provides typed reads and identity-preserving CRUD for supported operations.
 
-The Query Editor provides a focused workspace for writing, running, and tuning Azure Cosmos DB for NoSQL queries.
+Build and compare your before/after application against the intended target. Successful translation or rewriting
+alone does not establish application equivalence. See [application migration](https://github.com/alekseys/gremlin2rdf/blob/alekseys-gremlin-to-rdf-workbench/docs/graph-migration/application-migration.md).
 
-- **Language Support**: Get syntax highlighting, completions, diagnostics, hover documentation, signature help, and formatting. Schema-aware suggestions include properties discovered in the active container.
+### 5. Review readiness and cut over deliberately
 
-- **Query History**: Automatically saves previously executed queries, allowing you to open and reuse them later.
+Use **Evaluate readiness** to inspect current evidence and remaining blockers. Production cutover requires
+endpoint-specific compatibility, data/application equivalence and operational review.
 
-- **Run Queries**: Execute queries and view results in Table, JSON, or Tree view.
+Manual publication produces a reviewed application configuration artifact; an operator deploys it through their
+normal production process. It does not restart applications or route traffic automatically.
+Source fixture writes, target cleanup and publication are separately approved operations, not normal extraction steps.
 
-- **Export Results**: Provides options to copy query results as JSON or CSV or to save them to a file for later use.
+See [cutover and rollback](https://github.com/alekseys/gremlin2rdf/blob/alekseys-gremlin-to-rdf-workbench/docs/graph-migration/cutover.md) before target-only writes: reverse synchronization is not
+implemented, so restoring an old connection after new target writes can lose data without reconciliation.
 
-- **Pagination**: Adjust how many results are displayed at a time when working with large datasets.
+## Java CLI and building from source
 
-- **Query Insights and Index Advisor**: Review execution time, request charge, response size, activity ID, and indexing recommendations.
+The Java worker can also perform local generation, RDF export, translation and other documented operations without
+VS Code. Build dependencies are Node.js 24.15 or newer and Java 21; Maven is pinned through the repository's wrapper.
 
-- **Edit Documents**: Open, update, and save individual documents.
+From the repository root:
 
-- **Create New Documents**: Write and validate documents with syntax highlighting.
+```powershell
+npm ci
+npm run graph:prepare
+java -jar resources\graph-migration\worker.jar translate urn:example:canonical "g.V().count()"
+npm run package
+```
 
-![Query Editor result views](resources/readme/queryEditor.gif)
+`npm run package` rebuilds the isolated Java workers and extension and writes the installable VSIX to the repository
+root. It is packaging, not live migration acceptance. CLI arguments and exact approval scopes are documented in
+the [graph migration guide](https://github.com/alekseys/gremlin2rdf/blob/alekseys-gremlin-to-rdf-workbench/docs/graph-migration/README.md).
 
-### Keyboard Shortcuts
+## Reference and support
 
-The Azure Cosmos DB extension supports various keyboard shortcuts to improve your productivity when working with queries and documents.
+| Guide                                                                                                                                                 | Covers                                                                                                             |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| [Workbench](https://github.com/alekseys/gremlin2rdf/blob/alekseys-gremlin-to-rdf-workbench/docs/graph-migration/workbench.md)                         | Setup discovery, advanced settings, approvals, progress and evidence.                                              |
+| [RDF mapping](https://github.com/alekseys/gremlin2rdf/blob/alekseys-gremlin-to-rdf-workbench/docs/graph-migration/mapping.md)                         | Canonical identities, supplementary relationships and domain SHACL.                                                |
+| [Source compatibility](https://github.com/alekseys/gremlin2rdf/blob/alekseys-gremlin-to-rdf-workbench/docs/graph-migration/compatibility.md)          | Pinned runtime/driver boundaries and unverified live requirements.                                                 |
+| [Source extraction](https://github.com/alekseys/gremlin2rdf/blob/alekseys-gremlin-to-rdf-workbench/docs/graph-migration/source-extraction.md)         | Identity inventories, bounded discovery, extraction and source recovery.                                           |
+| [Recovery](https://github.com/alekseys/gremlin2rdf/blob/alekseys-gremlin-to-rdf-workbench/docs/graph-migration/recovery.md)                           | Confirmed target checkpoints, ambiguous writes and ownership.                                                      |
+| [Application migration](https://github.com/alekseys/gremlin2rdf/blob/alekseys-gremlin-to-rdf-workbench/docs/graph-migration/application-migration.md) | Supported translations, Java rewrites and typed CRUD.                                                              |
+| [Performance evidence](https://github.com/alekseys/gremlin2rdf/blob/alekseys-gremlin-to-rdf-workbench/docs/graph-migration/performance.md)            | What measured results do and do not establish. Long load/soak runs are optional explicit actions, not setup steps. |
 
-For a complete list of keyboard shortcuts, see [Keyboard Shortcuts](docs/hotkeys/01_keyboard_shortcuts.md).
+Report fork-specific problems in [alekseys/gremlin2rdf issues](https://github.com/alekseys/gremlin2rdf/issues).
+Use the repository's [security policy](https://github.com/alekseys/gremlin2rdf/blob/alekseys-gremlin-to-rdf-workbench/SECURITY.md) for sensitive reports; do not attach credentials or source-data
+artifacts to public issues. Migration artifacts may contain graph identities, values and application details.
 
-## AI-Powered Query Assistance (GitHub Copilot)
+The fork retains upstream extension infrastructure. VS Code telemetry/privacy settings still apply; see
+[VS Code telemetry controls](https://code.visualstudio.com/docs/configure/telemetry).
 
-The extension integrates with GitHub Copilot to help you write, edit, and understand Cosmos DB NoSQL queries using natural language.
-
-- **Generate Query**: Click the **AI** button in the Query Editor toolbar and select **Generate query** to describe your query in plain English. Copilot will generate a Cosmos DB NoSQL query for you.
-
-- **Explain Query**: Click the **AI** button and select **Explain query** to get a plain-English explanation of the current query in the editor.
-
-> **Requires** the [GitHub Copilot](https://marketplace.visualstudio.com/items?itemName=GitHub.copilot) extension and an active Copilot subscription.
-
-For more details, see the [AI Chat documentation](src/chat/README.md).
-
-## Migration Assistant (Preview)
-
-The Migration Assistant uses the `cosmosdb-relational-migration` Skill in GitHub Copilot Chat to guide relational database and application migrations. Phase actions open or resume Chat; the assistant tracks progress and validates the artifacts in `.cosmosdb-migration`.
-
-Migration projects started before the Skill was introduced can still be opened and inspected. Their existing artifacts need evidence validation before their phases can be treated as complete in the Skill workflow.
-
-Use `cosmosDB.experimental.migration.enabled` to show or hide the migration feature.
-
-## Import into Azure Cosmos DB
-
-The extension allows you to import documents into Azure Cosmos DB.
-
-- **Workspace Integration**: Use the context menu of a container or JSON document file to start an import.
-
-  ![Import documents](resources/readme/import_documents.gif)
-
-## Attach to the Azure Cosmos DB Emulator
-
-Attach the Azure Cosmos DB Emulator to work with a local instance of Azure Cosmos DB for development and testing purposes.
-
-- **Emulator Installation**: Install and run the [Azure Cosmos DB Emulator](https://learn.microsoft.com/azure/cosmos-db/emulator) on your local machine.
-
-- **New Emulator Connection**: Expand **Cosmos DB Accounts**, then **Local Emulators**, and select **New Emulator Connection** to attach the emulator to your workspace.
-
-For local setup instructions and connection details, see [Azure Cosmos DB Emulator](docs/cosmosdb-emulator.md).
-
-## Corporate proxies
-
-Normal Cosmos DB for NoSQL connections delegate proxy handling to VS Code. See
-[VS Code network configuration](https://code.visualstudio.com/docs/setup/network) for proxy, authentication,
-and certificate guidance.
-
-**Emulator exception:** local `localhost` and `127.0.0.1` emulators remain direct and retain their self-signed
-certificate handling. Emulator connections supply an explicit TLS agent, so `http.proxySupport: "on"` does not
-add proxy routing for them. A remotely hosted emulator requiring a proxy needs `fallback` or `override`
-and appropriate certificate trust.
-
-## Known Issues
-
-> [!WARNING]
-> Support for previously included features such as MongoDB, PostgreSQL, Graph (Gremlin), Table, Cassandra, and the Grammar Language Server has been removed from this extension.
->
-> - For MongoDB support, use the [DocumentDB Extension for VS Code](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-documentdb).
-> - For PostgreSQL support, use the [PostgreSQL Extension for VS Code](https://marketplace.visualstudio.com/items?itemName=ms-ossdata.vscode-pgsql).
-
-<!-- region exclude-from-marketplace -->
-
-## How to Contribute
-
-This project welcomes contributions and suggestions. To contribute, see these documents:
-
-- [Code of Conduct](./CODE_OF_CONDUCT.md)
-- [Security](./SECURITY.md)
-- [Contributing](./CONTRIBUTING.md)
-
-<!-- endregion exclude-from-marketplace -->
-
-## Telemetry
-
-Data Modeler template downloads report a `downloadCode` action with the template format, outcome
-(`success`, `cancelled`, or `error`), and whether the code was edited. These events use the existing Data Modeler
-telemetry context and do not include database names, filenames, paths, code contents, or raw error messages.
-
-VS Code collects usage data and sends it to Microsoft to help improve our products and services. Read our [privacy statement](https://go.microsoft.com/fwlink/?LinkID=521839) to learn more. If you don’t wish to send usage data to Microsoft, you can set the `telemetry.enableTelemetry` setting to `false`. If you want to disable feedback requests in VS Code, set `telemetry.feedback.enabled` to `false`. Learn more in our [FAQ](https://code.visualstudio.com/docs/supporting/faq#_how-to-disable-telemetry-reporting).
-
-**Data Collection.** The software may collect information about you and your use of the software and send it to Microsoft. Microsoft may use this information to provide services and improve our products and services. You may turn off the telemetry as described in the repository. There are also some features in the software that may enable you and Microsoft to collect data from users of your applications. If you use these features, you must comply with applicable law, including providing appropriate notices to users of your applications together with a copy of Microsoft’s privacy statement. Our privacy statement is located at https://go.microsoft.com/fwlink/?LinkID=521839. You can learn more about data collection and use in the help documentation and our privacy statement. Your use of the software operates as your consent to these practices.
-
-## License
-
-[MIT](LICENSE.md)
+Licensed under [MIT](https://github.com/alekseys/gremlin2rdf/blob/alekseys-gremlin-to-rdf-workbench/LICENSE.md). Upstream attribution and notices remain in the repository.

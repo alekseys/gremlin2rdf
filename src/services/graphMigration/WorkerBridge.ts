@@ -19,6 +19,7 @@ export class WorkerBridge implements vscode.Disposable {
     private inputHash = '';
     private stopping: 'paused' | 'cancelled' | undefined;
     private stopTimer: ReturnType<typeof setTimeout> | undefined;
+    private deadlineTimer: ReturnType<typeof setTimeout> | undefined;
     private failed = false;
     private terminal = false;
     private started = false;
@@ -64,9 +65,13 @@ export class WorkerBridge implements vscode.Disposable {
         for (const name of ['PATH', 'Path', 'SystemRoot', 'JAVA_HOME', 'HOME', 'USERPROFILE', 'TEMP', 'TMP']) {
             if (process.env[name]) env[name] = process.env[name];
         }
-        const sourceOperation = ['extract', 'source-compatibility', 'source-populate', 'source-cleanup'].includes(
-            operation,
-        );
+        const sourceOperation = [
+            'source-enumerate',
+            'extract',
+            'source-compatibility',
+            'source-populate',
+            'source-cleanup',
+        ].includes(operation);
         const privateBenchmark = operation === 'test' && arguments_[0] === 'benchmark';
         const targetOperation =
             !privateBenchmark &&
@@ -80,6 +85,7 @@ export class WorkerBridge implements vscode.Disposable {
         )
             scopes.add('best-effort-source');
         if (operation === 'load' || operation === 'resume' || operation === 'migrate') scopes.add('target-write');
+        if (operation === 'preflight' && arguments_[0] === 'probe') scopes.add('target-probe');
         if (operation === 'cleanup' || operation === 'publish') scopes.add(operation);
         if (operation === 'cleanup') scopes.add('target-write');
         if (operation === 'source-populate' || operation === 'source-cleanup') scopes.add(operation);
@@ -110,6 +116,15 @@ export class WorkerBridge implements vscode.Disposable {
         this.terminal = false;
         this.started = false;
         this.process = spawn('java', ['-Xmx1g', '-jar', jar, 'worker'], { cwd, env, shell: false, windowsHide: true });
+        if (project.limits.maximumOperationMillis !== undefined) {
+            const owned = this.process;
+            this.deadlineTimer = setTimeout(() => {
+                if (this.process !== owned || this.terminal) return;
+                this.pause();
+                this.failure('OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED');
+            }, project.limits.maximumOperationMillis);
+            this.deadlineTimer.unref();
+        }
         this.process.stdout.on('data', (chunk: Buffer) => this.accept(chunk, operation, arguments_));
         this.process.stderr.on('data', () => {
             /* Worker logs are not forwarded to telemetry or the webview. */
@@ -117,6 +132,7 @@ export class WorkerBridge implements vscode.Disposable {
         this.process.on('error', () => this.failure('WORKER_START_FAILED'));
         this.process.on('close', (code) => {
             this.clearStopTimer();
+            this.clearDeadlineTimer();
             this.process = undefined;
             if (!this.terminal || code !== 0 || this.buffer.length) this.failure('WORKER_DISCONNECTED');
         });
@@ -169,6 +185,7 @@ export class WorkerBridge implements vscode.Disposable {
             this.onMessage(parsed.data);
             if (parsed.data.type === 'result' || parsed.data.type === 'error') {
                 this.terminal = true;
+                this.clearDeadlineTimer();
                 this.clearStopTimer();
                 this.process?.stdin.end();
                 this.armStopTimer();
@@ -189,6 +206,10 @@ export class WorkerBridge implements vscode.Disposable {
     private clearStopTimer(): void {
         if (this.stopTimer) clearTimeout(this.stopTimer);
         this.stopTimer = undefined;
+    }
+    private clearDeadlineTimer(): void {
+        if (this.deadlineTimer) clearTimeout(this.deadlineTimer);
+        this.deadlineTimer = undefined;
     }
     private armStopTimer(): void {
         this.clearStopTimer();
@@ -236,6 +257,7 @@ export class WorkerBridge implements vscode.Disposable {
         this.armStopTimer();
     }
     dispose(): void {
+        this.clearDeadlineTimer();
         this.cancel();
         this.process?.stdin.end();
     }

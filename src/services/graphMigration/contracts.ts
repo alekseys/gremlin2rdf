@@ -166,6 +166,47 @@ export const mappingSchema = z
         derivedRelationships: z.boolean(),
         provenance: z.boolean(),
         fidelity: z.enum(['strict', 'reduced']),
+        valueRules: z
+            .record(
+                z.string().min(1),
+                z
+                    .object({
+                        sourceType: z.enum(['string', 'booleanValue', 'integer', 'floatValue', 'doubleValue']),
+                        representation: z.enum(['literal', 'resource']),
+                        datatype: iri.nullable(),
+                    })
+                    .strict()
+                    .superRefine((rule, context) => {
+                        if (
+                            rule.representation === 'resource'
+                                ? rule.sourceType !== 'string' || rule.datatype !== null
+                                : !rule.datatype ||
+                                  !/^http:\/\/www\.w3\.org\/2001\/XMLSchema#(?:string|boolean|integer|decimal|float|double|date|dateTime|anyURI)$/u.test(
+                                      rule.datatype,
+                                  )
+                        )
+                            context.addIssue({
+                                code: 'custom',
+                                message: 'Explicit supported domain representation required',
+                            });
+                    }),
+            )
+            .refine((rules) => Object.keys(rules).length > 0)
+            .optional(),
+        domainRules: z
+            .array(
+                z
+                    .object({
+                        label: z.string().min(1),
+                        property: z.string().min(1),
+                        minimumOccurrences: z.number().int().nonnegative(),
+                        maximumOccurrences: z.number().int().nonnegative().nullable(),
+                    })
+                    .strict(),
+            )
+            .min(1)
+            .max(1000)
+            .optional(),
     })
     .strict()
     .superRefine((mapping, context) => {
@@ -181,6 +222,22 @@ export const mappingSchema = z
         if (mapping.fidelity === 'strict' && mapping.exclusions.length) {
             context.addIssue({ code: 'custom', message: 'Strict mapping cannot exclude required properties' });
         }
+        if (
+            Object.keys(mapping.valueRules ?? {}).length > 1000 ||
+            Object.keys(mapping.valueRules ?? {}).some((key) => mapping.exclusions.includes(key)) ||
+            (mapping.domainRules ?? []).some(
+                (rule) =>
+                    !mapping.valueRules?.[rule.property] ||
+                    mapping.exclusions.includes(rule.property) ||
+                    (rule.maximumOccurrences !== null && rule.maximumOccurrences < rule.minimumOccurrences),
+            )
+        )
+            context.addIssue({ code: 'custom', message: 'Bounded compatible domain occurrence rules required' });
+        const explicitPredicates = Object.keys(mapping.valueRules ?? {})
+            .filter((key) => mapping.properties[key] !== undefined)
+            .map((key) => mapping.properties[key]);
+        if (new Set(explicitPredicates).size !== explicitPredicates.length)
+            context.addIssue({ code: 'custom', message: 'Domain value rules require distinct predicates' });
     });
 export const approvalSchema = z
     .object({
@@ -372,6 +429,7 @@ export const graphProjectSchema = z
                 queueCapacity: z.number().int().min(1).max(1000),
                 writerConcurrency: z.literal(1),
                 minimumFreeDiskBytes: z.number().int().nonnegative(),
+                maximumOperationMillis: z.number().int().min(1000).max(86400000).optional(),
             })
             .strict(),
         consistency: z.enum(['quiesced', 'immutable', 'best-effort']),
