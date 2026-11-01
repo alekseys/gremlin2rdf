@@ -47,5 +47,5 @@
     ],
     "userProfileModified": false
   },
-  "publication": "Local commit requested; push awaiting user decision because full unit validation is incomplete"
+  "publication": "User explicitly authorized pushing the committed implementation and using GitHub CI for remaining validation; no more local full-suite runs. Draft PR remains unmerged."
 }
