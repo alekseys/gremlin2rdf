@@ -126,7 +126,7 @@ Stop any active migration before replacing the extension. Settings and workspace
 For a package with the same version as your installed preview, you can force replacement from PowerShell:
 
 ```powershell
-code --install-extension ".\vscode-cosmosdb-0.39.12.vsix" --force
+code --install-extension ".\vscode-cosmosdb-0.39.13.vsix" --force
 ```
 
 If the CLI prints `DEP0169` after reporting that the extension was successfully installed, installation succeeded.
@@ -276,6 +276,23 @@ and archives the previous project; it does not extend the expired run or guarant
 example duration. Known expired-duration results do not offer Resume even if the last checkpoint elapsed
 time is slightly below the source plan ceiling. Other verified resumable runs remain eligible. No limits,
 checkpoint bytes, journal accounting or approvals are automatically increased, reset or relabeled.
+
+Version 0.39.13 corrects a remaining form-state defect: the review field previously initialized to **120
+seconds on every remount**, even if a different overall limit was saved. Nonexpired preparations now show
+the saved overall duration. For a current known deadline, the new-run duration is deliberately blank and
+Start remains disabled until a duration is entered alongside the other required reviews. The previous
+configured limit is shown; this also applies when the stop arrives while the form remains open. This does
+not authorize a larger duration automatically or prevent an operator from explicitly reviewing a smaller
+bounded run.
+
+The host now captures `operationLimitMillis` and `elapsedMillis` when its actual deadline timer fires.
+These bounded numeric observations appear in its diagnostic, persisted stop report and phase blocker, so
+no one has to infer the effective limit from a sampled source log. Old worker-only reports lacking these
+numbers remain unchanged; a last source line near 108 seconds alone does not prove a 120-second limit.
+Worker evidence and extension-host stop evidence are separate checksummed artifacts. Evidence buttons
+describe their producer and open their own selected path. Their content must not be assumed identical:
+the host report also retains sampled activity and the effective host deadline when observed. Existing
+reports are preserved without being rewritten or deduplicated.
 
 Set optional `limits.maximumOperationMillis` between 1,000 and 86,400,000 milliseconds to impose a per-operation
 editor worker deadline. Old projects without this field retain their existing behavior. Changing the budget changes

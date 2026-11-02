@@ -9,6 +9,7 @@ import { PassThrough } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as vscode from 'vscode';
 import { graphProjectSchema } from './contracts';
+import { formatDiagnostic, safeDiagnosticSchema } from './diagnostics';
 import { WorkerBridge } from './WorkerBridge';
 
 const mocks = vi.hoisted(() => ({ spawn: vi.fn(), readFile: vi.fn(), get: vi.fn(), trusted: true }));
@@ -121,6 +122,27 @@ function bridge() {
     return new WorkerBridge('package', storage(), vi.fn(), vi.fn());
 }
 describe('worker credential isolation', () => {
+    it('formats only bounded numeric effective-deadline observations, never arbitrary context fields', () => {
+        const diagnostic = {
+            code: 'OPERATION_DEADLINE',
+            stage: 'worker-control',
+            status: 'blocked',
+            remediation: 'The configured overall operation time limit was reached.',
+            operationLimitMillis: 120000,
+            elapsedMillis: 120001,
+        };
+        const parsed = safeDiagnosticSchema.parse(diagnostic);
+        expect(formatDiagnostic(parsed)).toContain('operation limit 120 seconds');
+        expect(formatDiagnostic(parsed)).toContain('observed host elapsed 120 seconds');
+        for (const payload of [
+            { ...diagnostic, operationLimitMillis: 86400001 },
+            { ...diagnostic, elapsedMillis: -1 },
+            { ...diagnostic, elapsedMillis: Infinity },
+            { ...diagnostic, operationLimitMillis: 'private' },
+            { ...diagnostic, providerMessage: 'private' },
+        ])
+            expect(safeDiagnosticSchema.safeParse(payload).success).toBe(false);
+    });
     it('does not relabel an actual operator pause as a deadline while waiting for the owned worker to stop', async () => {
         vi.useFakeTimers();
         const failure = vi.fn();
@@ -147,7 +169,12 @@ describe('worker credential isolation', () => {
         await vi.advanceTimersByTimeAsync(999);
         expect(failure).not.toHaveBeenCalled();
         await vi.advanceTimersByTimeAsync(1);
-        expect(failure).toHaveBeenCalledWith('OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED', 'paused', true);
+        expect(failure).toHaveBeenCalledWith(
+            'OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED',
+            'paused',
+            true,
+            expect.objectContaining({ operationLimitMillis: 1000, elapsedMillis: 1000 }),
+        );
         expect(child.kill).not.toHaveBeenCalled();
         await vi.advanceTimersByTimeAsync(5000);
         expect(child.kill).toHaveBeenCalledOnce();
@@ -240,7 +267,13 @@ describe('worker credential isolation', () => {
                 payload: expect.objectContaining({
                     status: 'paused',
                     artifact: { relativePath: 'artifacts/report.json' },
-                    diagnostics: [expect.objectContaining({ code: 'OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED' })],
+                    diagnostics: [
+                        expect.objectContaining({
+                            code: 'OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED',
+                            operationLimitMillis: 1000,
+                            elapsedMillis: 1000,
+                        }),
+                    ],
                 }),
             }),
         );

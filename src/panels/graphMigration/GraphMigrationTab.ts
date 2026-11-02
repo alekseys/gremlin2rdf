@@ -116,10 +116,11 @@ export class GraphMigrationTab extends BaseTab {
                         this.events.emit({ type: 'diagnostic', code: 'STATE_SAVE_FAILED' }),
                     );
             },
-            (code, status, pending) => {
+            (code, status, pending, observedDiagnostic) => {
                 if (!pending) this.flushActivity();
                 this.events.emit({ type: 'diagnostic', code, pending });
-                const diagnostic = hostDiagnostic(new GraphDiagnosticError(code, 'worker-control'));
+                const diagnostic =
+                    observedDiagnostic ?? hostDiagnostic(new GraphDiagnosticError(code, 'worker-control'));
                 if (pending) {
                     this.pendingStopDiagnostic = diagnostic;
                     return;

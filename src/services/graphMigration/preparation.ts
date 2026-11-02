@@ -16,6 +16,7 @@ import {
     invalidateEvidence,
     type GraphProject,
 } from './contracts';
+import { hasCurrentEnumerationDeadline } from './diagnostics';
 const partition = z
     .string()
     .min(1)
@@ -201,13 +202,7 @@ export async function discoverPreparation(workspace: string, p: GraphProject): P
                 phase.blockers.some((blocker) =>
                     /\bSOURCE_RU_(?:BUDGET_EXHAUSTED|UNOBSERVABLE|ACCOUNTING_REVIEW)\b/u.test(blocker),
                 );
-            const durationBlocked =
-                phase?.inputHash === inputHash(p) &&
-                phase.blockers.some((blocker) =>
-                    /\b(?:OPERATION_DEADLINE(?:_PARTIAL_STATE_PRESERVED)?|SOURCE_ENUMERATION_DURATION_LIMIT)\b/u.test(
-                        blocker,
-                    ),
-                );
+            const durationBlocked = hasCurrentEnumerationDeadline(p, inputHash(p));
             if (durationBlocked)
                 notices.push(
                     l10n.t(

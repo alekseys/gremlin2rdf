@@ -692,6 +692,13 @@ export function GraphMigrationWorkbench() {
                                     <Button
                                         key={file}
                                         onClick={() => void action(() => client.openArtifact.mutate(file))}
+                                        aria-description={
+                                            file.includes('-host-stop-')
+                                                ? l10n.t(
+                                                      'Extension-host stop report, including sampled activity and the observed effective deadline when available.',
+                                                  )
+                                                : l10n.t('Worker-produced report for this step.')
+                                        }
                                         aria-label={l10n.t('{action} for {phase}', {
                                             action: evidenceLabel,
                                             phase: label,
@@ -710,6 +717,7 @@ export function GraphMigrationWorkbench() {
                                 <GraphPreparation
                                     key={`${project.runId}-${currentInputHash}`}
                                     project={project}
+                                    currentInputHash={currentInputHash}
                                     disabled={phaseDisabled}
                                     action={action}
                                     run={run}

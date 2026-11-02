@@ -152,6 +152,91 @@ function renderWorkbench() {
     return rendered;
 }
 describe('graph workbench boundaries and keyboard access', () => {
+    it('does not silently restart an expired run with the hidden 120-second default and opens distinct evidence buttons', async () => {
+        const configured = bootstrapProject();
+        configured.limits.maximumOperationMillis = 120000;
+        for (const phase of Object.values(configured.phases))
+            if (phase.status === 'succeeded') phase.inputHash = inputHash(configured);
+        configured.phases['source-enumerate'] = {
+            status: 'paused',
+            inputHash: inputHash(configured),
+            blockers: [
+                'worker-control (OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED): The configured overall operation time limit was reached.',
+            ],
+            evidence: ['artifacts/source-enumerate-worker.json', 'artifacts/source-enumerate-host-stop-fixture.json'],
+        };
+        mocks.load.mockResolvedValue({ project: configured, trusted: true, currentInputHash: inputHash(configured) });
+        mocks.preparation.mockResolvedValue({
+            partitions: ['fixture'],
+            origins: [],
+            notices: [],
+            coverage: 'unverified-candidates',
+        });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        const user = userEvent.setup();
+        const first = await screen.findByRole('button', {
+            name: 'Evidence 1 for Enumerate read-only source identities',
+        });
+        const second = screen.getByRole('button', { name: 'Evidence 2 for Enumerate read-only source identities' });
+        expect(first).toHaveAccessibleDescription('Worker-produced report for this step.');
+        expect(second).toHaveAccessibleDescription(/Extension-host stop report/);
+        await user.click(first);
+        await user.click(second);
+        expect(mocks.openArtifact.mock.calls).toEqual([
+            ['artifacts/source-enumerate-worker.json'],
+            ['artifacts/source-enumerate-host-stop-fixture.json'],
+        ]);
+        await user.click(screen.getByRole('button', { name: 'Run for Enumerate read-only source identities' }));
+        const duration = await screen.findByRole('spinbutton', { name: 'Maximum duration (seconds)' });
+        expect(duration).toHaveValue(null);
+        expect(duration).toHaveAccessibleDescription(/previous run reached its time limit/i);
+        expect(screen.getByText(/Previous configured overall limit: 120 seconds/)).toBeInTheDocument();
+        await user.click(screen.getByRole('checkbox', { name: /I confirm source writes are paused/ }));
+        const rate = screen.getByRole('textbox', { name: 'Migration source pacing (RU/s)' });
+        await user.type(rate, '400');
+        const start = screen.getByRole('button', { name: 'Start bounded read-only preparation' });
+        expect(start).toBeDisabled();
+        await user.type(duration, '1800');
+        expect(start).not.toBeDisabled();
+        await user.click(start);
+        expect(mocks.prepareSource).toHaveBeenCalledWith(expect.objectContaining({ maximumDurationSeconds: 1800 }));
+        expect(mocks.resumePreparation).not.toHaveBeenCalled();
+    });
+    it('retains the saved reviewed duration when opening a nonexpired preparation instead of reverting to 120 seconds', async () => {
+        const configured = bootstrapProject();
+        configured.limits.maximumOperationMillis = 1800000;
+        for (const phase of Object.values(configured.phases)) phase.inputHash = inputHash(configured);
+        mocks.load.mockResolvedValue({ project: configured, trusted: true, currentInputHash: inputHash(configured) });
+        mocks.preparation.mockResolvedValue({
+            partitions: ['fixture'],
+            origins: [],
+            notices: [],
+            coverage: 'unverified-candidates',
+        });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        await userEvent
+            .setup()
+            .click(await screen.findByRole('button', { name: 'Run for Enumerate read-only source identities' }));
+        expect(await screen.findByRole('spinbutton', { name: 'Maximum duration (seconds)' })).toHaveValue(1800);
+        const stopped = graphProjectSchema.parse({
+            ...configured,
+            phases: {
+                ...configured.phases,
+                'source-enumerate': {
+                    status: 'paused',
+                    inputHash: inputHash(configured),
+                    evidence: [],
+                    blockers: [
+                        'worker-control (OPERATION_DEADLINE): The configured overall operation time limit was reached.',
+                    ],
+                },
+            },
+        });
+        act(() => listener({ type: 'project', project: stopped, currentInputHash: inputHash(stopped) }));
+        await waitFor(() =>
+            expect(screen.getByRole('spinbutton', { name: 'Maximum duration (seconds)' })).toHaveValue(null),
+        );
+    });
     it('shows bounded live activity inside its step, retains it when paused, and exposes paused evidence', async () => {
         const configured = bootstrapProject();
         configured.phases['source-enumerate'] = {

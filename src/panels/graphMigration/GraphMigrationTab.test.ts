@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as vscode from 'vscode';
 import { writeNewArtifact } from '../../services/graphMigration/artifacts';
 import { canonicalJson, inputHash, type WorkerMessage } from '../../services/graphMigration/contracts';
+import { type SafeDiagnostic } from '../../services/graphMigration/diagnostics';
 import { GraphProjectService } from '../../services/graphMigration/GraphProjectService';
 import { adoptEnumeration, freshPreparation, seedPartitions } from '../../services/graphMigration/preparation';
 import { GraphMigrationTab } from './GraphMigrationTab';
@@ -19,10 +20,13 @@ import { type GraphRouterContext } from './graphRouter';
 const mocks = vi.hoisted(() => ({
     context: undefined as GraphRouterContext | undefined,
     message: undefined as ((message: WorkerMessage) => void) | undefined,
-    failure: undefined as ((code: string, status?: 'paused' | 'cancelled', pending?: boolean) => void) | undefined,
+    failure: undefined as
+        | ((code: string, status?: 'paused' | 'cancelled', pending?: boolean, diagnostic?: SafeDiagnostic) => void)
+        | undefined,
     start: vi.fn(),
     events: vi.fn(),
     confirm: vi.fn(),
+    showTextDocument: vi.fn(),
     active: false,
     trusted: true,
 }));
@@ -64,7 +68,8 @@ vi.mock('vscode', () => ({
             return mocks.trusted;
         },
     },
-    window: { showWarningMessage: mocks.confirm },
+    window: { showWarningMessage: mocks.confirm, showTextDocument: mocks.showTextDocument },
+    Uri: { file: (value: string) => value },
 }));
 vi.mock('../../services/graphMigration/WorkerBridge', () => ({
     WorkerBridge: class {
@@ -72,7 +77,12 @@ vi.mock('../../services/graphMigration/WorkerBridge', () => ({
             _: unknown,
             _secrets: unknown,
             message: (message: WorkerMessage) => void,
-            failure: (code: string, status?: 'paused' | 'cancelled', pending?: boolean) => void,
+            failure: (
+                code: string,
+                status?: 'paused' | 'cancelled',
+                pending?: boolean,
+                diagnostic?: SafeDiagnostic,
+            ) => void,
         ) {
             mocks.message = message;
             mocks.failure = failure;
@@ -122,6 +132,60 @@ async function complete(payload: WorkerMessage['payload']) {
 }
 
 describe('persisted graph editor workflow', () => {
+    it('keeps worker and host stop evidence distinct and opens each selected checksummed artifact', async () => {
+        await context.create();
+        await context.run('mapping', '', '', '');
+        const project = await service.load(),
+            root = await service.root();
+        const report = {
+            schemaVersion: 1,
+            runId: project.runId,
+            inputHash: inputHash(project),
+            operation: 'mapping',
+            status: 'paused',
+            sensitiveArtifact: true,
+            result: {
+                status: 'paused',
+                partialOutput: 'preserved-not-loadable',
+                diagnostics: [
+                    {
+                        code: 'OPERATION_DEADLINE',
+                        stage: 'worker-control',
+                        status: 'blocked',
+                        remediation: 'The configured overall operation time limit was reached.',
+                    },
+                ],
+            },
+        };
+        const relativePath = 'artifacts/mapping-worker-fixture.json';
+        await writeNewArtifact(root, relativePath, canonicalJson(report));
+        await complete({
+            status: 'paused',
+            inputHash: inputHash(project),
+            artifact: {
+                relativePath,
+                ownerRunId: project.runId,
+                sensitive: true,
+                sha256: createHash('sha256').update(canonicalJson(report)).digest('hex'),
+            },
+            artifacts: [],
+            diagnostics: [{ ...report.result.diagnostics[0], operationLimitMillis: 120000, elapsedMillis: 120000 }],
+        });
+        const saved = await service.load(),
+            evidence = saved.phases.mapping.evidence;
+        expect(evidence).toHaveLength(2);
+        expect(new Set(evidence).size).toBe(2);
+        const worker = JSON.parse(await readFile(path.join(root, evidence[0]), 'utf8'));
+        const host = JSON.parse(await readFile(path.join(root, evidence[1]), 'utf8'));
+        expect(worker).toEqual(report);
+        expect(host.producer).toBe('extension-host');
+        expect(host.result.diagnostics[0]).toMatchObject({ operationLimitMillis: 120000, elapsedMillis: 120000 });
+        expect(host).not.toEqual(worker);
+        for (const file of evidence) await context.openArtifact(file);
+        expect(mocks.showTextDocument.mock.calls.map(([file]) => file)).toEqual(
+            evidence.map((file) => path.join(root, file)),
+        );
+    });
     it('forwards first/ten-second summaries and final two observations, not each request, with preserved safe stop evidence', async () => {
         await context.create();
         await context.run('mapping', '', '', '');
@@ -235,7 +299,14 @@ describe('persisted graph editor workflow', () => {
             phase: 'mapping',
             payload: { recordsConfirmed: 2, requestBodyBytes: 100, elapsedMillis: 1000 },
         });
-        mocks.failure?.('OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED', 'paused', true);
+        mocks.failure?.('OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED', 'paused', true, {
+            code: 'OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED',
+            stage: 'worker-control',
+            status: 'blocked',
+            remediation: 'The configured overall operation time limit was reached.',
+            operationLimitMillis: 120000,
+            elapsedMillis: 120001,
+        });
         expect((await service.load()).phases.mapping.status).toBe('running');
         mocks.failure?.('WORKER_TERMINATION_REQUESTED_PARTIAL_STATE_PRESERVED', 'paused');
         await vi.waitFor(async () => expect((await service.load()).phases.mapping.status).toBe('paused'));
@@ -255,6 +326,8 @@ describe('persisted graph editor workflow', () => {
             'OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED',
             'WORKER_TERMINATION_REQUESTED_PARTIAL_STATE_PRESERVED',
         ]);
+        expect(evidence.result.diagnostics[0]).toMatchObject({ operationLimitMillis: 120000, elapsedMillis: 120001 });
+        expect(phase.blockers.join(' ')).toContain('operation limit 120 seconds');
     });
     it('starts guided preparation with bounded settings and exposes running state to Pause and Cancel', async () => {
         await context.create();

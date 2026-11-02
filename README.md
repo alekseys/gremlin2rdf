@@ -10,7 +10,7 @@ not a Microsoft Marketplace release.
 
 ## Install and choose your target
 
-1. Install **`vscode-cosmosdb-0.39.12.vsix`** using VS Code's **Extensions > Install from VSIX**, then reload.
+1. Install **`vscode-cosmosdb-0.39.13.vsix`** using VS Code's **Extensions > Install from VSIX**, then reload.
    Stop active migrations before upgrading; this replaces the extension, not its saved projects.
 2. Open your application's folder as a trusted workspace and enable:
 
@@ -89,6 +89,10 @@ instead of streaming every record/request into the panel. Deadline pauses no lon
 Pause. Guided Prepare now allows an explicitly reviewed duration up to 86400 seconds, including reconciliation;
 existing runs retain their original bounds and journals. A known expired duration requires a newly reviewed run,
 not an automatic extension or a misleading Resume.
+Version 0.39.13 fixes the remaining duration-review defect: reopening Prepare no longer silently replaces
+a saved duration with 120 seconds. After a current deadline result the duration field requires explicit entry,
+with the previous configured limit shown. New host deadline evidence includes the actual configured limit
+and observed elapsed milliseconds. Installing a VSIX never changes existing execution budgets.
 
 ## Start small
 

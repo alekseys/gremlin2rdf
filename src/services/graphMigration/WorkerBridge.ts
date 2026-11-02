@@ -8,7 +8,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { fileHash, readBounded } from './artifacts';
 import { inputHash, workerMessageSchema, type GraphProject, type WorkerMessage } from './contracts';
-import { GraphDiagnosticError, hostDiagnostic, safeDiagnostics } from './diagnostics';
+import { GraphDiagnosticError, hostDiagnostic, safeDiagnostics, type SafeDiagnostic } from './diagnostics';
 
 export class WorkerBridge implements vscode.Disposable {
     private process: ChildProcessWithoutNullStreams | undefined;
@@ -25,6 +25,7 @@ export class WorkerBridge implements vscode.Disposable {
     private terminal = false;
     private started = false;
     private deadlineReached = false;
+    private deadlineObservation: Pick<SafeDiagnostic, 'operationLimitMillis' | 'elapsedMillis'> = {};
     get active(): boolean {
         return this.process !== undefined;
     }
@@ -32,7 +33,12 @@ export class WorkerBridge implements vscode.Disposable {
         private readonly resourceDirectory: string,
         private readonly secrets: vscode.SecretStorage,
         private readonly onMessage: (message: WorkerMessage) => void,
-        private readonly onFailure: (code: string, status?: 'paused' | 'cancelled', pending?: boolean) => void,
+        private readonly onFailure: (
+            code: string,
+            status?: 'paused' | 'cancelled',
+            pending?: boolean,
+            diagnostic?: SafeDiagnostic,
+        ) => void,
     ) {}
     async start(project: GraphProject, cwd: string, operation: string, arguments_: string[]): Promise<void> {
         if (!vscode.workspace.isTrusted) throw new Error('Workspace trust is required for worker execution');
@@ -126,14 +132,21 @@ export class WorkerBridge implements vscode.Disposable {
         this.terminal = false;
         this.started = false;
         this.deadlineReached = false;
+        this.deadlineObservation = {};
         this.process = spawn('java', ['-Xmx1g', '-jar', jar, 'worker'], { cwd, env, shell: false, windowsHide: true });
         if (project.limits.maximumOperationMillis !== undefined) {
             const owned = this.process;
+            const startedAt = Date.now(),
+                limit = project.limits.maximumOperationMillis;
             this.deadlineTimer = setTimeout(() => {
                 if (this.process !== owned || this.terminal) return;
                 this.deadlineReached = true;
+                this.deadlineObservation = {
+                    operationLimitMillis: limit,
+                    elapsedMillis: Math.max(0, Date.now() - startedAt),
+                };
                 this.pause('operation-deadline');
-                this.onFailure('OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED', 'paused', true);
+                this.onFailure('OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED', 'paused', true, this.deadlineDiagnostic());
             }, project.limits.maximumOperationMillis);
             this.deadlineTimer.unref();
         }
@@ -222,7 +235,9 @@ export class WorkerBridge implements vscode.Disposable {
                                             'OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED',
                                         ].includes(diagnostic.code)),
                             ),
-                            hostDiagnostic(new GraphDiagnosticError(code, 'worker-control')),
+                            code === 'OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED'
+                                ? this.deadlineDiagnostic()
+                                : hostDiagnostic(new GraphDiagnosticError(code, 'worker-control')),
                         ],
                     },
                 });
@@ -236,6 +251,12 @@ export class WorkerBridge implements vscode.Disposable {
             }
         }
         if (this.buffer.length > 65536) this.failProtocol();
+    }
+    private deadlineDiagnostic(): SafeDiagnostic {
+        return {
+            ...hostDiagnostic(new GraphDiagnosticError('OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED', 'worker-control')),
+            ...this.deadlineObservation,
+        };
     }
     private failProtocol(): void {
         this.failure('INVALID_WORKER_PROTOCOL');

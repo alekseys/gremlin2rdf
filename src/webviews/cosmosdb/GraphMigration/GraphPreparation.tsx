@@ -9,16 +9,18 @@ import * as l10n from '@vscode/l10n';
 import { useEffect, useRef, useState } from 'react';
 import { type GraphAppRouter, type GraphOperation } from '../../../panels/graphMigration/graphRouter';
 import { type GraphProject } from '../../../services/graphMigration/contracts';
-import { hasFidelityInventory } from '../../../services/graphMigration/diagnostics';
+import { hasCurrentEnumerationDeadline, hasFidelityInventory } from '../../../services/graphMigration/diagnostics';
 import { type PreparationCandidates } from '../../../services/graphMigration/preparation';
 export function GraphPreparation({
     project,
+    currentInputHash,
     disabled,
     action,
     run,
     enumerationOnly = false,
 }: {
     project: GraphProject;
+    currentInputHash?: string;
     disabled: boolean;
     action: (work: () => Promise<unknown>) => Promise<void>;
     run: (operation: GraphOperation) => Promise<void>;
@@ -27,13 +29,22 @@ export function GraphPreparation({
     const client = useTrpcClient<GraphAppRouter>();
     const reviewButtonRef = useRef<HTMLButtonElement>(null);
     const [candidates, setCandidates] = useState<PreparationCandidates>();
+    const expired = hasCurrentEnumerationDeadline(project, currentInputHash);
     const [text, setText] = useState(''),
         [requests, setRequests] = useState('20000'),
-        [seconds, setSeconds] = useState('120');
+        [seconds, setSeconds] = useState(
+            expired ? '' : String((project.limits.maximumOperationMillis ?? 120000) / 1000),
+        );
     const [ru, setRu] = useState(project.source?.ruBudget ?? ''),
         [rate, setRate] = useState(project.source?.ruPerSecond ?? ''),
         [stable, setStable] = useState(false),
         [starting, setStarting] = useState(false);
+    useEffect(() => {
+        if (expired) {
+            setSeconds('');
+            setStable(false);
+        }
+    }, [expired]);
     const partitions = [...new Set(text.split(/\r?\n/u).filter((v) => v.length > 0))];
     useEffect(() => {
         if (!enumerationOnly) return;
@@ -150,6 +161,14 @@ export function GraphPreparation({
                     <Field
                         label={l10n.t('Maximum duration (seconds)')}
                         required
+                        validationMessage={
+                            expired && !seconds
+                                ? l10n.t(
+                                      'The previous run reached its time limit. Enter the duration you intend to review for a new run; installing an update does not extend an existing limit.',
+                                  )
+                                : undefined
+                        }
+                        validationState={expired && !seconds ? 'error' : 'none'}
                         hint={l10n.t(
                             'Review 10-86400 seconds for a new run, including identity pages and all global/partition count reconciliation. The worker stops at this duration, even if identities have already been read. Existing runs keep their original deadline; increasing duration does not increase total RU or request allowances.',
                         )}
@@ -164,6 +183,18 @@ export function GraphPreparation({
                             disabled={disabled}
                         />
                     </Field>
+                    {expired && (
+                        <p>
+                            {project.limits.maximumOperationMillis !== undefined
+                                ? l10n.t(
+                                      'Previous configured overall limit: {seconds} seconds. This is not an RU/s limit. The duration field is deliberately empty so the old limit is not silently reused. Review enough time for identity reads and reconciliation; no completion duration is guaranteed.',
+                                      { seconds: project.limits.maximumOperationMillis / 1000 },
+                                  )
+                                : l10n.t(
+                                      'The previous enumeration reached a duration limit. Its exact configured duration is not available here. Enter and review a new bounded duration without deleting prior artifacts.',
+                                  )}
+                        </p>
+                    )}
                     <Field
                         label={l10n.t('Total source RU allowance per run')}
                         required

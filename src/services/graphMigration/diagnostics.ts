@@ -22,6 +22,8 @@ export const safeDiagnosticSchema = z
         ruConsumed: ruAmount.optional(),
         ruRemaining: ruAmount.optional(),
         ruPerSecond: ruAmount.optional(),
+        operationLimitMillis: z.number().int().min(1000).max(86400000).optional(),
+        elapsedMillis: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
         chargeObservation: z
             .enum([
                 'missing-total',
@@ -46,6 +48,16 @@ export function formatDiagnostic(diagnostic: SafeDiagnostic): string {
         diagnostic.ruConsumed !== undefined ? l10n.t('consumed {amount} RU', { amount: diagnostic.ruConsumed }) : '',
         diagnostic.ruRemaining !== undefined ? l10n.t('remaining {amount} RU', { amount: diagnostic.ruRemaining }) : '',
         diagnostic.ruPerSecond !== undefined ? l10n.t('pacing {amount} RU/s', { amount: diagnostic.ruPerSecond }) : '',
+        diagnostic.operationLimitMillis !== undefined
+            ? l10n.t('operation limit {seconds} seconds', {
+                  seconds: diagnostic.operationLimitMillis / 1000,
+              })
+            : '',
+        diagnostic.elapsedMillis !== undefined
+            ? l10n.t('observed host elapsed {seconds} seconds', {
+                  seconds: Math.floor(diagnostic.elapsedMillis / 1000),
+              })
+            : '',
     ].filter(Boolean);
     return `${diagnostic.stage} (${[diagnostic.code, ...statuses].join(', ')}): ${diagnostic.remediation}`;
 }
@@ -56,6 +68,17 @@ export class GraphDiagnosticError extends Error {
     ) {
         super(code);
     }
+}
+export function hasCurrentEnumerationDeadline(project: GraphProject, currentHash: string | undefined): boolean {
+    const phase = project.phases['source-enumerate'];
+    return Boolean(
+        currentHash &&
+        phase?.inputHash === currentHash &&
+        ['paused', 'blocked', 'failed'].includes(phase.status) &&
+        phase.blockers.some((blocker) =>
+            /\b(?:OPERATION_DEADLINE(?:_PARTIAL_STATE_PRESERVED)?|SOURCE_ENUMERATION_DURATION_LIMIT)\b/u.test(blocker),
+        ),
+    );
 }
 export function hostDiagnostic(error: unknown, stage = 'preparation'): SafeDiagnostic {
     const code = error instanceof GraphDiagnosticError ? error.code : 'HOST_PREPARATION_UNKNOWN';
