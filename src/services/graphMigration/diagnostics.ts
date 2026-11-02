@@ -86,6 +86,15 @@ export function hasCurrentEnumerationDeadline(project: GraphProject, currentHash
         ),
     );
 }
+export function hasCurrentEnumerationRequestLimit(project: GraphProject, currentHash: string | undefined): boolean {
+    const phase = project.phases['source-enumerate'];
+    return Boolean(
+        currentHash &&
+        phase?.inputHash === currentHash &&
+        ['paused', 'blocked', 'failed'].includes(phase.status) &&
+        phase.blockers.some((blocker) => /\bSOURCE_ENUMERATION_REQUEST_LIMIT\b/u.test(blocker)),
+    );
+}
 export function hostDiagnostic(error: unknown, stage = 'preparation'): SafeDiagnostic {
     const code = error instanceof GraphDiagnosticError ? error.code : 'HOST_PREPARATION_UNKNOWN';
     const remediation =

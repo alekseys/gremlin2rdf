@@ -38,6 +38,7 @@ import { type GraphProject } from '../../../services/graphMigration/contracts';
 import {
     formatDiagnostic,
     hasCurrentSourceCompatibility,
+    hasCurrentEnumerationRequestLimit,
     hasFidelityInventory,
     safeDiagnostics,
     hostDiagnostic,
@@ -511,6 +512,10 @@ export function GraphMigrationWorkbench() {
         corePhases.find(([operation]) => !phaseComplete(operation));
     const nextOperation = nextPhase?.[0];
     const nextLabel = nextPhase?.[1];
+    const enumerationStopped = Boolean(
+        project && ['blocked', 'failed', 'paused', 'cancelled'].includes(project.phases['source-enumerate']?.status),
+    );
+    const enumerationRequestLimited = Boolean(project && hasCurrentEnumerationRequestLimit(project, currentInputHash));
     const phaseStatus = (operation: GraphOperation) => {
         const phase = project?.phases[operation];
         return phase && phase.status !== 'running' && currentInputHash && phase.inputHash !== currentInputHash
@@ -618,6 +623,17 @@ export function GraphMigrationWorkbench() {
                 {showActions && (
                     <div className={styles.operationActions}>
                         <div className={styles.actionButtons}>
+                            {operation === 'source-enumerate' && enumerationStopped && (
+                                <Button
+                                    disabled={disabled}
+                                    onClick={() => setEnumerationReview(true)}
+                                    aria-description={l10n.t(
+                                        'Review request, duration and RU limits for a new bounded preparation. The stopped run and its evidence remain preserved.',
+                                    )}
+                                >
+                                    {l10n.t('Review run settings')}
+                                </Button>
+                            )}
                             <Button
                                 disabled={
                                     phaseDisabled ||
@@ -711,14 +727,15 @@ export function GraphMigrationWorkbench() {
                         </div>
                         {extractionPrerequisite && <p>{extractionPrerequisite}</p>}
                         {operation === 'source-enumerate' &&
-                            operation === nextPhase?.[0] &&
-                            enumerationReview &&
+                            (operation === nextPhase?.[0] || enumerationStopped) &&
+                            (enumerationReview || enumerationRequestLimited) &&
                             project && (
                                 <GraphPreparation
                                     key={`${project.runId}-${currentInputHash}`}
                                     project={project}
                                     currentInputHash={currentInputHash}
-                                    disabled={phaseDisabled}
+                                    disabled={disabled}
+                                    executionDisabled={phaseDisabled}
                                     action={action}
                                     run={run}
                                     enumerationOnly
@@ -1001,7 +1018,12 @@ export function GraphMigrationWorkbench() {
                                 return (
                                     <details
                                         key={phase[0]}
-                                        open={active || completed || priorEvidence}
+                                        open={
+                                            active ||
+                                            completed ||
+                                            priorEvidence ||
+                                            (phase[0] === 'source-enumerate' && enumerationStopped)
+                                        }
                                         className={styles.optionalDetails}
                                     >
                                         <summary aria-current={active ? 'step' : undefined}>

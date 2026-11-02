@@ -53,6 +53,25 @@ offer Resume. Do not delete, rename or blindly adopt either file. Preserve the o
 new bounded preparation if verified recovery is unavailable. Installing an update does not clear pending
 state, reset journals, raise budgets or certify any inventory. Do not disable security software.
 
+## Review settings after a stopped enumeration
+
+Version 0.39.15 keeps stopped Step 2 expanded with an explicit **Review run settings** button. Reviewing
+request, duration and RU limits does not require its Run button to be enabled or local partition discovery to
+succeed. Active operations and untrusted workspaces still disable changes. If an earlier required step must
+be rerun, settings can be reviewed but Start/Resume stay disabled until the sequential prerequisites pass.
+
+A current `SOURCE_ENUMERATION_REQUEST_LIMIT` automatically reveals the review form and clears the request
+ceiling entry and stable-source confirmation, requiring deliberate review rather than silently reusing the
+exhausted allowance. The preserved duration and RU settings remain visible. Maximum reserved attempts count
+retry capacity as well as identity reads and all global/partition count reconciliation; observed identity
+counts alone do not certify coverage.
+
+Enter the intended request ceiling, review the other limits and confirm the stable source before choosing
+**Start bounded read-only preparation**. This creates a separately reviewed run, preserves the old project,
+checkpoint, evidence and request journal, and invalidates prior approvals. Editing fields alone never changes
+the old run or submits source requests. Resume cannot renew an exhausted allowance. The reviewed limits remain
+bounded; no completion duration or request count is guaranteed.
+
 ## Simplified connection setup
 
 The project page uses source/target connection cards, a numbered sequence overview and status badges with icons.
@@ -147,7 +166,7 @@ Stop any active migration before replacing the extension. Settings and workspace
 For a package with the same version as your installed preview, you can force replacement from PowerShell:
 
 ```powershell
-code --install-extension ".\vscode-cosmosdb-0.39.14.vsix" --force
+code --install-extension ".\vscode-cosmosdb-0.39.15.vsix" --force
 ```
 
 If the CLI prints `DEP0169` after reporting that the extension was successfully installed, installation succeeded.

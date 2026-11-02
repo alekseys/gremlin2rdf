@@ -122,6 +122,16 @@ it('does not offer Resume over an unacknowledged enumeration checkpoint and pres
         plan: prepared.plan,
         output: prepared.output,
     });
+    prepared.project.phases['source-enumerate'] = {
+        status: 'blocked',
+        inputHash: inputHash(prepared.project),
+        evidence: [],
+        blockers: ['source-enumeration (SOURCE_ENUMERATION_REQUEST_LIMIT): Reviewed request ceiling reached.'],
+    };
+    const exhausted = await discoverPreparation(root, prepared.project);
+    expect(exhausted.resume).toBeUndefined();
+    expect(exhausted.notices.join(' ')).toContain('reserved request attempts');
+    delete prepared.project.phases['source-enumerate'];
     await writeFile(path.join(output, 'checkpoint.json.pending'), 'preserved-pending');
     const candidates = await discoverPreparation(root, prepared.project);
     expect(candidates.resume).toBeUndefined();

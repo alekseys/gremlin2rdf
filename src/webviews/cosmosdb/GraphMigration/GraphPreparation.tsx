@@ -9,7 +9,11 @@ import * as l10n from '@vscode/l10n';
 import { useEffect, useRef, useState } from 'react';
 import { type GraphAppRouter, type GraphOperation } from '../../../panels/graphMigration/graphRouter';
 import { type GraphProject } from '../../../services/graphMigration/contracts';
-import { hasCurrentEnumerationDeadline, hasFidelityInventory } from '../../../services/graphMigration/diagnostics';
+import {
+    hasCurrentEnumerationDeadline,
+    hasCurrentEnumerationRequestLimit,
+    hasFidelityInventory,
+} from '../../../services/graphMigration/diagnostics';
 import { type PreparationCandidates } from '../../../services/graphMigration/preparation';
 export function GraphPreparation({
     project,
@@ -18,6 +22,7 @@ export function GraphPreparation({
     action,
     run,
     enumerationOnly = false,
+    executionDisabled = false,
 }: {
     project: GraphProject;
     currentInputHash?: string;
@@ -25,13 +30,16 @@ export function GraphPreparation({
     action: (work: () => Promise<unknown>) => Promise<void>;
     run: (operation: GraphOperation) => Promise<void>;
     enumerationOnly?: boolean;
+    executionDisabled?: boolean;
 }) {
     const client = useTrpcClient<GraphAppRouter>();
     const reviewButtonRef = useRef<HTMLButtonElement>(null);
     const [candidates, setCandidates] = useState<PreparationCandidates>();
     const expired = hasCurrentEnumerationDeadline(project, currentInputHash);
+    const requestLimited = hasCurrentEnumerationRequestLimit(project, currentInputHash);
+    const enumerationStatus = project.phases['source-enumerate']?.status;
     const [text, setText] = useState(''),
-        [requests, setRequests] = useState('20000'),
+        [requests, setRequests] = useState(requestLimited ? '' : '20000'),
         [seconds, setSeconds] = useState(
             expired ? '' : String((project.limits.maximumOperationMillis ?? 120000) / 1000),
         );
@@ -45,6 +53,12 @@ export function GraphPreparation({
             setStable(false);
         }
     }, [expired]);
+    useEffect(() => {
+        if (requestLimited) {
+            setRequests('');
+            setStable(false);
+        }
+    }, [requestLimited]);
     const partitions = [...new Set(text.split(/\r?\n/u).filter((v) => v.length > 0))];
     useEffect(() => {
         if (!enumerationOnly) return;
@@ -60,7 +74,7 @@ export function GraphPreparation({
         return () => {
             disposed = true;
         };
-    }, [enumerationOnly, client, action]);
+    }, [enumerationOnly, client, action, enumerationStatus]);
     const valid =
         partitions.length > 0 &&
         partitions.length <= 1000 &&
@@ -108,23 +122,25 @@ export function GraphPreparation({
             >
                 {l10n.t('Find partition candidates')}
             </Button>
-            {candidates && (
+            {(candidates || enumerationOnly) && (
                 <>
-                    <p>
-                        <output aria-live="polite">
-                            {l10n.t(
-                                '{count} candidates found. These are not verified live coverage; enumeration must reconcile global and partition counts.',
-                                { count: candidates.partitions.length },
-                            )}
-                        </output>
-                    </p>
-                    {candidates.notices.map((notice, index) => (
+                    {candidates && (
+                        <p>
+                            <output aria-live="polite">
+                                {l10n.t(
+                                    '{count} candidates found. These are not verified live coverage; enumeration must reconcile global and partition counts.',
+                                    { count: candidates.partitions.length },
+                                )}
+                            </output>
+                        </p>
+                    )}
+                    {candidates?.notices.map((notice, index) => (
                         <p key={index}>{notice}</p>
                     ))}
-                    {candidates.resume && (
+                    {candidates?.resume && !requestLimited && !expired && (
                         <>
                             <Button
-                                disabled={disabled || starting}
+                                disabled={disabled || executionDisabled || starting}
                                 onClick={() => void action(() => client.resumePreparation.mutate())}
                             >
                                 {l10n.t('Resume preserved read-only preparation')}
@@ -147,7 +163,21 @@ export function GraphPreparation({
                             />
                         </Field>
                     </details>
-                    <Field label={l10n.t('Maximum reserved request attempts')} required>
+                    <Field
+                        label={l10n.t('Maximum reserved request attempts')}
+                        required
+                        validationState={requestLimited && !requests ? 'error' : 'none'}
+                        validationMessage={
+                            requestLimited && !requests
+                                ? l10n.t(
+                                      'The stopped run exhausted its reviewed request allowance. Enter and explicitly review a request ceiling for a new run; Resume cannot renew this allowance.',
+                                  )
+                                : undefined
+                        }
+                        hint={l10n.t(
+                            'Reserved attempts include retry capacity, not just completed source requests. Identity pages and all count reconciliation share this ceiling. Changing these fields applies only when you start a newly reviewed preparation; old checkpoints and journals are retained.',
+                        )}
+                    >
                         <Input
                             aria-required={true}
                             type="number"
@@ -239,7 +269,11 @@ export function GraphPreparation({
                     <Button
                         appearance="primary"
                         disabled={
-                            disabled || starting || !valid || !['quiesced', 'immutable'].includes(project.consistency)
+                            disabled ||
+                            executionDisabled ||
+                            starting ||
+                            !valid ||
+                            !['quiesced', 'immutable'].includes(project.consistency)
                         }
                         onClick={() =>
                             void action(async () => {

@@ -16,7 +16,7 @@ import {
     invalidateEvidence,
     type GraphProject,
 } from './contracts';
-import { hasCurrentEnumerationDeadline } from './diagnostics';
+import { hasCurrentEnumerationDeadline, hasCurrentEnumerationRequestLimit } from './diagnostics';
 const partition = z
     .string()
     .min(1)
@@ -216,6 +216,13 @@ export async function discoverPreparation(workspace: string, p: GraphProject): P
                     /\bSOURCE_RU_(?:BUDGET_EXHAUSTED|UNOBSERVABLE|ACCOUNTING_REVIEW)\b/u.test(blocker),
                 );
             const durationBlocked = hasCurrentEnumerationDeadline(p, inputHash(p));
+            const requestsBlocked = hasCurrentEnumerationRequestLimit(p, inputHash(p));
+            if (requestsBlocked)
+                notices.push(
+                    l10n.t(
+                        'This run exhausted its reviewed reserved request attempts, including count reconciliation. Preserve its checkpoint and journal. Review a new request ceiling below; Resume cannot renew the old allowance.',
+                    ),
+                );
             if (durationBlocked)
                 notices.push(
                     l10n.t(
@@ -231,6 +238,7 @@ export async function discoverPreparation(workspace: string, p: GraphProject): P
             if (
                 !accountingBlocked &&
                 !durationBlocked &&
+                !requestsBlocked &&
                 !pendingCheckpoint &&
                 state.runId === p.runId &&
                 state.inputHash === inputHash(p) &&

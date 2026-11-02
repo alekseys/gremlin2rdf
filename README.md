@@ -10,7 +10,7 @@ not a Microsoft Marketplace release.
 
 ## Install and choose your target
 
-1. Install **`vscode-cosmosdb-0.39.14.vsix`** using VS Code's **Extensions > Install from VSIX**, then reload.
+1. Install **`vscode-cosmosdb-0.39.15.vsix`** using VS Code's **Extensions > Install from VSIX**, then reload.
    Stop active migrations before upgrading; this replaces the extension, not its saved projects.
 2. Open your application's folder as a trusted workspace and enable:
 
@@ -98,6 +98,10 @@ at most five local rename attempts (375 ms total waiting), without repeating sou
 failures preserve the old and pending files and report the safe storage substep/action/attempt count.
 An unacknowledged enumeration checkpoint disables Resume rather than silently adopting pending state.
 The earlier generic `ARTIFACT_ACCESS` report does not establish a permissions defect or the exact live cause.
+Version 0.39.15 keeps **Review run settings** available in stopped Step 2, independently of its Run gate.
+Request exhaustion automatically opens the limits for explicit new-run review; it never renews the old allowance.
+Settings remain editable even if partition discovery fails or an earlier step must be rerun; execution still
+requires the sequential prerequisites, valid candidates and explicit stable-source confirmation.
 
 ## Start small
 

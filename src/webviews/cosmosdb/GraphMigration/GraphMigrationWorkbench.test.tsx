@@ -152,6 +152,107 @@ function renderWorkbench() {
     return rendered;
 }
 describe('graph workbench boundaries and keyboard access', () => {
+    it('reopens editable Step 2 settings after an active run hits its request ceiling without renewing the old run', async () => {
+        const configured = bootstrapProject();
+        configured.source!.ruPerSecond = '400';
+        configured.limits.maximumOperationMillis = 1800000;
+        const hash = inputHash(configured);
+        for (const phase of Object.values(configured.phases)) phase.inputHash = hash;
+        configured.phases['source-enumerate'] = { status: 'running', inputHash: hash, evidence: [], blockers: [] };
+        mocks.load.mockResolvedValue({ project: configured, trusted: true, currentInputHash: hash });
+        mocks.preparation.mockResolvedValue({
+            partitions: ['fixture'],
+            origins: [],
+            notices: [],
+            coverage: 'unverified-candidates',
+        });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        expect(
+            await screen.findByRole('button', { name: 'Run for Enumerate read-only source identities' }),
+        ).toBeDisabled();
+        const blocked = graphProjectSchema.parse({
+            ...configured,
+            phases: {
+                ...configured.phases,
+                'source-enumerate': {
+                    status: 'blocked',
+                    inputHash: hash,
+                    evidence: ['artifacts/request-limit.json'],
+                    blockers: [
+                        'source-enumeration (SOURCE_ENUMERATION_REQUEST_LIMIT): Reviewed request ceiling reached.',
+                    ],
+                },
+            },
+        });
+        act(() => listener({ type: 'project', project: blocked, currentInputHash: hash }));
+        const requests = await screen.findByRole('spinbutton', { name: 'Maximum reserved request attempts' });
+        expect(requests).not.toBeDisabled();
+        expect(requests).toHaveValue(null);
+        expect(requests).toHaveAccessibleDescription(/stopped run exhausted its reviewed request allowance/i);
+        const review = screen.getByRole('button', { name: 'Review run settings' });
+        expect(review).toHaveTextContent('Review run settings');
+        expect(review).toHaveAccessibleName('Review run settings');
+        expect(review).not.toBeDisabled();
+        const user = userEvent.setup();
+        await user.click(review);
+        expect(screen.getByRole('spinbutton', { name: 'Maximum duration (seconds)' })).toHaveValue(1800);
+        expect(screen.getByRole('textbox', { name: 'Migration source pacing (RU/s)' })).toHaveValue('400');
+        expect(screen.getByRole('textbox', { name: 'Total source RU allowance per run' })).toHaveValue('1000');
+        const start = screen.getByRole('button', { name: 'Start bounded read-only preparation' });
+        expect(start).toBeDisabled();
+        await user.type(requests, '40000');
+        await user.click(screen.getByRole('checkbox', { name: /I confirm source writes are paused/ }));
+        expect(start).not.toBeDisabled();
+        await user.click(screen.getByRole('button', { name: 'Evidence 1 for Enumerate read-only source identities' }));
+        expect(mocks.openArtifact).toHaveBeenCalledWith('artifacts/request-limit.json');
+        await user.click(start);
+        expect(mocks.prepareSource).toHaveBeenCalledWith({
+            partitions: ['fixture'],
+            maximumRequests: 40000,
+            maximumDurationSeconds: 1800,
+            ruBudget: '1000',
+            ruPerSecond: '400',
+            confirmStableSource: true,
+        });
+        expect(mocks.resumePreparation).not.toHaveBeenCalled();
+        expect(mocks.save).not.toHaveBeenCalled();
+        expect(mocks.run).not.toHaveBeenCalled();
+        expect(blocked.phases['source-enumerate'].evidence).toEqual(['artifacts/request-limit.json']);
+    });
+    it('keeps stopped Step 2 review accessible when an earlier connection check needs rerunning', async () => {
+        const configured = bootstrapProject();
+        configured.phases.preflight.status = 'blocked';
+        mocks.load.mockResolvedValue({ project: configured, trusted: true, currentInputHash: inputHash(configured) });
+        mocks.preparation.mockResolvedValue({
+            partitions: ['fixture'],
+            origins: [],
+            notices: [],
+            coverage: 'unverified-candidates',
+        });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        const review = await screen.findByRole('button', { name: 'Review run settings' });
+        expect(review).not.toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Run for Enumerate read-only source identities' })).toBeDisabled();
+        await userEvent.setup().click(review);
+        expect(await screen.findByRole('spinbutton', { name: 'Maximum reserved request attempts' })).not.toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Start bounded read-only preparation' })).toBeDisabled();
+        expect(mocks.prepareSource).not.toHaveBeenCalled();
+    });
+    it('does not hide stopped-run limits when local partition discovery fails', async () => {
+        const configured = bootstrapProject();
+        mocks.load.mockResolvedValue({ project: configured, trusted: true, currentInputHash: inputHash(configured) });
+        mocks.preparation.mockRejectedValue(new Error('Fixture local discovery failure'));
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        await userEvent.setup().click(await screen.findByRole('button', { name: 'Review run settings' }));
+        const requests = await screen.findByRole('spinbutton', { name: 'Maximum reserved request attempts' });
+        expect(requests).not.toBeDisabled();
+        await userEvent.setup().clear(requests);
+        await userEvent.setup().type(requests, '30000');
+        expect(requests).toHaveValue(30000);
+        expect(screen.getByRole('button', { name: 'Start bounded read-only preparation' })).toBeDisabled();
+        expect(await screen.findByText(/operation could not complete/)).toBeInTheDocument();
+        expect(mocks.prepareSource).not.toHaveBeenCalled();
+    });
     it('does not silently restart an expired run with the hidden 120-second default and opens distinct evidence buttons', async () => {
         const configured = bootstrapProject();
         configured.limits.maximumOperationMillis = 120000;
