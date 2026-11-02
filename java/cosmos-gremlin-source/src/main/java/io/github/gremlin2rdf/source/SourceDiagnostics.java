@@ -20,8 +20,8 @@ final class SourceDiagnostics {
         }
         if (response==null) {
             var report=new TreeMap<>(classified==null ? Diagnostics.failure(error,stage) : classified);
-            if (!stage.equals(fallback)) report.put("stage",stage);
-            if (stage.equals("source-enumeration-vertex-page") || stage.equals("source-enumeration-edge-page"))
+            if (!stage.equals(fallback) && !String.valueOf(report.get("code")).startsWith("ARTIFACT_")) report.put("stage",stage);
+            if (Set.of("source-enumeration-vertex-page","source-enumeration-edge-page").contains(report.get("stage")))
                 report.put("templateId","source-keyset-page-v2");
             return report;
         }

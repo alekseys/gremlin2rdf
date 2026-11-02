@@ -32,6 +32,27 @@ existing explicit plan; missing/invalid plans block at `source-enumeration-plan`
 There is no duplicate required-step Run in **All phases and tools**; that collapsed section retains only
 explicit optional tools. Local discovery alone never starts a worker, renews budgets or authorizes writes.
 
+## Local artifact access failures
+
+Version 0.39.14 distinguishes checkpoint, segment, manifest and request-journal storage failures from source
+query failures. Safe diagnostics carry a fixed `artifactAction` and bounded `artifactAttempts` when available;
+no local paths, file contents or provider messages are exposed. A generic earlier `ARTIFACT_ACCESS` report
+does not identify the failed artifact or prove incorrect permissions.
+
+Actual Windows offline tests reproduce `AccessDeniedException` when a handle denies delete-sharing:
+read/write access can still work while atomic replacement is denied. The worker retries only the rename
+of an already closed, fsynced pending file, at most five attempts with 25/50/100/200 ms waits. It does not
+replay source requests, rewrite pending bytes, delete destinations or fall back to non-atomic writes.
+Other errors and non-Windows access denials are not retried. This reproduces a possible mechanism, not the
+confirmed cause of a particular live failure.
+
+Persistent failure retains the old and pending files. Request-journal recovery still requires its existing
+ownership, checksum and monotonic-accounting checks; it never replays the charged request. An unacknowledged
+enumeration checkpoint instead reports `SOURCE_ENUMERATION_PENDING_CHECKPOINT` and guided Prepare does not
+offer Resume. Do not delete, rename or blindly adopt either file. Preserve the old run; explicitly review a
+new bounded preparation if verified recovery is unavailable. Installing an update does not clear pending
+state, reset journals, raise budgets or certify any inventory. Do not disable security software.
+
 ## Simplified connection setup
 
 The project page uses source/target connection cards, a numbered sequence overview and status badges with icons.
@@ -126,7 +147,7 @@ Stop any active migration before replacing the extension. Settings and workspace
 For a package with the same version as your installed preview, you can force replacement from PowerShell:
 
 ```powershell
-code --install-extension ".\vscode-cosmosdb-0.39.13.vsix" --force
+code --install-extension ".\vscode-cosmosdb-0.39.14.vsix" --force
 ```
 
 If the CLI prints `DEP0169` after reporting that the extension was successfully installed, installation succeeded.

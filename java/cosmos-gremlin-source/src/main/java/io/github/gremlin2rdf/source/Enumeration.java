@@ -67,7 +67,7 @@ final class Enumeration {
     private Map<String, Object> run() throws Exception {
         Path checkpoint = SafeFiles.resolve(directory, "checkpoint.json");
         if (Files.exists(SafeFiles.resolve(directory, "checkpoint.json.pending")))
-            throw new IOException("Pending enumeration checkpoint requires reviewed reconciliation");
+            throw new Diagnostics.Failure("SOURCE_ENUMERATION_PENDING_CHECKPOINT","source-enumeration-checkpoint-read");
         if (Files.exists(checkpoint)) {
             if (Files.size(checkpoint) > 1048576) throw new IOException("Enumeration checkpoint exceeds bound");
             state = Json.MAPPER.readValue(Files.readAllBytes(checkpoint), State.class);
@@ -196,7 +196,8 @@ final class Enumeration {
         result.put("reservedRequestAttempts", state.requests()); result.put("sensitiveArtifact", true);
         result.put("edgeScope", "sourceVertex"); result.put("identityTypes", "string-only");
         result.put("compatibility", "enumeration observations only; run source fidelity probe before extraction");
-        SafeFiles.atomic(SafeFiles.resolve(directory, "manifest.json"), result);
+        try {SafeFiles.atomic(SafeFiles.resolve(directory, "manifest.json"), result);}
+        catch(IOException failure) {throw Diagnostics.artifactFailure(failure,"source-enumeration-manifest-write");}
         return result;
     }
     private static GraphRecord.Value string(String value) {
@@ -214,8 +215,11 @@ final class Enumeration {
     }
     private void budget() throws IOException {
         reader.remainingDuration(Math.max(0,plan.maximumDurationMillis()-elapsed()));
+        long available;
+        try {available=Files.getFileStore(directory).getUsableSpace();}
+        catch(IOException failure) {throw Diagnostics.artifactFailure(failure,"source-enumeration-capacity-check");}
         if (elapsedBase + (System.nanoTime() - started) / 1000000 >= plan.maximumDurationMillis()
-            || Files.getFileStore(directory).getUsableSpace() < project.limits().minimumFreeDiskBytes())
+            || available < project.limits().minimumFreeDiskBytes())
             throw new Diagnostics.Failure("SOURCE_ENUMERATION_DURATION_LIMIT","source-enumeration");
     }
     private void request() throws IOException {
@@ -242,7 +246,8 @@ final class Enumeration {
             initialVertices, initialEdges, "").signed(); save();
     }
     private void save() throws IOException {
-        SafeFiles.atomic(SafeFiles.resolve(directory, "checkpoint.json"), state);
+        try {SafeFiles.atomic(SafeFiles.resolve(directory, "checkpoint.json"), state);}
+        catch(IOException failure) {throw Diagnostics.artifactFailure(failure,"source-enumeration-checkpoint-write");}
         if (started != 0) activity("source-enumeration-checkpoint");
     }
     private void activity(String stage) {
@@ -250,6 +255,10 @@ final class Enumeration {
             state.requests(),elapsed()));
     }
     private void segment(List<IdentityEntry> entries) throws IOException {
+        try {writeSegment(entries);}
+        catch(IOException failure) {throw Diagnostics.artifactFailure(failure,"source-enumeration-segment-write");}
+    }
+    private void writeSegment(List<IdentityEntry> entries) throws IOException {
         var sorted = entries.stream().sorted(Comparator.comparing(IdentityEntry::orderingKey)).toList();
         StringBuilder text = new StringBuilder();
         for (IdentityEntry entry : sorted) text.append(Json.text(entry)).append('\n');
@@ -270,6 +279,10 @@ final class Enumeration {
             Map.of("sha256", SafeFiles.fileHash(path), "records", entries.size()));
     }
     private List<IdentityEntry> readSegment(int index) throws IOException {
+        try {return loadSegment(index);}
+        catch(IOException failure) {throw Diagnostics.artifactFailure(failure,"source-enumeration-segment-read");}
+    }
+    private List<IdentityEntry> loadSegment(int index) throws IOException {
         Path path = SafeFiles.resolve(directory, "segment-" + index + ".ndjson");
         Path manifest = SafeFiles.resolve(directory, "segment-" + index + ".json");
         if (Files.size(path) > 1048576 || Files.size(manifest) > 65536)

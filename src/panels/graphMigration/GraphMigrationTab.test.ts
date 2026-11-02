@@ -132,6 +132,30 @@ async function complete(payload: WorkerMessage['payload']) {
 }
 
 describe('persisted graph editor workflow', () => {
+    it('persists storage action/attempts and precise worker stage without changing inputs or granting success', async () => {
+        await context.create();
+        const before = await service.load();
+        await context.run('mapping', '', '', '');
+        const diagnostic = {
+            status: 'blocked',
+            code: 'ARTIFACT_ATOMIC_REPLACE_ACCESS',
+            stage: 'source-enumeration-checkpoint-write',
+            remediation: 'Atomic replacement remained denied. Preserve the old and pending files.',
+            artifactAction: 'atomic-replace',
+            artifactAttempts: 5,
+        };
+        await complete({ status: 'blocked', diagnostics: [diagnostic] });
+        const saved = await service.load();
+        expect(inputHash(saved)).toBe(inputHash(before));
+        expect(saved.approvals).toEqual(before.approvals);
+        expect(saved.phases.mapping.status).toBe('blocked');
+        expect(saved.phases.mapping.blockers[0]).toContain('source-enumeration-checkpoint-write');
+        expect(saved.phases.mapping.blockers[0]).toContain('local storage attempts 5');
+        const report = JSON.parse(
+            await readFile(path.join(await service.root(), saved.phases.mapping.evidence[0]), 'utf8'),
+        );
+        expect(report.result.diagnostics[0]).toEqual(diagnostic);
+    });
     it('keeps worker and host stop evidence distinct and opens each selected checksummed artifact', async () => {
         await context.create();
         await context.run('mapping', '', '', '');

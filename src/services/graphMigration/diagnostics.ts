@@ -24,6 +24,8 @@ export const safeDiagnosticSchema = z
         ruPerSecond: ruAmount.optional(),
         operationLimitMillis: z.number().int().min(1000).max(86400000).optional(),
         elapsedMillis: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+        artifactAction: z.enum(['create-pending', 'write-pending', 'flush-pending', 'atomic-replace']).optional(),
+        artifactAttempts: z.number().int().min(1).max(5).optional(),
         chargeObservation: z
             .enum([
                 'missing-total',
@@ -38,6 +40,10 @@ export const safeDiagnosticSchema = z
 export type SafeDiagnostic = z.infer<typeof safeDiagnosticSchema>;
 export function formatDiagnostic(diagnostic: SafeDiagnostic): string {
     const statuses = [
+        diagnostic.artifactAction ?? '',
+        diagnostic.artifactAttempts !== undefined
+            ? l10n.t('local storage attempts {count}', { count: diagnostic.artifactAttempts })
+            : '',
         diagnostic.templateId ?? '',
         diagnostic.chargeObservation ?? '',
         diagnostic.httpStatus !== undefined ? `HTTP ${diagnostic.httpStatus}` : '',

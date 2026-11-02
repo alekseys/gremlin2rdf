@@ -5,11 +5,52 @@ import java.io.IOException;
 import java.nio.file.*;
 import java.util.*;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 import static org.junit.jupiter.api.Assertions.*;
 
 class EnumerationSmokeTest {
     @TempDir Path root;
+    @Test @EnabledOnOs(OS.WINDOWS)
+    void checkpointSharingDenialPreservesAcknowledgedStateAndDoesNotCertifyOrSilentlyAdoptPending() throws Exception {
+        var output=root.resolve("locked-checkpoint");var checkpoint=output.resolve("checkpoint.json");
+        var held=new java.util.concurrent.atomic.AtomicReference<java.nio.channels.FileChannel>();
+        var old=new java.util.concurrent.atomic.AtomicReference<byte[]>();
+        var fixture=reader(false);
+        var observed=new Enumeration.Reader() {
+            public void activity(SourceActivity activity) {
+                if(activity.stage().equals("source-enumeration-checkpoint") && held.get()==null) {
+                    try {
+                        old.set(Files.readAllBytes(checkpoint));
+                        held.set(java.nio.channels.FileChannel.open(checkpoint,StandardOpenOption.READ,
+                            com.sun.nio.file.ExtendedOpenOption.NOSHARE_DELETE));
+                    } catch(IOException failure) {throw new java.io.UncheckedIOException(failure);}
+                }
+            }
+            public List<String> vertices(GraphRecord.Value p,String after,int limit) throws Exception{return fixture.vertices(p,after,limit);}
+            public List<String> edges(GraphRecord.Value p,String owner,String after,int limit) throws Exception{return fixture.edges(p,owner,after,limit);}
+            public long count(GraphRecord.Kind kind,GraphRecord.Value p) throws Exception{return fixture.count(kind,p);}
+        };
+        var plan=new Enumeration.Plan(1,List.of(GraphRecord.Value.string("private-partition")),1,30,10000);
+        try {
+            var failure=assertThrows(Diagnostics.Failure.class,()->Enumeration.run(project(),plan,output,observed));
+            var report=SourceDiagnostics.failure(failure,"source-operation");
+            assertEquals("ARTIFACT_ATOMIC_REPLACE_ACCESS",report.get("code"));
+            assertEquals("source-enumeration-checkpoint-write",report.get("stage"));
+            assertEquals("atomic-replace",report.get("artifactAction"));assertEquals(5,report.get("artifactAttempts"));
+            assertArrayEquals(old.get(),Files.readAllBytes(checkpoint));
+            assertTrue(Files.exists(output.resolve("checkpoint.json.pending")));
+            assertFalse(Files.exists(output.resolve("manifest.json")));
+            assertFalse(Json.text(report).contains("private"));
+        } finally {if(held.get()!=null) held.get().close();}
+        var checkpointBytes=Files.readAllBytes(checkpoint);
+        var pendingBytes=Files.readAllBytes(output.resolve("checkpoint.json.pending"));
+        var refused=assertThrows(Diagnostics.Failure.class,()->Enumeration.run(project(),plan,output,reader(false)));
+        assertEquals("SOURCE_ENUMERATION_PENDING_CHECKPOINT",SourceDiagnostics.failure(refused,"source-operation").get("code"));
+        assertArrayEquals(checkpointBytes,Files.readAllBytes(checkpoint));
+        assertArrayEquals(pendingBytes,Files.readAllBytes(output.resolve("checkpoint.json.pending")));
+    }
     private Project project() {
         var source = new Project.Source("fixture", "localhost", 443, "db", "container", "/pk", null,
             "verified-identity-manifest", "identities.ndjson", "0".repeat(64), null, null, null, true);

@@ -79,7 +79,8 @@ final class SourceRequests implements AutoCloseable {
                         || !old.chargeObserved() && candidate.chargeObserved() || candidate.retries() < old.retries())
                         throw new Diagnostics.Failure("SOURCE_REQUEST_JOURNAL","source-request-pending-journal");
                 }
-                Files.move(pending, journal, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+                try {SafeFiles.replaceAtomically(pending,journal);}
+                catch(IOException failure) {throw Diagnostics.artifactFailure(failure,"source-request-pending-journal-replace");}
             }
             if (Files.exists(journal)) {
                 var state = readState(journal); charge = new BigDecimal(state.charge()); chargeObserved = state.chargeObserved(); retries = state.retries();
@@ -106,8 +107,11 @@ final class SourceRequests implements AutoCloseable {
         return state;
     }
     private void persist() throws IOException {
-        if (journal != null) SafeFiles.atomic(journal, new State(2, project.runId(), project.inputHash(), charge.toPlainString(), chargeObserved, retries, inFlight, "",
-            rate == null ? null : pacingDelayMillis).signed());
+        if (journal != null) {
+            try {SafeFiles.atomic(journal, new State(2, project.runId(), project.inputHash(), charge.toPlainString(), chargeObserved, retries, inFlight, "",
+                rate == null ? null : pacingDelayMillis).signed());}
+            catch(IOException failure) {throw Diagnostics.artifactFailure(failure,"source-request-journal-write");}
+        }
     }
     Object execute(Attempt request) throws Exception {
         for (int attempt = 0; ; attempt++) {

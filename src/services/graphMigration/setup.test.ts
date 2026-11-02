@@ -86,6 +86,50 @@ it('infers recognized nonsecret settings and keeps conflicting endpoints unresol
     expect(detected.values.consistency).toBe('');
     expect(JSON.stringify(detected)).not.toContain('private-key');
 });
+it('does not offer Resume over an unacknowledged enumeration checkpoint and preserves both files and journal', async () => {
+    const run = await new GraphProjectService(root).root();
+    const configured = await applySetup(
+        project(),
+        {
+            host: 'localhost',
+            database: 'fixture',
+            container: 'graph',
+            partitionKeyPath: '/pk',
+            datasetUrl: 'http://localhost:3030/graph',
+            consistency: 'immutable',
+        },
+        run,
+    );
+    const prepared = await freshPreparation(configured, run, {
+        partitions: ['fixture'],
+        maximumRequests: 20,
+        maximumDurationSeconds: 120,
+        ruBudget: '1000',
+        confirmStableSource: true,
+    });
+    await mkdir(path.join(run, prepared.output));
+    const checkpoint = JSON.stringify({
+        runId: prepared.project.runId,
+        inputHash: inputHash(prepared.project),
+        requests: 3,
+        elapsedMillis: 20,
+    });
+    const output = path.join(run, prepared.output);
+    await writeFile(path.join(output, 'checkpoint.json'), checkpoint);
+    const journal = `source-requests-${prepared.project.runId}.json`;
+    await writeFile(path.join(run, journal), 'preserved-journal');
+    expect((await discoverPreparation(root, prepared.project)).resume).toEqual({
+        plan: prepared.plan,
+        output: prepared.output,
+    });
+    await writeFile(path.join(output, 'checkpoint.json.pending'), 'preserved-pending');
+    const candidates = await discoverPreparation(root, prepared.project);
+    expect(candidates.resume).toBeUndefined();
+    expect(candidates.notices.join(' ')).toContain('unacknowledged enumeration checkpoint');
+    expect(await readFile(path.join(output, 'checkpoint.json'), 'utf8')).toBe(checkpoint);
+    expect(await readFile(path.join(output, 'checkpoint.json.pending'), 'utf8')).toBe('preserved-pending');
+    expect(await readFile(path.join(run, journal), 'utf8')).toBe('preserved-journal');
+});
 it.each([
     'SOURCE_RU_BUDGET_EXHAUSTED',
     'SOURCE_RU_UNOBSERVABLE',

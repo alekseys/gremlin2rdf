@@ -122,6 +122,26 @@ function bridge() {
     return new WorkerBridge('package', storage(), vi.fn(), vi.fn());
 }
 describe('worker credential isolation', () => {
+    it('retains bounded artifact action/attempts through safe diagnostics and rendered remediation', () => {
+        const diagnostic = {
+            status: 'blocked',
+            code: 'ARTIFACT_ATOMIC_REPLACE_ACCESS',
+            stage: 'source-enumeration-checkpoint-write',
+            remediation: 'Atomic replacement remained denied. Preserve both files.',
+            artifactAction: 'atomic-replace',
+            artifactAttempts: 5,
+        };
+        const parsed = safeDiagnosticSchema.parse(diagnostic);
+        expect(formatDiagnostic(parsed)).toContain('atomic-replace');
+        expect(formatDiagnostic(parsed)).toContain('local storage attempts 5');
+        for (const invalid of [
+            { ...diagnostic, artifactAction: 'private-file' },
+            { ...diagnostic, artifactAttempts: 6 },
+            { ...diagnostic, artifactAttempts: 0 },
+            { ...diagnostic, path: 'private-path' },
+        ])
+            expect(safeDiagnosticSchema.safeParse(invalid).success).toBe(false);
+    });
     it('formats only bounded numeric effective-deadline observations, never arbitrary context fields', () => {
         const diagnostic = {
             code: 'OPERATION_DEADLINE',

@@ -162,6 +162,19 @@ export async function discoverPreparation(workspace: string, p: GraphProject): P
         const plan = `artifacts/enumeration-plan-${p.runId}.json`,
             output = `artifacts/source-enumeration-${p.runId}`;
         try {
+            let pendingCheckpoint = false;
+            try {
+                await ownedPath(path.join(workspace, graphMigrationFolder), `${output}/checkpoint.json.pending`);
+                pendingCheckpoint = true;
+            } catch (error) {
+                if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+            }
+            if (pendingCheckpoint)
+                notices.push(
+                    l10n.t(
+                        'An unacknowledged enumeration checkpoint is present. Preserve the old and pending files; do not delete or rename either. Resume is unavailable until verified recovery. You can explicitly review a new bounded preparation below without altering the old state.',
+                    ),
+                );
             const state = z
                 .object({
                     runId: z.string(),
@@ -218,6 +231,7 @@ export async function discoverPreparation(workspace: string, p: GraphProject): P
             if (
                 !accountingBlocked &&
                 !durationBlocked &&
+                !pendingCheckpoint &&
                 state.runId === p.runId &&
                 state.inputHash === inputHash(p) &&
                 state.requests < limits.maximumRequests &&

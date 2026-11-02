@@ -10,7 +10,7 @@ not a Microsoft Marketplace release.
 
 ## Install and choose your target
 
-1. Install **`vscode-cosmosdb-0.39.13.vsix`** using VS Code's **Extensions > Install from VSIX**, then reload.
+1. Install **`vscode-cosmosdb-0.39.14.vsix`** using VS Code's **Extensions > Install from VSIX**, then reload.
    Stop active migrations before upgrading; this replaces the extension, not its saved projects.
 2. Open your application's folder as a trusted workspace and enable:
 
@@ -93,6 +93,11 @@ Version 0.39.13 fixes the remaining duration-review defect: reopening Prepare no
 a saved duration with 120 seconds. After a current deadline result the duration field requires explicit entry,
 with the previous configured limit shown. New host deadline evidence includes the actual configured limit
 and observed elapsed milliseconds. Installing a VSIX never changes existing execution budgets.
+Version 0.39.14 handles transient Windows access denials during atomic checkpoint/journal replacement with
+at most five local rename attempts (375 ms total waiting), without repeating source requests. Persistent
+failures preserve the old and pending files and report the safe storage substep/action/attempt count.
+An unacknowledged enumeration checkpoint disables Resume rather than silently adopting pending state.
+The earlier generic `ARTIFACT_ACCESS` report does not establish a permissions defect or the exact live cause.
 
 ## Start small
 

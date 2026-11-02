@@ -7,6 +7,16 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class SourceActivityTest {
+    @Test void storageAcknowledgementRetainsSafeActionAndSubstepThroughActualSourceFrameReader() throws Exception {
+        var original=Map.<String,Object>of("status","blocked","code","ARTIFACT_ATOMIC_REPLACE_ACCESS",
+            "stage","source-request-journal-write","artifactAction","atomic-replace","artifactAttempts",5,
+            "remediation","Preserve the old and pending files.");
+        var terminal=Main.sourceReply(new ByteArrayInputStream((Json.text(original)+"\n").getBytes(StandardCharsets.UTF_8)),new Engine());
+        var report=Diagnostics.failure(Diagnostics.acknowledged(Json.MAPPER.readTree(terminal),"source-operation"),"execution");
+        assertEquals("ARTIFACT_ATOMIC_REPLACE_ACCESS",report.get("code"));
+        assertEquals("source-request-journal-write",report.get("stage"));
+        assertEquals("atomic-replace",report.get("artifactAction"));assertEquals(5,report.get("artifactAttempts"));
+    }
     @Test void streamsBoundedValueFreeActivityWithoutConsumingTheTerminalAcknowledgement() throws Exception {
         var engine=new Engine();
         var seen=new ArrayList<SourceActivity>();engine.activity(seen::add);

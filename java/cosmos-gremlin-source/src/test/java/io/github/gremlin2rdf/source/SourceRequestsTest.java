@@ -1,6 +1,8 @@
 package io.github.gremlin2rdf.source;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 import io.github.gremlin2rdf.*;
 import java.nio.file.*;
@@ -10,6 +12,40 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class SourceRequestsTest {
     @TempDir Path root;
+    @Test @EnabledOnOs(OS.WINDOWS)
+    void realJournalRenameDenialDoesNotRepeatSourceRequestOrLoseAcknowledgedCharge() throws Exception {
+        var project=new Project(1,"cosmos-gremlin-to-jena","0".repeat(40),"storage",1,"0.1.0",Mapping.standard(),null,null,
+            Project.Limits.standard(),"immutable",Map.of(),List.of(),Map.of(),List.of());
+        var journal=root.resolve("source-requests-storage.json");
+        var pending=root.resolve("source-requests-storage.json.pending");
+        var calls=new java.util.concurrent.atomic.AtomicInteger();
+        var held=new java.util.concurrent.atomic.AtomicReference<java.nio.channels.FileChannel>();
+        try(var requests=new SourceRequests(3,1000,"1000",millis->{fail("No provider retry");})) {
+            requests.attachJournal(project,root);
+            try {
+                var failure=assertThrows(Diagnostics.Failure.class,()->requests.execute(()->{
+                    calls.incrementAndGet();
+                    held.set(java.nio.channels.FileChannel.open(journal,StandardOpenOption.READ,
+                        com.sun.nio.file.ExtendedOpenOption.NOSHARE_DELETE));
+                    return new SourceRequests.Response(List.of(1L),Map.of("x-ms-total-request-charge","3"));
+                }));
+                var report=SourceDiagnostics.failure(new SourceDiagnostics.Context("source-enumeration-edge-page",failure),"source-operation");
+                assertEquals("ARTIFACT_ATOMIC_REPLACE_ACCESS",report.get("code"));
+                assertEquals("source-request-journal-write",report.get("stage"));
+                assertEquals("atomic-replace",report.get("artifactAction"));assertEquals(5,report.get("artifactAttempts"));
+                assertEquals(report,Diagnostics.failure(Diagnostics.acknowledged(Json.MAPPER.valueToTree(report),"execution"),"execution"));
+                assertEquals(1,calls.get());assertEquals(0,requests.retries());
+                assertTrue(Json.MAPPER.readTree(Files.readAllBytes(journal)).path("inFlight").asBoolean());
+                assertFalse(Json.MAPPER.readTree(Files.readAllBytes(pending)).path("inFlight").asBoolean());
+                assertEquals("3",Json.MAPPER.readTree(Files.readAllBytes(pending)).path("charge").asText());
+            } finally {if(held.get()!=null) held.get().close();}
+        }
+        try(var resumed=new SourceRequests(3,1000,"1000",millis->{fail("No provider retry");})) {
+            resumed.attachJournal(project,root);
+            assertEquals("3",resumed.charge());
+            assertEquals(1,calls.get());assertFalse(Files.exists(pending));
+        }
+    }
     static final class Clock implements java.util.function.LongSupplier, SourceRequests.Sleeper {
         long nanos;
         final List<Long> waits=new ArrayList<>();

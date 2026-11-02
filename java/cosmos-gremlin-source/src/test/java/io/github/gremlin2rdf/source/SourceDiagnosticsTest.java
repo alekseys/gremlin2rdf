@@ -11,6 +11,16 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class SourceDiagnosticsTest {
     @TempDir Path root;
+    @Test void storageStageSurvivesOuterPageContextAndParentAcknowledgementWithoutPrivateFileFields() {
+        var storage=Diagnostics.artifactFailure(new java.nio.file.AccessDeniedException(
+            "private-local-path","private-destination","private-os-reason"),"source-enumeration-checkpoint-write");
+        var report=SourceDiagnostics.failure(new SourceDiagnostics.Context("source-enumeration-edge-page",storage),"source-operation");
+        assertEquals("ARTIFACT_ACCESS",report.get("code"));
+        assertEquals("source-enumeration-checkpoint-write",report.get("stage"));
+        assertEquals(report,Diagnostics.failure(Diagnostics.acknowledged(Json.MAPPER.valueToTree(report),"execution"),"execution"));
+        assertFalse(Json.text(report).contains("private-"));
+        assertFalse(report.containsKey("templateId"));
+    }
     @Test void actualPinnedResponseRetainsSubstepAndNumericStatusesAcrossAcknowledgement() throws Exception {
         var response=new ResponseException(ResponseStatusCode.SERVER_ERROR_SCRIPT_EVALUATION,"private-query-secret",
             List.of("private-class"),"private-stack",Map.of("x-ms-status-code","400","x-ms-substatus-code","1004",

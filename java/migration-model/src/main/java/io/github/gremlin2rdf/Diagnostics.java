@@ -68,7 +68,11 @@ public final class Diagnostics {
         Map.entry("ENDPOINT_TLS", "TLS validation failed. Correct hostname/certificate/approved CA configuration; do not disable certificate verification."),
         Map.entry("ENDPOINT_PROVIDER_FAILURE", "The provider rejected the bounded request. Verify supported driver/serializer/query capabilities and endpoint permissions; raw provider messages are redacted."),
         Map.entry("ARTIFACT_MISSING", "The required local artifact is missing. Use guided Prepare to create the inventory/plan, or restore the current owned checkpoint/evidence."),
-        Map.entry("ARTIFACT_ACCESS", "The extension host cannot access the local artifact. Check file permissions and non-symlink run-relative paths."),
+        Map.entry("ARTIFACT_ACCESS", "A local worker filesystem operation was denied. This does not establish a permissions defect: a sharing lock or another access restriction may also deny it. Preserve checkpoints and journals. Share only the safe storage stage/action and retry count, not paths or file contents; do not delete pending files or change security settings."),
+        Map.entry("ARTIFACT_ATOMIC_REPLACE_ACCESS", "Atomic replacement of a local artifact remained denied within the bounded local replacement policy. The old file and fsynced pending file are preserved; no source request was replayed. A sharing lock or permissions restriction is possible, not established. Close other applications holding the migration files and verify owned state before retrying; do not delete pending state or disable security software."),
+        Map.entry("ARTIFACT_ATOMIC_MOVE_UNSUPPORTED", "The local artifact filesystem does not support the required atomic replacement. Preserve the old and pending files. Use an operator-reviewed artifact location supporting atomic moves; no non-atomic fallback or checkpoint reset is allowed."),
+        Map.entry("ARTIFACT_PENDING_EXISTS", "A pending local artifact already exists and was not overwritten. Preserve both files. Use owned checkpoint/journal verification before retrying; do not delete or relabel pending state."),
+        Map.entry("SOURCE_ENUMERATION_PENDING_CHECKPOINT", "An unacknowledged enumeration checkpoint is present. The old checkpoint and pending state remain preserved, not certified complete. Do not delete, rename or blindly adopt pending state. Guided Prepare can start a separately reviewed new bounded run; verified recovery is required before reusing this run."),
         Map.entry("ARTIFACT_OR_STATE_ERROR", "Preserve the owned artifacts and checkpoints. Verify their checksum, format, path and run ownership before retrying."),
         Map.entry("CONFIGURATION_INVALID", "Review the connection form and strict project schema. Unsupported or invalid values require correction; no connection success is inferred."),
         Map.entry("AUTHORIZATION_REQUIRED", "Provide current explicit operation/input/resource-scoped approval. Read-only preparation never enables source writes."),
@@ -91,6 +95,21 @@ public final class Diagnostics {
             if (current instanceof Failure f) {
                 var report=new TreeMap<>(report(f.code,f.stage,f.httpStatus));report.putAll(f.sourceStatus);return report;
             }
+            if(current instanceof SafeFiles.ArtifactException artifact) {
+                Throwable cause=artifact.getCause();
+                String code=cause instanceof java.nio.file.AccessDeniedException ?
+                    artifact.action==SafeFiles.ArtifactAction.atomicReplace ? "ARTIFACT_ATOMIC_REPLACE_ACCESS" : "ARTIFACT_ACCESS" :
+                    cause instanceof java.nio.file.AtomicMoveNotSupportedException ? "ARTIFACT_ATOMIC_MOVE_UNSUPPORTED" :
+                    cause instanceof java.nio.file.FileAlreadyExistsException && artifact.action==SafeFiles.ArtifactAction.createPending ?
+                        "ARTIFACT_PENDING_EXISTS" : cause instanceof java.nio.file.NoSuchFileException ? "ARTIFACT_MISSING" :
+                        "ARTIFACT_OR_STATE_ERROR";
+                var report=new TreeMap<String,Object>(report(code,stage));
+                report.put("artifactAction",switch(artifact.action) {
+                    case createPending -> "create-pending";case writePending -> "write-pending";
+                    case flushPending -> "flush-pending";case atomicReplace -> "atomic-replace";
+                });
+                report.put("artifactAttempts",artifact.attempts);return report;
+            }
             if (current instanceof Project.CredentialUnavailable) return report("CREDENTIAL_REFERENCE_UNAVAILABLE",stage);
             if (current instanceof com.fasterxml.jackson.core.JsonProcessingException) return report("CONFIGURATION_INVALID",stage);
             if (current instanceof java.nio.file.NoSuchFileException || current instanceof java.io.FileNotFoundException)
@@ -112,6 +131,9 @@ public final class Diagnostics {
     public static Failure acknowledged(String code,String stage) {
         return new Failure(REMEDIES.containsKey(code) ? code : "OPERATION_CAUSE_UNKNOWN",stage);
     }
+    public static Failure artifactFailure(java.io.IOException error,String stage) {
+        return acknowledged(Json.MAPPER.valueToTree(failure(error,stage)),stage);
+    }
     public static Failure acknowledged(com.fasterxml.jackson.databind.JsonNode diagnostic,String fallbackStage) {
         String stage=diagnostic.path("stage").asText();
         if (!stage.matches("[a-z][a-z0-9-]{0,79}")) stage=fallbackStage;
@@ -120,6 +142,11 @@ public final class Diagnostics {
         var failure=new Failure(REMEDIES.containsKey(code) ? code : "OPERATION_CAUSE_UNKNOWN",stage,
             status.isIntegralNumber() && status.canConvertToInt() ? status.intValue() : null);
         var fields=new TreeMap<String,Object>();
+        if(Set.of("create-pending","write-pending","flush-pending","atomic-replace").contains(diagnostic.path("artifactAction").asText()))
+            fields.put("artifactAction",diagnostic.path("artifactAction").asText());
+        var attempts=diagnostic.path("artifactAttempts");
+        if(attempts.isIntegralNumber() && attempts.canConvertToInt() && attempts.intValue()>=1 && attempts.intValue()<=5)
+            fields.put("artifactAttempts",attempts.intValue());
         if (Set.of("missing-total","partial-charge-only","invalid-total","unconfirmed-in-flight","previous-unobservable")
             .contains(diagnostic.path("chargeObservation").asText()))
             fields.put("chargeObservation",diagnostic.path("chargeObservation").asText());
