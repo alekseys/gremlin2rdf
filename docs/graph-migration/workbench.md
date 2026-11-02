@@ -126,7 +126,7 @@ Stop any active migration before replacing the extension. Settings and workspace
 For a package with the same version as your installed preview, you can force replacement from PowerShell:
 
 ```powershell
-code --install-extension ".\vscode-cosmosdb-0.39.10.vsix" --force
+code --install-extension ".\vscode-cosmosdb-0.39.11.vsix" --force
 ```
 
 If the CLI prints `DEP0169` after reporting that the extension was successfully installed, installation succeeded.
@@ -222,6 +222,34 @@ journals retain restart/debt/integrity checks; an unknown/in-flight observation 
 by restarting. No budget or authorization gate is bypassed.
 
 ## Execution budgets and meaningful progress
+
+Version 0.39.11 displays activity **inside the step being executed**, including enumeration count/page
+substeps, observed vertex/edge counts, reserved request attempts, saved local checkpoints, reconciliation,
+merge, request/response activity, RU pacing and retry waits. Load retains target-confirmed batch counters.
+Every worker operation emits a two-second elapsed-time heartbeat; this proves worker-process activity,
+not source response, target confirmation, percentage complete or ETA. A visible current line accompanies
+a keyboard-focusable, bounded last-20-update activity log. No raw stderr, queries, identities, partition
+values, paths, provider messages or credentials are forwarded. Frequent counters are not live-announced;
+phase/status changes remain accessible without moving focus.
+
+The prior editor deadline handler marked the bridge failed immediately and saved only a bare `paused`
+status. That discarded the worker's real acknowledgement/evidence during the stop grace period and
+replaced the reason with a generic warning. The bridge now keeps accepting bounded, owned progress and
+the stop report for five seconds. A late success is never accepted as success after a stop request.
+If the worker cannot report before termination/disconnection, a separate checksummed **host stop report**
+retains the observed deadline/termination reason and recent safe activity. It is not a worker completion
+or verified checkpoint. Paused steps expose these reports through **Evidence** even after panel reload.
+
+Deadline, operator Pause/Cancel and forced termination are distinct diagnostics. Existing paused phases
+with no report receive a host recovery snapshot stating **the previous stop reason is unknown**, without
+guessing a timeout or repairing/resetting user artifacts. Snapshot registration does not change inputs,
+budgets, source inventory, approvals or checkpoint bytes. Request journals still fail closed on unknown
+in-flight spend; a pause does not guarantee safe resume.
+
+Install the current VSIX and reopen the saved project to inspect the existing paused state. The earlier
+live pause cause cannot be reconstructed if it was never saved. For another attempt, use guided Prepare
+and review its duration/request/total-RU/RU-per-second limits. Do not delete journals or increase budgets
+automatically. If an actual overall deadline is observed, review that duration separately from RU controls.
 
 Set optional `limits.maximumOperationMillis` between 1,000 and 86,400,000 milliseconds to impose a per-operation
 editor worker deadline. Old projects without this field retain their existing behavior. Changing the budget changes

@@ -61,8 +61,28 @@ public final class Protocol {
                     engine.observe(checkpoint -> emit(output, outgoing, "checkpoint", message.runId(),
                         message.operationId(), "load", checkpoint));
                     executor.submit(() -> {
+                        long operationStarted=System.nanoTime();
+                        var finished=new java.util.concurrent.atomic.AtomicBoolean();
+                        ScheduledExecutorService heartbeat=Executors.newSingleThreadScheduledExecutor();
+                        ScheduledFuture<?> pulse=heartbeat.scheduleAtFixedRate(()->{
+                            synchronized(output) {
+                                if(!finished.get()) emit(output,outgoing,"progress",message.runId(),message.operationId(),
+                                    message.payload().path("operation").asText(),
+                                    Map.of("activity","worker-active","elapsedMillis",(System.nanoTime()-operationStarted)/1000000));
+                            }
+                        },0,2,TimeUnit.SECONDS);
                         try {
                             String command = message.payload().path("operation").asText();
+                            emit(output,outgoing,"progress",message.runId(),message.operationId(),command,
+                                Map.of("activity","operation-started"));
+                            engine.activity(activity -> {
+                                synchronized(output) {if(!finished.get()) emit(output,outgoing,"progress",message.runId(),
+                                    message.operationId(),command,activity);}
+                            });
+                            engine.requestActivity(activity -> {
+                                synchronized(output) {if(!finished.get()) emit(output,outgoing,"progress",message.runId(),
+                                    message.operationId(),command,activity);}
+                            });
                             long started = System.nanoTime();
                             long[] records = {0}, bytes = {0};
                             engine.measure(metric -> {
@@ -76,10 +96,20 @@ public final class Protocol {
                             if (engine.deadlineExceeded()) emit(output, outgoing, "warning", message.runId(),
                                 message.operationId(), command, Map.of("code", "OPERATION_DEADLINE",
                                     "remediation", "Review preserved checkpoints before resuming with a separately reviewed execution budget."));
-                            emit(output, outgoing, "result", message.runId(), message.operationId(), command, result);
+                            synchronized(output) {
+                                finished.set(true);
+                                emit(output, outgoing, "result", message.runId(), message.operationId(), command, result);
+                            }
                         } catch (Exception e) {
-                            emit(output, outgoing, "error", message.runId(), message.operationId(), "execution", Main.diagnostic(e));
-                        } finally { synchronized (active) { active[0] = null; activeRun[0] = null; activeOperation[0] = null; } }
+                            synchronized(output) {
+                                finished.set(true);
+                                emit(output, outgoing, "error", message.runId(), message.operationId(), "execution", Main.diagnostic(e));
+                            }
+                        } finally {
+                            pulse.cancel(false);
+                            heartbeat.shutdownNow();
+                            synchronized (active) { active[0] = null; activeRun[0] = null; activeOperation[0] = null; }
+                        }
                     });
                 }
             }

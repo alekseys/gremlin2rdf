@@ -27,18 +27,21 @@ import {
 } from '@fluentui/react-icons';
 import { useTrpcClient } from '@microsoft/vscode-ext-webview/react';
 import * as l10n from '@vscode/l10n';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     type GraphAppRouter,
     type GraphEvidencePhase,
     type GraphOperation,
 } from '../../../panels/graphMigration/graphRouter';
+import { activityText } from '../../../services/graphMigration/activity';
 import { type GraphProject } from '../../../services/graphMigration/contracts';
 import {
     formatDiagnostic,
     hasCurrentSourceCompatibility,
     hasFidelityInventory,
     safeDiagnostics,
+    hostDiagnostic,
+    GraphDiagnosticError,
 } from '../../../services/graphMigration/diagnostics';
 import { graphEvidencePhases } from '../../../services/graphMigration/evidence';
 import { type SetupSuggestions } from '../../../services/graphMigration/setup';
@@ -249,6 +252,14 @@ const useStyles = makeStyles({
         gridColumn: '1 / -1',
         minWidth: 0,
     },
+    activityLog: {
+        maxHeight: '200px',
+        overflowY: 'auto',
+        overflowWrap: 'anywhere',
+        paddingInline: tokens.spacingHorizontalS,
+        border: `1px solid ${tokens.colorNeutralStroke2}`,
+        '&:focus-visible': { outline: `2px solid ${tokens.colorStrokeFocus2}`, outlineOffset: '2px' },
+    },
     status: {
         display: 'inline-flex',
         alignItems: 'center',
@@ -333,9 +344,17 @@ export function GraphMigrationWorkbench() {
     const [outputPath, setOutputPath] = useState('artifacts/rewritten/GraphRepository.java');
     const [probeGraph, setProbeGraph] = useState('');
     const [progress, setProgress] = useState('');
+    const [activity, setActivity] = useState<Record<string, string[]>>({});
+    const [workerElapsed, setWorkerElapsed] = useState<Record<string, number>>({});
+    const activityRun = useRef<string | undefined>(undefined);
     const [evidencePath, setEvidencePath] = useState('');
     const [evidencePhase, setEvidencePhase] = useState<GraphEvidencePhase>('application-build');
     const applyProject = useCallback((value: GraphProject | null) => {
+        if (activityRun.current !== value?.runId) {
+            setActivity({});
+            setWorkerElapsed({});
+            activityRun.current = value?.runId;
+        }
         setProject(value);
         setConfiguration(value ? JSON.stringify(value, null, 2) : '');
         setBusy(Boolean(value && Object.values(value.phases).some((phase) => phase.status === 'running')));
@@ -388,35 +407,34 @@ export function GraphMigrationWorkbench() {
                     announce(l10n.t('Graph project state updated.'));
                 } else if (event.type === 'diagnostic') {
                     setDiagnostic(
-                        l10n.t(
-                            'Worker diagnostic: {code}. Reload the project and review persisted evidence before retrying.',
-                            { code: event.code },
-                        ),
+                        formatDiagnostic(hostDiagnostic(new GraphDiagnosticError(event.code, 'worker-control'))),
                     );
-                    setBusy(false);
+                    if (!event.pending) setBusy(false);
                 } else if (event.message.type === 'checkpoint') {
                     const text = l10n.t('A target-confirmed checkpoint was saved.');
                     setProgress(text);
                 } else if (event.message.type === 'progress') {
                     const payload = event.message.payload;
+                    const phase = event.message.phase;
+                    const text = activityText(payload);
+                    if (text) {
+                        setActivity((current) => ({
+                            ...current,
+                            [phase]: [...(current[phase] ?? []), text].slice(-20),
+                        }));
+                        setProgress(text);
+                    }
                     if (
                         payload &&
                         typeof payload === 'object' &&
                         !Array.isArray(payload) &&
-                        typeof payload.recordsConfirmed === 'number' &&
-                        typeof payload.requestBodyBytes === 'number' &&
-                        typeof payload.elapsedMillis === 'number'
+                        payload.activity === 'worker-active' &&
+                        typeof payload.elapsedMillis === 'number' &&
+                        Number.isSafeInteger(payload.elapsedMillis) &&
+                        payload.elapsedMillis >= 0
                     ) {
-                        setProgress(
-                            l10n.t(
-                                'Confirmed records: {records}; request bytes: {bytes}; elapsed: {seconds} seconds.',
-                                {
-                                    records: payload.recordsConfirmed,
-                                    bytes: payload.requestBodyBytes,
-                                    seconds: Math.round(payload.elapsedMillis / 1000),
-                                },
-                            ),
-                        );
+                        const seconds = Math.floor(payload.elapsedMillis / 1000);
+                        setWorkerElapsed((current) => ({ ...current, [phase]: seconds }));
                     }
                 } else if (event.message.type === 'warning') {
                     setProgress(
@@ -424,6 +442,14 @@ export function GraphMigrationWorkbench() {
                     );
                 } else if (event.message.type === 'result' || event.message.type === 'error') {
                     setProgress(l10n.t('Worker operation finished. Review the phase status and evidence.'));
+                    const phase = event.message.phase;
+                    setActivity((current) => ({
+                        ...current,
+                        [phase]: [
+                            ...(current[phase] ?? []),
+                            l10n.t('Worker returned. Review this step status, reason and evidence before continuing.'),
+                        ].slice(-20),
+                    }));
                     const details = safeDiagnostics(event.message.payload);
                     if (details.length) setDiagnostic(details.map(formatDiagnostic).join('\n'));
                 }
@@ -502,6 +528,7 @@ export function GraphMigrationWorkbench() {
                   )
                 : undefined;
         const status = phaseStatus(operation);
+        const lines = activity[operation] ?? [];
         const statusClass =
             status === 'succeeded'
                 ? styles.statusSucceeded
@@ -523,6 +550,47 @@ export function GraphMigrationWorkbench() {
                     <StatusIcon aria-hidden={true} />
                     {phaseLabels()[status]}
                 </span>
+                {(status === 'running' || lines.length > 0 || workerElapsed[operation] !== undefined) && (
+                    <div className={styles.operationDiagnostics}>
+                        {status === 'running' && (
+                            <output>{l10n.t('Operation running. Recent activity is shown in this step.')}</output>
+                        )}
+                        {status === 'running' && (
+                            <p>
+                                {l10n.t(
+                                    'Worker active; elapsed: {seconds} seconds. Activity below reports observed work, not a completion estimate.',
+                                    { seconds: workerElapsed[operation] ?? elapsedSeconds },
+                                )}
+                            </p>
+                        )}
+                        {project?.limits.maximumOperationMillis !== undefined && (
+                            <p>
+                                {l10n.t(
+                                    'Configured overall operation limit: {seconds} seconds; this is separate from enumeration duration and RU limits.',
+                                    { seconds: Math.floor(project.limits.maximumOperationMillis / 1000) },
+                                )}
+                            </p>
+                        )}
+                        {status === 'running' && lines.length === 0 && (
+                            <p>{l10n.t('Starting this operation; waiting for its first bounded progress update.')}</p>
+                        )}
+                        {lines.length > 0 && (
+                            <>
+                                <p>{lines[lines.length - 1]}</p>
+                                <div
+                                    className={styles.activityLog}
+                                    role="log"
+                                    aria-live="off"
+                                    aria-label={l10n.t('Recent activity for {phase}', { phase: label })}
+                                >
+                                    <Field label={l10n.t('Recent activity for {phase}', { phase: label })}>
+                                        <Textarea readOnly rows={6} value={lines.join('\n')} />
+                                    </Field>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                )}
                 {Boolean(project?.phases[operation]?.blockers.length) && (
                     <div className={styles.operationDiagnostics}>
                         {status === 'stale' ? (
@@ -705,7 +773,7 @@ export function GraphMigrationWorkbench() {
                 </p>
             )}
             <p>
-                <output aria-live="polite">{progress}</output>
+                <output aria-live="off">{progress}</output>
             </p>
             {busy && (
                 <p className={styles.notice} aria-live="off">

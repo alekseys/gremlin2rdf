@@ -57,9 +57,12 @@ class SourceRequestsTest {
     @Test void ratePacesObservedSpendInsteadOfBecomingACumulativeAllowance() throws Exception {
         var clock=new Clock();
         var requests=new SourceRequests(0,1000,"10000","400",clock,clock);
+        var activity=new ArrayList<SourceRequestActivity>();requests.activity(activity::add);
         for(int i=0;i<4;i++) requests.execute(()->new SourceRequests.Response(List.of(1L),Map.of("x-ms-total-request-charge","400")));
         assertEquals(List.of(1000L,1000L,1000L),clock.waits);
         assertEquals("1600",requests.charge());
+        assertTrue(activity.stream().anyMatch(a->a.stage().equals("source-rate-wait") && a.waitMillis()==1000));
+        assertEquals(4,activity.stream().filter(a->a.stage().equals("source-request-awaiting-response")).count());
     }
     @Test void elapsedTimeAndProviderBackoffPayPacingDebtWithoutDoubleWaiting() throws Exception {
         var clock=new Clock();

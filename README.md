@@ -10,7 +10,7 @@ not a Microsoft Marketplace release.
 
 ## Install and choose your target
 
-1. Install **`vscode-cosmosdb-0.39.10.vsix`** using VS Code's **Extensions > Install from VSIX**, then reload.
+1. Install **`vscode-cosmosdb-0.39.11.vsix`** using VS Code's **Extensions > Install from VSIX**, then reload.
    Stop active migrations before upgrading; this replaces the extension, not its saved projects.
 2. Open your application's folder as a trusted workspace and enable:
 
@@ -81,6 +81,9 @@ Version 0.39.10 fixes complete-request charge accounting: use the terminal **tot
 single response chunk's charge, accept bounded finite scientific notation, and preserve explicit zero charges.
 Unknown charges remain blocked with a safe observation reason. Old partial-accounting journals are preserved,
 not reinterpreted; review a new bounded preparation run. Increasing RU settings cannot fix an unknown charge.
+Version 0.39.11 shows safe activity inside each step: source counts/pages, checkpoint saves, pacing/retry
+waits, load batches and a worker elapsed-time heartbeat. Pauses retain evidence and state their reason;
+the editor no longer discards the worker's stop report when its overall time limit expires.
 
 ## Start small
 

@@ -12,6 +12,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { z } from 'zod';
 import { ext } from '../../extensionVariables';
+import { activityText } from '../../services/graphMigration/activity';
 import {
     createOwnedDirectory,
     fileHash,
@@ -69,6 +70,8 @@ export class GraphMigrationTab extends BaseTab {
     private setup: SetupSuggestions | undefined;
     private guidedEnumerationOutput: string | undefined;
     private reviewingPreparation = false;
+    private recentActivity: string[] = [];
+    private pendingStopDiagnostic: ReturnType<typeof hostDiagnostic> | undefined;
     constructor(
         panel: vscode.WebviewPanel,
         private readonly workspacePath: string,
@@ -79,17 +82,33 @@ export class GraphMigrationTab extends BaseTab {
             path.join(ext.context.extensionPath, 'resources', 'graph-migration'),
             ext.context.secrets,
             (message) => {
-                this.events.emit({ type: 'worker', message });
+                if (message.type === 'progress') {
+                    const text = activityText(message.payload);
+                    if (text) this.recentActivity = [...this.recentActivity, text].slice(-20);
+                }
+                this.events.emit({
+                    type: 'worker',
+                    message:
+                        this.activeOperation && message.type !== 'hello'
+                            ? { ...message, phase: this.activeOperation }
+                            : message,
+                });
                 if (message.type === 'result' || message.type === 'error')
                     void this.finish(message.payload).catch(() =>
                         this.events.emit({ type: 'diagnostic', code: 'STATE_SAVE_FAILED' }),
                     );
             },
-            (code, status) => {
-                this.events.emit({ type: 'diagnostic', code });
-                void this.finish(status ?? 'failed').catch(() =>
-                    this.events.emit({ type: 'diagnostic', code: 'STATE_SAVE_FAILED' }),
-                );
+            (code, status, pending) => {
+                this.events.emit({ type: 'diagnostic', code, pending });
+                const diagnostic = hostDiagnostic(new GraphDiagnosticError(code, 'worker-control'));
+                if (pending) {
+                    this.pendingStopDiagnostic = diagnostic;
+                    return;
+                }
+                void this.finish({
+                    status: status ?? 'failed',
+                    diagnostics: [...(this.pendingStopDiagnostic ? [this.pendingStopDiagnostic] : []), diagnostic],
+                }).catch(() => this.events.emit({ type: 'diagnostic', code: 'STATE_SAVE_FAILED' }));
             },
         );
         const context: GraphRouterContext = {
@@ -247,6 +266,41 @@ export class GraphMigrationTab extends BaseTab {
                         ];
                     }
                 await this.service.save(project);
+            }
+            if (!this.activeOperation && !this.bridge.active) {
+                let changed = false;
+                for (const [operation, phase] of Object.entries(project.phases)) {
+                    if (phase.status !== 'paused' || phase.evidence.length) continue;
+                    const diagnostic = hostDiagnostic(
+                        new GraphDiagnosticError('WORKER_PREVIOUS_STOP_REASON_UNKNOWN', 'worker-control'),
+                    );
+                    const relativePath = `artifacts/host-stop-${globalThis.crypto.randomUUID()}.json`;
+                    const selected = await writeNewArtifact(
+                        await this.service.root(),
+                        relativePath,
+                        canonicalJson({
+                            schemaVersion: 1,
+                            runId: project.runId,
+                            inputHash: phase.inputHash,
+                            operation,
+                            status: 'paused',
+                            producer: 'extension-host-recovery',
+                            sensitiveArtifact: true,
+                            diagnostics: [diagnostic],
+                            previousBlockers: phase.blockers,
+                        }),
+                    );
+                    project.artifacts.push({
+                        relativePath,
+                        ownerRunId: project.runId,
+                        sensitive: true,
+                        sha256: await fileHash(selected),
+                    });
+                    phase.evidence.push(relativePath);
+                    phase.blockers = [formatDiagnostic(diagnostic), ...phase.blockers];
+                    changed = true;
+                }
+                if (changed) await this.service.save(project);
             }
             return {
                 project,
@@ -591,6 +645,8 @@ export class GraphMigrationTab extends BaseTab {
             throw new Error(l10n.t('A graph migration operation is already active.'));
         if (!vscode.workspace.isTrusted) throw new Error(l10n.t('Workspace trust is required.'));
         this.activeOperation = operation;
+        this.recentActivity = [];
+        this.pendingStopDiagnostic = undefined;
         this.preparationStop = undefined;
         try {
             const project = await this.service.load(),
@@ -1036,6 +1092,18 @@ export class GraphMigrationTab extends BaseTab {
         let status: 'succeeded' | 'failed' | 'blocked' | 'paused' | 'cancelled' = 'failed';
         if (result === 'paused' || result === 'cancelled') status = result;
         const evidence: string[] = [];
+        if (result === 'paused' || result === 'cancelled')
+            result = {
+                status,
+                diagnostics: [
+                    hostDiagnostic(
+                        new GraphDiagnosticError(
+                            result === 'paused' ? 'OPERATOR_PAUSED' : 'OPERATOR_CANCELLED',
+                            'worker-control',
+                        ),
+                    ),
+                ],
+            };
         if (result !== null && typeof result === 'object' && 'status' in result) {
             const candidate = result.status;
             if (
@@ -1088,6 +1156,31 @@ export class GraphMigrationTab extends BaseTab {
                     evidence.push(artifact.relativePath);
                 }
             }
+        }
+        if ((!evidence.length && status !== 'succeeded') || status === 'paused' || status === 'cancelled') {
+            const relativePath = `artifacts/${operation}-host-stop-${globalThis.crypto.randomUUID()}.json`;
+            const selected = await writeNewArtifact(
+                await this.service.root(),
+                relativePath,
+                canonicalJson({
+                    schemaVersion: 1,
+                    runId: project.runId,
+                    inputHash: previousHash,
+                    operation,
+                    status,
+                    sensitiveArtifact: true,
+                    producer: 'extension-host',
+                    result,
+                    lastObservedActivity: this.recentActivity,
+                }),
+            );
+            project.artifacts.push({
+                relativePath,
+                ownerRunId: project.runId,
+                sensitive: true,
+                sha256: await fileHash(selected),
+            });
+            evidence.push(relativePath);
         }
         project.phases[operation] = {
             status: previousHash !== inputHash(project) ? 'stale' : status,

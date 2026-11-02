@@ -33,6 +33,11 @@ final class SourceRequests implements AutoCloseable {
     private FileChannel lockChannel;
     private FileLock lock;
     private boolean inFlight;
+    private java.util.function.Consumer<SourceRequestActivity> activity=value->{};
+    void activity(java.util.function.Consumer<SourceRequestActivity> observer) {activity=observer;}
+    private void activity(String stage,long millis) {
+        activity.accept(new SourceRequestActivity("source-request-progress",stage,millis,retries));
+    }
     record State(int schemaVersion, String runId, String inputHash, String charge, boolean chargeObserved, long retries, boolean inFlight, String integrity,
                  @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
                  Long pacingDelayMillis) {
@@ -112,7 +117,9 @@ final class SourceRequests implements AutoCloseable {
             pace();
             try {
                 inFlight = true; persist();
+                activity("source-request-awaiting-response",0);
                 Response response = request.run(); account(response.attributes());
+                activity("source-request-completed",0);
                 if (response.values().size() != 1) throw new IOException("Unexpected bounded source result shape");
                 return response.values().getFirst();
             } catch (Failure failure) {
@@ -126,7 +133,7 @@ final class SourceRequests implements AutoCloseable {
                     if (requested < 0 || requested > timeout) throw new IOException("Provider retry-after exceeds the approved deadline");
                     wait = Math.max(wait, requested);
                 }
-                retries++; persist(); waitWithinDeadline(wait);
+                retries++; persist();activity("source-retry-wait",wait); waitWithinDeadline(wait);
             }
         }
     }
@@ -180,7 +187,9 @@ final class SourceRequests implements AutoCloseable {
     private void pace() throws Exception {
         if (rate == null) return;
         long elapsed=Math.max(0,(clock.getAsLong()-pacingStarted)/1000000);
-        waitWithinDeadline(Math.max(0,pacingDelayMillis-elapsed));
+        long wait=Math.max(0,pacingDelayMillis-elapsed);
+        if(wait>0) activity("source-rate-wait",wait);
+        waitWithinDeadline(wait);
         pacingDelayMillis=0; persist();
     }
     private void waitWithinDeadline(long millis) throws Exception {

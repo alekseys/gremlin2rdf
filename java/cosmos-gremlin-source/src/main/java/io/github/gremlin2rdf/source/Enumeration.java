@@ -21,6 +21,7 @@ final class Enumeration {
     }
     interface Reader {
         default void remainingDuration(long millis) {}
+        default void activity(SourceActivity activity) {}
         List<String> vertices(GraphRecord.Value partition, String after, int limit) throws Exception;
         List<String> edges(GraphRecord.Value partition, String owner, String after, int limit) throws Exception;
         long count(GraphRecord.Kind kind, GraphRecord.Value partition) throws Exception;
@@ -97,6 +98,7 @@ final class Enumeration {
             GraphRecord.Value partition = plan.partitions().get(state.partition());
             if (!state.owner().isEmpty()) {
                 request();
+                activity("source-enumeration-edge-page");
                 List<String> ids;
                 try { ids=reader.edges(partition,state.owner(),state.edgeCursor(),plan.pageSize()); }
                 catch (Exception failure) { throw new SourceDiagnostics.Context("source-enumeration-edge-page",failure); }
@@ -119,6 +121,7 @@ final class Enumeration {
                     state.initialVertices(), state.initialEdges());
             } else {
                 request();
+                activity("source-enumeration-vertex-page");
                 List<String> ids;
                 try { ids=reader.vertices(partition,state.vertexCursor(),plan.pageSize()); }
                 catch (Exception failure) { throw new SourceDiagnostics.Context("source-enumeration-vertex-page",failure); }
@@ -130,6 +133,7 @@ final class Enumeration {
                     state.initialVertices(), state.initialEdges());
             }
         }
+        activity("source-enumeration-reconciliation");
         long vertices = count(GraphRecord.Kind.vertex, null), edges = count(GraphRecord.Kind.edge, null);
         if (vertices != state.initialVertices() || edges != state.initialEdges())
             throw new Diagnostics.Failure("SOURCE_COUNTS_CHANGED","source-enumeration");
@@ -164,6 +168,7 @@ final class Enumeration {
                 throw new IOException("Completed enumeration output changed");
             return Json.MAPPER.convertValue(previous, new com.fasterxml.jackson.core.type.TypeReference<Map<String,Object>>() {});
         }
+        activity("source-enumeration-merge");
         int pass = 0, count = state.segments();
         while (count > 16) {
             int merged = 0;
@@ -224,6 +229,7 @@ final class Enumeration {
     }
     private long count(GraphRecord.Kind kind, GraphRecord.Value partition) throws Exception {
         request();
+        activity("source-enumeration-"+(partition==null ? "global-" : "partition-")+kind.name()+"-count");
         try { return reader.count(kind,partition); }
         catch (Exception failure) { throw new SourceDiagnostics.Context(
             "source-enumeration-"+(partition==null ? "global-" : "partition-")+kind.name()+"-count",failure); }
@@ -235,7 +241,14 @@ final class Enumeration {
             List.copyOf(pending), owner, edgeCursor, vertices, edges, segments, state.requests(), elapsed(),
             initialVertices, initialEdges, "").signed(); save();
     }
-    private void save() throws IOException { SafeFiles.atomic(SafeFiles.resolve(directory, "checkpoint.json"), state); }
+    private void save() throws IOException {
+        SafeFiles.atomic(SafeFiles.resolve(directory, "checkpoint.json"), state);
+        if (started != 0) activity("source-enumeration-checkpoint");
+    }
+    private void activity(String stage) {
+        reader.activity(new SourceActivity("source-progress",stage,state.vertices(),state.edges(),
+            state.requests(),elapsed()));
+    }
     private void segment(List<IdentityEntry> entries) throws IOException {
         var sorted = entries.stream().sorted(Comparator.comparing(IdentityEntry::orderingKey)).toList();
         StringBuilder text = new StringBuilder();

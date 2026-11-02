@@ -152,6 +152,117 @@ function renderWorkbench() {
     return rendered;
 }
 describe('graph workbench boundaries and keyboard access', () => {
+    it('shows bounded live activity inside its step, retains it when paused, and exposes paused evidence', async () => {
+        const configured = bootstrapProject();
+        configured.phases['source-enumerate'] = {
+            status: 'running',
+            inputHash: inputHash(configured),
+            evidence: [],
+            blockers: [],
+        };
+        mocks.load.mockResolvedValue({ project: configured, trusted: true, currentInputHash: inputHash(configured) });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        await screen.findByRole('textbox', { name: 'Graph project JSON' });
+        const frame = {
+            protocolVersion: 1 as const,
+            runId: configured.runId,
+            operationId: 'owned',
+            sequence: 1,
+            timestamp: new Date().toISOString(),
+            phase: 'source-enumerate',
+        };
+        act(() =>
+            listener({
+                type: 'worker',
+                message: {
+                    ...frame,
+                    type: 'progress',
+                    payload: {
+                        type: 'source-progress',
+                        stage: 'source-enumeration-edge-page',
+                        vertices: 100,
+                        edges: 200,
+                        reservedRequests: 300,
+                        elapsedMillis: 120000,
+                    },
+                },
+            }),
+        );
+        const log = await screen.findByRole('log', {
+            name: 'Recent activity for Enumerate read-only source identities',
+        });
+        const output = within(log).getByRole('textbox', {
+            name: 'Recent activity for Enumerate read-only source identities',
+        });
+        if (!(output instanceof HTMLTextAreaElement)) throw new Error('Expected native read-only activity textarea');
+        expect(output.value).toContain('Reading an outgoing-edge identity page');
+        expect(output.value).toContain('Enumerated vertices: 100; edges: 200');
+        output.focus();
+        act(() => {
+            for (let index = 0; index < 25; index++)
+                listener({
+                    type: 'worker',
+                    message: {
+                        ...frame,
+                        type: 'progress',
+                        sequence: index + 2,
+                        payload: {
+                            type: 'source-progress',
+                            stage: 'source-enumeration-edge-page',
+                            vertices: 100,
+                            edges: 200,
+                            reservedRequests: 301 + index,
+                            elapsedMillis: 121000 + index * 1000,
+                        },
+                    },
+                });
+        });
+        expect(output.value).toContain('reserved request attempts: 325');
+        expect(output.value.split('\n')).toHaveLength(20);
+        expect(output).toHaveFocus();
+        act(() =>
+            listener({
+                type: 'worker',
+                message: {
+                    ...frame,
+                    sequence: 2,
+                    type: 'progress',
+                    payload: {
+                        type: 'source-progress',
+                        stage: 'source-enumeration-edge-page',
+                        vertices: 100,
+                        edges: 200,
+                        reservedRequests: 300,
+                        elapsedMillis: 120000,
+                        query: 'private-query',
+                    },
+                },
+            }),
+        );
+        expect(screen.queryByText(/private-query/)).not.toBeInTheDocument();
+        const paused = graphProjectSchema.parse({
+            ...configured,
+            phases: {
+                ...configured.phases,
+                'source-enumerate': {
+                    status: 'paused',
+                    inputHash: inputHash(configured),
+                    evidence: ['artifacts/stopped.json'],
+                    blockers: [
+                        'worker-control (OPERATION_DEADLINE): The configured overall operation time limit was reached.',
+                    ],
+                },
+            },
+        });
+        act(() => listener({ type: 'project', project: paused, currentInputHash: inputHash(paused) }));
+        expect(output.value).toContain('Enumerated vertices: 100; edges: 200');
+        const evidence = screen.getByRole('button', { name: 'Evidence 1 for Enumerate read-only source identities' });
+        expect(evidence).toHaveTextContent('Evidence 1');
+        expect(evidence).not.toBeDisabled();
+        await userEvent.setup().click(evidence);
+        expect(mocks.openArtifact).toHaveBeenCalledWith('artifacts/stopped.json');
+        expect(mocks.run).not.toHaveBeenCalled();
+    });
     it('shows total-run spend separately from RU/s in safe blocked evidence', async () => {
         renderWorkbench();
         await screen.findByRole('textbox', { name: 'Graph project JSON' });
@@ -683,7 +794,7 @@ describe('graph workbench boundaries and keyboard access', () => {
         renderWorkbench();
         await screen.findByRole('textbox', { name: 'Graph project JSON' });
         act(() => listener({ type: 'diagnostic', code: 'WORKER_DISCONNECTED' }));
-        expect(await screen.findByRole('alert')).toHaveTextContent('Reload the project');
+        expect(await screen.findByRole('alert')).toHaveTextContent('Verify the owned checkpoints and RU journal');
     });
     it('dispatches read-only compatibility independently from target approval', async () => {
         const supplied = graphProjectSchema.parse({

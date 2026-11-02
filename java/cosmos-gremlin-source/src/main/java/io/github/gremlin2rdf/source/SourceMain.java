@@ -10,6 +10,7 @@ import org.apache.tinkerpop.gremlin.driver.*;
 import org.apache.tinkerpop.gremlin.driver.ser.GraphSONMessageSerializerV2d0;
 
 public final class SourceMain implements AutoCloseable {
+    private static boolean parentOwned;
     private static final ObjectMapper JSON = new ObjectMapper()
         .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
         .enable(DeserializationFeature.USE_BIG_INTEGER_FOR_INTS);
@@ -38,6 +39,9 @@ public final class SourceMain implements AutoCloseable {
         requests = new SourceRequests(typedProject.limits().maxRetries(), timeout, typedProject.source().ruBudget(),
             typedProject.source().ruPerSecond(),
             millis -> Thread.sleep(millis + java.util.concurrent.ThreadLocalRandom.current().nextLong(50)),System::nanoTime);
+        if(parentOwned) requests.activity(activity->{
+            System.out.println(io.github.gremlin2rdf.Json.text(activity));System.out.flush();
+        });
         if (typedProject.limits().maximumOperationMillis()!=null)
             requests.remainingDuration(typedProject.limits().maximumOperationMillis());
         cluster = createCluster(clusterBuilder(project,key));
@@ -206,7 +210,7 @@ public final class SourceMain implements AutoCloseable {
             if ((args.length != 4 && args.length != 5) || !Set.of("check","enumerate", "extract", "probe", "populate", "source-cleanup", "recipes").contains(args[0])
                 || args.length == 5 && !args[4].equals("--parent-owned"))
                 throw new IllegalArgumentException("extract or probe project manifest output required");
-            if (args.length == 5) monitorParent();
+            if (args.length == 5) {parentOwned=true;monitorParent();}
             Path configuration = Path.of(args[1]), manifest = Path.of(args[2]), output = Path.of(args[3]);
             if (Files.size(configuration) > 1048576) throw new IllegalArgumentException("Invalid config bounds");
             var parsed = io.github.gremlin2rdf.Json.MAPPER.readValue(Files.readAllBytes(configuration), io.github.gremlin2rdf.Project.class);
@@ -218,6 +222,12 @@ public final class SourceMain implements AutoCloseable {
                     source.requests.attachJournal(parsed, root);
                     var result = Enumeration.run(parsed, plan, directory, new Enumeration.Reader() {
                         public void remainingDuration(long millis) { source.requests.remainingDuration(millis); }
+                        public void activity(io.github.gremlin2rdf.SourceActivity activity) {
+                            if (args.length == 5) {
+                                System.out.println(io.github.gremlin2rdf.Json.text(activity));
+                                System.out.flush();
+                            }
+                        }
                         public List<String> vertices(io.github.gremlin2rdf.GraphRecord.Value partition, String after, int limit) throws Exception {
                             return source.enumeratePage(partition, null, after, limit);
                         }

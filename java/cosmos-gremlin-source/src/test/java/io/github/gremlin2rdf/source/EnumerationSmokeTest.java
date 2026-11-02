@@ -48,6 +48,25 @@ class EnumerationSmokeTest {
         var repeated = Enumeration.run(project(), plan, output, reader(false));
         assertEquals(result.get("sha256"), repeated.get("sha256"));
     }
+    @Test void reportsActualSubstepsAndPersistedCountersWithoutIdentityValues() throws Exception {
+        var seen=new ArrayList<SourceActivity>();
+        var fixture=reader(false);
+        var observed=new Enumeration.Reader(){
+            public void activity(SourceActivity activity){seen.add(activity);}
+            public List<String> vertices(GraphRecord.Value partition,String after,int limit) throws Exception{return fixture.vertices(partition,after,limit);}
+            public List<String> edges(GraphRecord.Value partition,String owner,String after,int limit) throws Exception{return fixture.edges(partition,owner,after,limit);}
+            public long count(GraphRecord.Kind kind,GraphRecord.Value partition) throws Exception{return fixture.count(kind,partition);}
+        };
+        Enumeration.run(project(),new Enumeration.Plan(1,List.of(GraphRecord.Value.string("private-partition")),1,30,10000),
+            root.resolve("progress"),observed);
+        var stages=seen.stream().map(SourceActivity::stage).toList();
+        assertTrue(stages.containsAll(List.of("source-enumeration-vertex-page","source-enumeration-edge-page",
+            "source-enumeration-global-vertex-count","source-enumeration-partition-edge-count","source-enumeration-checkpoint",
+            "source-enumeration-reconciliation","source-enumeration-merge")));
+        assertTrue(seen.stream().anyMatch(a->a.vertices()==2 && a.edges()==1 && a.reservedRequests()>0));
+        assertFalse(Json.text(seen).contains("private-partition"));
+        assertFalse(Json.text(seen).contains("\"v1\""));
+    }
     @Test void rejectsUnsupportedOrderingAndExhaustedBudgetWithoutFinalManifest() {
         var partition = List.of(GraphRecord.Value.string("p"));
         assertThrows(IOException.class, () -> Enumeration.run(project(),

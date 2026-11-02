@@ -48,6 +48,7 @@ class ProtocolTest {
         try (var executor = java.util.concurrent.Executors.newSingleThreadExecutor()) {
             var server = executor.submit(() -> {
                 Protocol.serve(input, new PrintStream(output), (operation, payload, engine) -> {
+                    engine.activity(new SourceActivity("source-progress","source-enumeration-edge-page",1,2,4,0));
                     current.set(engine); started.countDown();
                     if (!release.await(5, java.util.concurrent.TimeUnit.SECONDS)) throw new IOException("Fixture timeout");
                     return Map.of("status", engine.stoppedStatus());
@@ -63,6 +64,7 @@ class ProtocolTest {
                 long deadline = System.nanoTime() + 5000000000L;
                 while (!output.toString(StandardCharsets.UTF_8).contains("OPERATION_MISMATCH") && System.nanoTime() < deadline) Thread.sleep(10);
                 assertTrue(output.toString(StandardCharsets.UTF_8).contains("OPERATION_MISMATCH"));
+                assertTrue(output.toString(StandardCharsets.UTF_8).contains("source-enumeration-edge-page"));
                 assertFalse(current.get().stopping());
                 writer.write((Json.text(new Protocol.Message(1, "cancel", "run", "owned", 2, "2026-10-31T00:00:00Z", "control",
                     Json.MAPPER.valueToTree(Map.of()))) + "\n").getBytes(StandardCharsets.UTF_8)); writer.flush();

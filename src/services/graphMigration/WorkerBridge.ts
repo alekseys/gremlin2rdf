@@ -8,7 +8,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { fileHash, readBounded } from './artifacts';
 import { inputHash, workerMessageSchema, type GraphProject, type WorkerMessage } from './contracts';
-import { GraphDiagnosticError } from './diagnostics';
+import { GraphDiagnosticError, hostDiagnostic, safeDiagnostics } from './diagnostics';
 
 export class WorkerBridge implements vscode.Disposable {
     private process: ChildProcessWithoutNullStreams | undefined;
@@ -24,6 +24,7 @@ export class WorkerBridge implements vscode.Disposable {
     private failed = false;
     private terminal = false;
     private started = false;
+    private deadlineReached = false;
     get active(): boolean {
         return this.process !== undefined;
     }
@@ -31,7 +32,7 @@ export class WorkerBridge implements vscode.Disposable {
         private readonly resourceDirectory: string,
         private readonly secrets: vscode.SecretStorage,
         private readonly onMessage: (message: WorkerMessage) => void,
-        private readonly onFailure: (code: string, status?: 'paused' | 'cancelled') => void,
+        private readonly onFailure: (code: string, status?: 'paused' | 'cancelled', pending?: boolean) => void,
     ) {}
     async start(project: GraphProject, cwd: string, operation: string, arguments_: string[]): Promise<void> {
         if (!vscode.workspace.isTrusted) throw new Error('Workspace trust is required for worker execution');
@@ -124,13 +125,15 @@ export class WorkerBridge implements vscode.Disposable {
         this.failed = false;
         this.terminal = false;
         this.started = false;
+        this.deadlineReached = false;
         this.process = spawn('java', ['-Xmx1g', '-jar', jar, 'worker'], { cwd, env, shell: false, windowsHide: true });
         if (project.limits.maximumOperationMillis !== undefined) {
             const owned = this.process;
             this.deadlineTimer = setTimeout(() => {
                 if (this.process !== owned || this.terminal) return;
+                this.deadlineReached = true;
                 this.pause();
-                this.failure('OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED');
+                this.onFailure('OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED', 'paused', true);
             }, project.limits.maximumOperationMillis);
             this.deadlineTimer.unref();
         }
@@ -191,7 +194,25 @@ export class WorkerBridge implements vscode.Disposable {
                 this.failProtocol();
                 return;
             }
-            this.onMessage(parsed.data);
+            if (this.stopping && (parsed.data.type === 'result' || parsed.data.type === 'error')) {
+                const payload = parsed.data.payload;
+                const code = this.deadlineReached
+                    ? 'OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED'
+                    : this.stopping === 'paused'
+                      ? 'OPERATOR_PAUSED'
+                      : 'OPERATOR_CANCELLED';
+                this.onMessage({
+                    ...parsed.data,
+                    payload: {
+                        ...(payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {}),
+                        status: this.stopping,
+                        diagnostics: [
+                            ...safeDiagnostics(payload),
+                            hostDiagnostic(new GraphDiagnosticError(code, 'worker-control')),
+                        ],
+                    },
+                });
+            } else this.onMessage(parsed.data);
             if (parsed.data.type === 'result' || parsed.data.type === 'error') {
                 this.terminal = true;
                 this.clearDeadlineTimer();

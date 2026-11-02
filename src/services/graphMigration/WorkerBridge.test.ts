@@ -132,13 +132,84 @@ describe('worker credential isolation', () => {
         await vi.advanceTimersByTimeAsync(999);
         expect(failure).not.toHaveBeenCalled();
         await vi.advanceTimersByTimeAsync(1);
-        expect(failure).toHaveBeenCalledWith('OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED', 'paused');
+        expect(failure).toHaveBeenCalledWith('OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED', 'paused', true);
         expect(child.kill).not.toHaveBeenCalled();
         await vi.advanceTimersByTimeAsync(5000);
         expect(child.kill).toHaveBeenCalledOnce();
         child.emit('close', null);
         await vi.advanceTimersByTimeAsync(10000);
         expect(child.kill).toHaveBeenCalledOnce();
+    });
+    it('keeps accepting progress and the real evidence acknowledgement during deadline pause grace, never late success', async () => {
+        vi.useFakeTimers();
+        const failure = vi.fn(),
+            message = vi.fn();
+        const worker = new WorkerBridge('package', storage(), message, failure);
+        const input = project();
+        input.limits.maximumOperationMillis = 1000;
+        await worker.start(input, 'run', 'synthetic', []);
+        const child = mocks.spawn.mock.results[0].value;
+        child.stdout.emit(
+            'data',
+            Buffer.from(
+                JSON.stringify({
+                    protocolVersion: 1,
+                    type: 'hello',
+                    runId: '',
+                    operationId: '',
+                    sequence: 0,
+                    timestamp: new Date().toISOString(),
+                    phase: 'idle',
+                    payload: { workerVersion: '0.1.0' },
+                }) + '\n',
+            ),
+        );
+        const start = JSON.parse(child.stdin.read().toString().trim());
+        await vi.advanceTimersByTimeAsync(1000);
+        const frame = {
+            protocolVersion: 1,
+            runId: input.runId,
+            operationId: start.operationId,
+            timestamp: new Date().toISOString(),
+            phase: 'synthetic',
+        };
+        child.stdout.emit(
+            'data',
+            Buffer.from(
+                JSON.stringify({
+                    ...frame,
+                    type: 'progress',
+                    sequence: 1,
+                    payload: { activity: 'worker-active', elapsedMillis: 1100 },
+                }) + '\n',
+            ),
+        );
+        child.stdout.emit(
+            'data',
+            Buffer.from(
+                JSON.stringify({
+                    ...frame,
+                    type: 'result',
+                    sequence: 2,
+                    payload: { status: 'succeeded', artifact: { relativePath: 'artifacts/report.json' } },
+                }) + '\n',
+            ),
+        );
+        expect(message).toHaveBeenCalledWith(expect.objectContaining({ type: 'progress', sequence: 1 }));
+        expect(message).toHaveBeenCalledWith(
+            expect.objectContaining({
+                type: 'result',
+                payload: expect.objectContaining({
+                    status: 'paused',
+                    artifact: { relativePath: 'artifacts/report.json' },
+                    diagnostics: [expect.objectContaining({ code: 'OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED' })],
+                }),
+            }),
+        );
+        child.emit('close', 0);
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(child.kill).not.toHaveBeenCalled();
+        expect(failure).toHaveBeenCalledTimes(1);
     });
     it('injects only source enumeration credentials and exact target probe authorization', async () => {
         mocks.get.mockResolvedValue('test-only-value');
@@ -207,7 +278,9 @@ describe('worker credential isolation', () => {
         mocks.trusted = false;
         await expect(bridge().start(project(), 'run', 'synthetic', [])).rejects.toThrow('Workspace trust');
         mocks.trusted = true;
-        await expect(bridge().start(project(), 'run', 'extract', [])).rejects.toThrow('credential reference');
+        await expect(bridge().start(project(), 'run', 'extract', [])).rejects.toThrow(
+            'CREDENTIAL_REFERENCE_UNAVAILABLE',
+        );
         expect(mocks.spawn).not.toHaveBeenCalled();
     });
     it('collects exact fixture and rewrite keys without unrelated source or target references', async () => {

@@ -21,6 +21,8 @@ public final class Engine {
     private final AtomicBoolean paused = new AtomicBoolean();
     private Consumer<Checkpoint> observer = checkpoint -> {};
     private Consumer<BatchMetrics> metrics = metric -> {};
+    private Consumer<SourceActivity> activity = value -> {};
+    private Consumer<SourceRequestActivity> requestActivity = value -> {};
     private volatile long deadlineNanos = Long.MAX_VALUE;
     private volatile boolean deadlineExceeded;
     public void deadline(Long millis) {
@@ -29,6 +31,10 @@ public final class Engine {
     public boolean deadlineExceeded() { stopping(); return deadlineExceeded; }
     public void observe(Consumer<Checkpoint> observer) { this.observer = observer; }
     public void measure(Consumer<BatchMetrics> metrics) { this.metrics = metrics; }
+    public void activity(Consumer<SourceActivity> activity) { this.activity = activity; }
+    public void activity(SourceActivity value) { activity.accept(value); }
+    public void requestActivity(Consumer<SourceRequestActivity> observer) { requestActivity=observer; }
+    public void requestActivity(SourceRequestActivity value) { requestActivity.accept(value); }
     public void cancel() { cancelled.set(true); }
     public void pause() { paused.set(true); }
     public boolean stopping() {

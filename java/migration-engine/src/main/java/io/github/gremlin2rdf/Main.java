@@ -60,6 +60,11 @@ public final class Main {
         catch (Exception e) { result = Json.MAPPER.valueToTree(diagnostic(e)); }
         if (engine.deadlineExceeded() && result instanceof com.fasterxml.jackson.databind.node.ObjectNode object)
             object.put("status", "paused");
+        if (Set.of("paused","cancelled").contains(result.path("status").asText())
+            && !result.path("diagnostics").isArray() && result instanceof com.fasterxml.jackson.databind.node.ObjectNode object)
+            object.set("diagnostics",Json.MAPPER.valueToTree(List.of(Diagnostics.report(
+                engine.deadlineExceeded() ? "OPERATION_DEADLINE" : result.path("status").asText().equals("cancelled")
+                    ? "OPERATOR_CANCELLED" : "OPERATOR_PAUSED","worker-control"))));
         String status = result.path("status").asText("succeeded");
         if (result.path("blockers").isArray() && !result.path("blockers").isEmpty()) status = "blocked";
         if (result.path("readiness").asText().equals("blocked")) status = "blocked";
@@ -84,6 +89,35 @@ public final class Main {
             "sha256", SafeFiles.fileHash(artifact), "ownerRunId", project.runId(), "sensitive", true), "artifacts", produced,
             "diagnostics", result.path("diagnostics").isArray() ? result.path("diagnostics")
                 : result.has("code") ? List.of(result) : List.of());
+    }
+    static byte[] sourceReply(java.io.InputStream input, Engine engine) throws IOException {
+        byte[] result=null;
+        var frame=new java.io.ByteArrayOutputStream();
+        int next;
+        while ((next=input.read())!=-1) {
+            if (next!='\n') {
+                if (frame.size()>=8192) throw new Diagnostics.Failure("SOURCE_PROTOCOL_INVALID","source-worker-protocol");
+                frame.write(next);continue;
+            }
+            if (frame.size()==0) throw new Diagnostics.Failure("SOURCE_PROTOCOL_INVALID","source-worker-protocol");
+            byte[] bytes=frame.toByteArray();frame.reset();
+            try {
+                var value=Json.MAPPER.readTree(bytes);
+                if (result!=null || value==null || !value.isObject())
+                    throw new Diagnostics.Failure("SOURCE_PROTOCOL_INVALID","source-worker-protocol");
+                if (value.path("type").asText().equals("source-progress"))
+                    engine.activity(Json.MAPPER.treeToValue(value,SourceActivity.class));
+                else if (value.path("type").asText().equals("source-request-progress"))
+                    engine.requestActivity(Json.MAPPER.treeToValue(value,SourceRequestActivity.class));
+                else if (value.has("type")) throw new Diagnostics.Failure("SOURCE_PROTOCOL_INVALID","source-worker-protocol");
+                else result=bytes;
+            } catch (com.fasterxml.jackson.core.JsonProcessingException | IllegalArgumentException failure) {
+                throw new Diagnostics.Failure("SOURCE_PROTOCOL_INVALID","source-worker-protocol");
+            }
+        }
+        if (frame.size()!=0 || result==null)
+            throw new Diagnostics.Failure("SOURCE_PROTOCOL_INVALID","source-worker-protocol");
+        return result;
     }
     private static List<Map<String, Object>> producedArtifacts(String[] args, JsonNode result, Project project) throws IOException {
         List<Path> paths = new ArrayList<>();
@@ -302,10 +336,8 @@ public final class Main {
                 var reply = new java.util.concurrent.CompletableFuture<byte[]>();
                 Thread.startVirtualThread(() -> {
                     try (var input = process.getInputStream()) {
-                        byte[] bytes = input.readNBytes(8193);
-                        if (bytes.length > 8192) { process.destroy(); throw new IOException("Source reply exceeds bound"); }
-                        reply.complete(bytes);
-                    } catch (IOException e) { reply.completeExceptionally(e); }
+                        reply.complete(sourceReply(input,engine));
+                    } catch (IOException | RuntimeException e) { process.destroy();reply.completeExceptionally(e); }
                 });
                 while (!process.waitFor(100, java.util.concurrent.TimeUnit.MILLISECONDS)) {
                     if (engine.stopping()) {
@@ -314,13 +346,18 @@ public final class Main {
                             process.destroyForcibly();
                             if (!process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) throw new IOException("Source child could not be terminated");
                         }
+                        var diagnostic=Diagnostics.report(engine.deadlineExceeded() ? "OPERATION_DEADLINE" :
+                            engine.stoppedStatus().equals("cancelled") ? "OPERATOR_CANCELLED" : "OPERATOR_PAUSED","worker-control");
                         yield Map.of("status", engine.stoppedStatus(), "partialOutput", "preserved-not-loadable",
-                            "remediation", mutation ? "Preserve and verify the ownership journal and RU budget; uncertain mutations require reconciliation, not blind retry."
-                                : "Resume extraction into the same owned output; confirmed prefixes are verified before append.");
+                            "diagnostics",List.of(diagnostic));
                     }
                 }
                 JsonNode acknowledgement;
                 try { acknowledgement = Json.MAPPER.readTree(reply.get(2, java.util.concurrent.TimeUnit.SECONDS)); }
+                catch (java.util.concurrent.ExecutionException failure) {
+                    if (failure.getCause() instanceof Diagnostics.Failure diagnostic) throw diagnostic;
+                    throw new Diagnostics.Failure("SOURCE_PROTOCOL_INVALID","source-worker-protocol");
+                }
                 catch (com.fasterxml.jackson.core.JsonProcessingException failure) {
                     throw new Diagnostics.Failure("SOURCE_PROTOCOL_INVALID","source-worker-protocol");
                 }

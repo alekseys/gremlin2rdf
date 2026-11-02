@@ -19,6 +19,7 @@ import { type GraphRouterContext } from './graphRouter';
 const mocks = vi.hoisted(() => ({
     context: undefined as GraphRouterContext | undefined,
     message: undefined as ((message: WorkerMessage) => void) | undefined,
+    failure: undefined as ((code: string, status?: 'paused' | 'cancelled', pending?: boolean) => void) | undefined,
     start: vi.fn(),
     events: vi.fn(),
     confirm: vi.fn(),
@@ -67,8 +68,14 @@ vi.mock('vscode', () => ({
 }));
 vi.mock('../../services/graphMigration/WorkerBridge', () => ({
     WorkerBridge: class {
-        constructor(_: unknown, _secrets: unknown, message: (message: WorkerMessage) => void) {
+        constructor(
+            _: unknown,
+            _secrets: unknown,
+            message: (message: WorkerMessage) => void,
+            failure: (code: string, status?: 'paused' | 'cancelled', pending?: boolean) => void,
+        ) {
             mocks.message = message;
+            mocks.failure = failure;
         }
         get active() {
             return mocks.active;
@@ -115,6 +122,60 @@ async function complete(payload: WorkerMessage['payload']) {
 }
 
 describe('persisted graph editor workflow', () => {
+    it('adds honest recovery evidence for a legacy paused phase with no recorded stop cause, without inventing a timeout', async () => {
+        await context.create();
+        const original = await service.load();
+        original.phases['source-enumerate'] = {
+            status: 'paused',
+            inputHash: inputHash(original),
+            evidence: [],
+            blockers: ['Review the worker diagnostics and current evidence before continuing.'],
+        };
+        await service.save(original);
+        const value = await context.load(),
+            phase = value.project!.phases['source-enumerate'];
+        expect(phase.evidence).toHaveLength(1);
+        expect(phase.blockers[0]).toContain('WORKER_PREVIOUS_STOP_REASON_UNKNOWN');
+        expect(phase.blockers[0]).toContain('exact stop reason is unknown');
+        const again = await context.load();
+        expect(again.project!.phases['source-enumerate'].evidence).toEqual(phase.evidence);
+        expect(inputHash(value.project!)).toBe(inputHash(original));
+        expect(value.project!.approvals).toEqual(original.approvals);
+    });
+    it('does not finalize on pending deadline notice and persists concrete host stop evidence with safe recent activity', async () => {
+        await context.create();
+        await context.run('mapping', '', '', '');
+        mocks.message?.({
+            protocolVersion: 1,
+            type: 'progress',
+            runId: 'fixture',
+            operationId: 'owned',
+            sequence: 1,
+            timestamp: new Date().toISOString(),
+            phase: 'mapping',
+            payload: { recordsConfirmed: 2, requestBodyBytes: 100, elapsedMillis: 1000 },
+        });
+        mocks.failure?.('OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED', 'paused', true);
+        expect((await service.load()).phases.mapping.status).toBe('running');
+        mocks.failure?.('WORKER_TERMINATION_REQUESTED_PARTIAL_STATE_PRESERVED', 'paused');
+        await vi.waitFor(async () => expect((await service.load()).phases.mapping.status).toBe('paused'));
+        const saved = await service.load(),
+            phase = saved.phases.mapping;
+        expect(phase.blockers.join(' ')).toContain('five-second stop grace');
+        expect(phase.evidence).toHaveLength(1);
+        const evidence = JSON.parse(await readFile(path.join(await service.root(), phase.evidence[0]), 'utf8'));
+        expect(evidence).toMatchObject({
+            operation: 'mapping',
+            status: 'paused',
+            producer: 'extension-host',
+            inputHash: inputHash(saved),
+        });
+        expect(evidence.lastObservedActivity.join(' ')).toContain('Confirmed records: 2');
+        expect(evidence.result.diagnostics.map((value: { code: string }) => value.code)).toEqual([
+            'OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED',
+            'WORKER_TERMINATION_REQUESTED_PARTIAL_STATE_PRESERVED',
+        ]);
+    });
     it('starts guided preparation with bounded settings and exposes running state to Pause and Cancel', async () => {
         await context.create();
         await context.saveSetup({
@@ -144,6 +205,7 @@ describe('persisted graph editor workflow', () => {
         );
         expect(mocks.events).toHaveBeenCalledWith({
             type: 'project',
+            currentInputHash: inputHash(current),
             project: expect.objectContaining({
                 phases: expect.objectContaining({ 'source-enumerate': expect.objectContaining({ status: 'running' }) }),
             }),
