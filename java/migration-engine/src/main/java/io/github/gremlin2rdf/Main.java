@@ -58,13 +58,14 @@ public final class Main {
         JsonNode result;
         try { result = Json.MAPPER.valueToTree(execute(arguments.toArray(String[]::new), engine)); }
         catch (Exception e) { result = Json.MAPPER.valueToTree(diagnostic(e)); }
-        if (engine.deadlineExceeded() && result instanceof com.fasterxml.jackson.databind.node.ObjectNode object)
+        if (engine.deadlineExceeded() && !engine.stoppedStatus().equals("cancelled")
+            && result instanceof com.fasterxml.jackson.databind.node.ObjectNode object)
             object.put("status", "paused");
         if (Set.of("paused","cancelled").contains(result.path("status").asText())
             && !result.path("diagnostics").isArray() && result instanceof com.fasterxml.jackson.databind.node.ObjectNode object)
             object.set("diagnostics",Json.MAPPER.valueToTree(List.of(Diagnostics.report(
-                engine.deadlineExceeded() ? "OPERATION_DEADLINE" : result.path("status").asText().equals("cancelled")
-                    ? "OPERATOR_CANCELLED" : "OPERATOR_PAUSED","worker-control"))));
+                result.path("status").asText().equals("cancelled") ? "OPERATOR_CANCELLED" :
+                    engine.deadlineExceeded() ? "OPERATION_DEADLINE" : "OPERATOR_PAUSED","worker-control"))));
         String status = result.path("status").asText("succeeded");
         if (result.path("blockers").isArray() && !result.path("blockers").isEmpty()) status = "blocked";
         if (result.path("readiness").asText().equals("blocked")) status = "blocked";
@@ -346,8 +347,8 @@ public final class Main {
                             process.destroyForcibly();
                             if (!process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) throw new IOException("Source child could not be terminated");
                         }
-                        var diagnostic=Diagnostics.report(engine.deadlineExceeded() ? "OPERATION_DEADLINE" :
-                            engine.stoppedStatus().equals("cancelled") ? "OPERATOR_CANCELLED" : "OPERATOR_PAUSED","worker-control");
+                        var diagnostic=Diagnostics.report(engine.stoppedStatus().equals("cancelled") ? "OPERATOR_CANCELLED" :
+                            engine.deadlineExceeded() ? "OPERATION_DEADLINE" : "OPERATOR_PAUSED","worker-control");
                         yield Map.of("status", engine.stoppedStatus(), "partialOutput", "preserved-not-loadable",
                             "diagnostics",List.of(diagnostic));
                     }

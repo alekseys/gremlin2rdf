@@ -7,6 +7,27 @@ import * as l10n from '@vscode/l10n';
 import { z } from 'zod';
 
 const counter = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+
+/** Present the first update, at most one per ten seconds, and the final two; never retain an unbounded stream. */
+export class ActivitySampler<T> {
+    private next = 0;
+    private lastSampleAt = Number.NEGATIVE_INFINITY;
+    private samples: { index: number; value: T }[] = [];
+    private tail: { index: number; value: T }[] = [];
+    offer(value: T, now = Date.now(), eligible = true): boolean {
+        const entry = { index: this.next++, value };
+        this.tail = [...this.tail, entry].slice(-2);
+        if (!eligible || now - this.lastSampleAt < 10000) return false;
+        this.lastSampleAt = now;
+        this.samples = [...this.samples, entry];
+        if (this.samples.length > 18) this.samples.splice(1, this.samples.length - 18);
+        return true;
+    }
+    snapshot(): T[] {
+        const values = new Map([...this.samples, ...this.tail].map((entry) => [entry.index, entry]));
+        return [...values.values()].sort((a, b) => a.index - b.index).map((entry) => entry.value);
+    }
+}
 const sourceStages = z.enum([
     'source-enumeration-vertex-page',
     'source-enumeration-edge-page',

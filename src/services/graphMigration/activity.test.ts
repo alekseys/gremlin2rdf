@@ -4,7 +4,40 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { describe, expect, it } from 'vitest';
-import { activityText } from './activity';
+import { ActivitySampler, activityText } from './activity';
+
+describe('bounded activity sampling', () => {
+    it('shows the first, no more than one per ten seconds, and retains the final two for a terminal snapshot', () => {
+        const sampler = new ActivitySampler<number>();
+        expect(sampler.offer(0, 0)).toBe(true);
+        for (let i = 1; i < 100; i++) expect(sampler.offer(i, i * 100)).toBe(false);
+        expect(sampler.offer(100, 10000)).toBe(true);
+        expect(sampler.offer(101, 10001)).toBe(false);
+        expect(sampler.offer(102, 10002)).toBe(false);
+        expect(sampler.snapshot()).toEqual([0, 100, 101, 102]);
+    });
+    it('prefers meaningful summaries to per-request chatter and preserves a bounded first/periodic/tail history', () => {
+        const sampler = new ActivitySampler<number>();
+        sampler.offer(0, 0);
+        expect(sampler.offer(1, 10000, false)).toBe(false);
+        expect(sampler.offer(2, 10001)).toBe(true);
+        for (let i = 3; i < 200; i++) sampler.offer(i, i * 10000);
+        sampler.offer(200, 1990001, false);
+        sampler.offer(201, 1990002, false);
+        expect(sampler.snapshot()).toHaveLength(20);
+        expect(sampler.snapshot()[0]).toBe(0);
+        expect(sampler.snapshot().slice(-2)).toEqual([200, 201]);
+        expect(new ActivitySampler<number>().offer(0, 0)).toBe(true);
+    });
+    it('includes the penultimate observation even when the last was already sampled, without duplication or reordering', () => {
+        const sampler = new ActivitySampler<number>();
+        sampler.offer(0, 0);
+        sampler.offer(1, 9999);
+        sampler.offer(2, 10000);
+        expect(sampler.snapshot()).toEqual([0, 1, 2]);
+        expect(sampler.snapshot()).toEqual([0, 1, 2]);
+    });
+});
 
 describe('safe per-step activity', () => {
     const progress = {

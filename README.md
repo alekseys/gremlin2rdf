@@ -10,7 +10,7 @@ not a Microsoft Marketplace release.
 
 ## Install and choose your target
 
-1. Install **`vscode-cosmosdb-0.39.11.vsix`** using VS Code's **Extensions > Install from VSIX**, then reload.
+1. Install **`vscode-cosmosdb-0.39.12.vsix`** using VS Code's **Extensions > Install from VSIX**, then reload.
    Stop active migrations before upgrading; this replaces the extension, not its saved projects.
 2. Open your application's folder as a trusted workspace and enable:
 
@@ -84,6 +84,11 @@ not reinterpreted; review a new bounded preparation run. Increasing RU settings 
 Version 0.39.11 shows safe activity inside each step: source counts/pages, checkpoint saves, pacing/retry
 waits, load batches and a worker elapsed-time heartbeat. Pauses retain evidence and state their reason;
 the editor no longer discards the worker's stop report when its overall time limit expires.
+Version 0.39.12 samples the first activity update, one meaningful summary per ten seconds and the final two,
+instead of streaming every record/request into the panel. Deadline pauses no longer claim the operator clicked
+Pause. Guided Prepare now allows an explicitly reviewed duration up to 86400 seconds, including reconciliation;
+existing runs retain their original bounds and journals. A known expired duration requires a newly reviewed run,
+not an automatic extension or a misleading Resume.
 
 ## Start small
 

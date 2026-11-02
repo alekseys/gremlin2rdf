@@ -12,7 +12,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { z } from 'zod';
 import { ext } from '../../extensionVariables';
-import { activityText } from '../../services/graphMigration/activity';
+import { ActivitySampler, activityText } from '../../services/graphMigration/activity';
 import {
     createOwnedDirectory,
     fileHash,
@@ -31,6 +31,7 @@ import {
     populationPlanSchema,
     relativePathSchema,
     type GraphProject,
+    type WorkerMessage,
 } from '../../services/graphMigration/contracts';
 import {
     formatDiagnostic,
@@ -71,6 +72,8 @@ export class GraphMigrationTab extends BaseTab {
     private guidedEnumerationOutput: string | undefined;
     private reviewingPreparation = false;
     private recentActivity: string[] = [];
+    private activitySampler = new ActivitySampler<WorkerMessage>();
+    private lastHeartbeatAt = Number.NEGATIVE_INFINITY;
     private pendingStopDiagnostic: ReturnType<typeof hostDiagnostic> | undefined;
     constructor(
         panel: vscode.WebviewPanel,
@@ -84,21 +87,37 @@ export class GraphMigrationTab extends BaseTab {
             (message) => {
                 if (message.type === 'progress') {
                     const text = activityText(message.payload);
-                    if (text) this.recentActivity = [...this.recentActivity, text].slice(-20);
+                    if (text) {
+                        const payload = message.payload;
+                        const eligible = !(
+                            payload &&
+                            typeof payload === 'object' &&
+                            !Array.isArray(payload) &&
+                            payload.type === 'source-request-progress' &&
+                            ['source-request-awaiting-response', 'source-request-completed'].includes(
+                                String(payload.stage),
+                            )
+                        );
+                        const show = this.activitySampler.offer(message, Date.now(), eligible);
+                        this.recentActivity = this.activitySampler.snapshot().flatMap((value) => {
+                            const line = activityText(value.payload);
+                            return line ? [line] : [];
+                        });
+                        if (!show) return;
+                    } else {
+                        if (Date.now() - this.lastHeartbeatAt < 10000) return;
+                        this.lastHeartbeatAt = Date.now();
+                    }
                 }
-                this.events.emit({
-                    type: 'worker',
-                    message:
-                        this.activeOperation && message.type !== 'hello'
-                            ? { ...message, phase: this.activeOperation }
-                            : message,
-                });
+                if (message.type === 'result' || message.type === 'error') this.flushActivity();
+                this.emitWorker(message);
                 if (message.type === 'result' || message.type === 'error')
                     void this.finish(message.payload).catch(() =>
                         this.events.emit({ type: 'diagnostic', code: 'STATE_SAVE_FAILED' }),
                     );
             },
             (code, status, pending) => {
+                if (!pending) this.flushActivity();
                 this.events.emit({ type: 'diagnostic', code, pending });
                 const diagnostic = hostDiagnostic(new GraphDiagnosticError(code, 'worker-control'));
                 if (pending) {
@@ -146,6 +165,20 @@ export class GraphMigrationTab extends BaseTab {
         };
         const attached = attachTrpc(panel, context, graphAppRouter, graphCallerFactory);
         this.disposables.push(attached.disposable, this.bridge);
+    }
+    private emitWorker(message: WorkerMessage): void {
+        this.events.emit({
+            type: 'worker',
+            message:
+                this.activeOperation && message.type !== 'hello'
+                    ? { ...message, phase: this.activeOperation }
+                    : message,
+        });
+    }
+    private flushActivity(): void {
+        const messages = this.activitySampler.snapshot();
+        if (this.activeOperation && messages.length)
+            this.events.emit({ type: 'activity-snapshot', phase: this.activeOperation, messages });
     }
     private stop(status: 'paused' | 'cancelled'): void {
         if (!this.activeOperation && !this.bridge.active) return;
@@ -646,6 +679,8 @@ export class GraphMigrationTab extends BaseTab {
         if (!vscode.workspace.isTrusted) throw new Error(l10n.t('Workspace trust is required.'));
         this.activeOperation = operation;
         this.recentActivity = [];
+        this.activitySampler = new ActivitySampler<WorkerMessage>();
+        this.lastHeartbeatAt = Number.NEGATIVE_INFINITY;
         this.pendingStopDiagnostic = undefined;
         this.preparationStop = undefined;
         try {

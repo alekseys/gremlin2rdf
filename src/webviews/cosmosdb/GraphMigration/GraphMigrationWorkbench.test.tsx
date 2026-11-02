@@ -218,7 +218,31 @@ describe('graph workbench boundaries and keyboard access', () => {
                 });
         });
         expect(output.value).toContain('reserved request attempts: 325');
+        expect(output.value).toContain('reserved request attempts: 300');
         expect(output.value.split('\n')).toHaveLength(20);
+        expect(output).toHaveFocus();
+        act(() =>
+            listener({
+                type: 'activity-snapshot',
+                phase: 'source-enumerate',
+                messages: [300, 324, 325].map((attempt, index) => ({
+                    ...frame,
+                    type: 'progress' as const,
+                    sequence: 100 + index,
+                    payload: {
+                        type: 'source-progress',
+                        stage: 'source-enumeration-edge-page',
+                        vertices: 100,
+                        edges: 200,
+                        reservedRequests: attempt,
+                        elapsedMillis: 120000 + index * 1000,
+                    },
+                })),
+            }),
+        );
+        expect(output.value.split('\n')).toHaveLength(3);
+        expect(output.value.split('\n').slice(-2).join(' ')).toContain('reserved request attempts: 324');
+        expect(output.value.split('\n').at(-1)).toContain('reserved request attempts: 325');
         expect(output).toHaveFocus();
         act(() =>
             listener({
@@ -477,7 +501,12 @@ describe('graph workbench boundaries and keyboard access', () => {
             .setup()
             .type(screen.getByRole('spinbutton', { name: 'Maximum reserved request attempts' }), '20');
         await userEvent.setup().clear(screen.getByRole('spinbutton', { name: 'Maximum duration (seconds)' }));
-        await userEvent.setup().type(screen.getByRole('spinbutton', { name: 'Maximum duration (seconds)' }), '10');
+        const duration = screen.getByRole('spinbutton', { name: 'Maximum duration (seconds)' });
+        expect(duration).toHaveAttribute('max', '86400');
+        await userEvent.setup().type(duration, '1800');
+        expect(
+            screen.getByText(/including identity pages and all global\/partition count reconciliation/),
+        ).toBeInTheDocument();
         await userEvent.setup().click(screen.getByRole('checkbox', { name: /I confirm source writes are paused/ }));
         const total = screen.getByRole('textbox', { name: 'Total source RU allowance per run' });
         const rate = screen.getByRole('textbox', { name: 'Migration source pacing (RU/s)' });
@@ -492,7 +521,7 @@ describe('graph workbench boundaries and keyboard access', () => {
         expect(mocks.prepareSource).toHaveBeenCalledWith({
             partitions: ['fixture'],
             maximumRequests: 20,
-            maximumDurationSeconds: 10,
+            maximumDurationSeconds: 1800,
             ruBudget: '120000',
             ruPerSecond: '400',
             confirmStableSource: true,

@@ -49,7 +49,18 @@ public final class Protocol {
                             emit(output, outgoing, "error", message.runId(), message.operationId(), "control", Map.of("code", "OPERATION_MISMATCH")); continue;
                         }
                         if (active[0] != null && message.type().equals("cancel")) active[0].cancel();
-                        if (active[0] != null && message.type().equals("pause")) active[0].pause();
+                        if (active[0] != null && message.type().equals("pause")) {
+                            if(!message.payload().isObject() || message.payload().size()>1
+                                || message.payload().size()==1 && (!message.payload().has("reason")
+                                    || !message.payload().path("reason").isTextual()
+                                    || !message.payload().path("reason").asText().equals("operation-deadline"))) {
+                                emit(output,outgoing,"error",message.runId(),message.operationId(),"control",
+                                    Map.of("code","INVALID_PAUSE_REASON")); continue;
+                            }
+                            if(message.payload().path("reason").asText().equals("operation-deadline"))
+                                active[0].pauseForDeadline();
+                            else active[0].pause();
+                        }
                         emit(output, outgoing, "status", message.runId(), message.operationId(), "control",
                             Map.of("active", active[0] != null, "acknowledged", message.type()));
                         continue;
@@ -70,7 +81,7 @@ public final class Protocol {
                                     message.payload().path("operation").asText(),
                                     Map.of("activity","worker-active","elapsedMillis",(System.nanoTime()-operationStarted)/1000000));
                             }
-                        },0,2,TimeUnit.SECONDS);
+                        },0,10,TimeUnit.SECONDS);
                         try {
                             String command = message.payload().path("operation").asText();
                             emit(output,outgoing,"progress",message.runId(),message.operationId(),command,

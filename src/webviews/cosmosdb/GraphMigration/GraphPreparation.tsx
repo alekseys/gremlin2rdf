@@ -64,7 +64,7 @@ export function GraphPreparation({
         Number(requests) <= 100000 &&
         Number.isInteger(Number(seconds)) &&
         Number(seconds) >= 10 &&
-        Number(seconds) <= 600 &&
+        Number(seconds) <= 86400 &&
         stable;
     return (
         <section aria-label={l10n.t('Guided read-only Prepare')}>
@@ -147,12 +147,18 @@ export function GraphPreparation({
                             disabled={disabled}
                         />
                     </Field>
-                    <Field label={l10n.t('Maximum duration (seconds)')} required>
+                    <Field
+                        label={l10n.t('Maximum duration (seconds)')}
+                        required
+                        hint={l10n.t(
+                            'Review 10-86400 seconds for a new run, including identity pages and all global/partition count reconciliation. The worker stops at this duration, even if identities have already been read. Existing runs keep their original deadline; increasing duration does not increase total RU or request allowances.',
+                        )}
+                    >
                         <Input
                             aria-required={true}
                             type="number"
                             min={10}
-                            max={600}
+                            max={86400}
                             value={seconds}
                             onChange={(_, d) => setSeconds(d.value)}
                             disabled={disabled}

@@ -347,6 +347,7 @@ export function GraphMigrationWorkbench() {
     const [activity, setActivity] = useState<Record<string, string[]>>({});
     const [workerElapsed, setWorkerElapsed] = useState<Record<string, number>>({});
     const activityRun = useRef<string | undefined>(undefined);
+    const activityAttempt = useRef<Record<string, string>>({});
     const [evidencePath, setEvidencePath] = useState('');
     const [evidencePhase, setEvidencePhase] = useState<GraphEvidencePhase>('application-build');
     const applyProject = useCallback((value: GraphProject | null) => {
@@ -354,6 +355,7 @@ export function GraphMigrationWorkbench() {
             setActivity({});
             setWorkerElapsed({});
             activityRun.current = value?.runId;
+            activityAttempt.current = {};
         }
         setProject(value);
         setConfiguration(value ? JSON.stringify(value, null, 2) : '');
@@ -393,7 +395,7 @@ export function GraphMigrationWorkbench() {
         if (!busy) return;
         const started = Date.now();
         setElapsedSeconds(0);
-        const timer = setInterval(() => setElapsedSeconds(Math.floor((Date.now() - started) / 1000)), 1000);
+        const timer = setInterval(() => setElapsedSeconds(Math.floor((Date.now() - started) / 1000)), 10000);
         return () => clearInterval(timer);
     }, [busy]);
     useEffect(() => {
@@ -405,6 +407,12 @@ export function GraphMigrationWorkbench() {
                     setCurrentInputHash(event.currentInputHash);
                     setDiagnostic('');
                     announce(l10n.t('Graph project state updated.'));
+                } else if (event.type === 'activity-snapshot') {
+                    const lines = event.messages.slice(0, 20).flatMap((message) => {
+                        const text = activityText(message.payload);
+                        return text ? [text] : [];
+                    });
+                    setActivity((current) => ({ ...current, [event.phase]: lines }));
                 } else if (event.type === 'diagnostic') {
                     setDiagnostic(
                         formatDiagnostic(hostDiagnostic(new GraphDiagnosticError(event.code, 'worker-control'))),
@@ -418,10 +426,13 @@ export function GraphMigrationWorkbench() {
                     const phase = event.message.phase;
                     const text = activityText(payload);
                     if (text) {
-                        setActivity((current) => ({
-                            ...current,
-                            [phase]: [...(current[phase] ?? []), text].slice(-20),
-                        }));
+                        const sameAttempt = activityAttempt.current[phase] === event.message.operationId;
+                        activityAttempt.current[phase] = event.message.operationId;
+                        setActivity((current) => {
+                            const lines = [...(sameAttempt ? (current[phase] ?? []) : []), text];
+                            if (lines.length > 20) lines.splice(1, lines.length - 20);
+                            return { ...current, [phase]: lines };
+                        });
                         setProgress(text);
                     }
                     if (
@@ -442,14 +453,6 @@ export function GraphMigrationWorkbench() {
                     );
                 } else if (event.message.type === 'result' || event.message.type === 'error') {
                     setProgress(l10n.t('Worker operation finished. Review the phase status and evidence.'));
-                    const phase = event.message.phase;
-                    setActivity((current) => ({
-                        ...current,
-                        [phase]: [
-                            ...(current[phase] ?? []),
-                            l10n.t('Worker returned. Review this step status, reason and evidence before continuing.'),
-                        ].slice(-20),
-                    }));
                     const details = safeDiagnostics(event.message.payload);
                     if (details.length) setDiagnostic(details.map(formatDiagnostic).join('\n'));
                 }

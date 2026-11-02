@@ -122,6 +122,86 @@ async function complete(payload: WorkerMessage['payload']) {
 }
 
 describe('persisted graph editor workflow', () => {
+    it('forwards first/ten-second summaries and final two observations, not each request, with preserved safe stop evidence', async () => {
+        await context.create();
+        await context.run('mapping', '', '', '');
+        const clock = vi.spyOn(Date, 'now').mockReturnValue(0);
+        const progress = (sequence: number, request = false) => {
+            mocks.message?.({
+                protocolVersion: 1,
+                type: 'progress',
+                runId: 'fixture',
+                operationId: 'owned',
+                sequence,
+                timestamp: '2026-10-31T00:00:00Z',
+                phase: 'mapping',
+                payload: request
+                    ? { type: 'source-request-progress', stage: 'source-request-completed', waitMillis: 0, retries: 0 }
+                    : {
+                          type: 'source-progress',
+                          stage: 'source-enumeration-checkpoint',
+                          vertices: sequence,
+                          edges: 0,
+                          reservedRequests: sequence,
+                          elapsedMillis: sequence * 100,
+                      },
+            });
+        };
+        try {
+            progress(1);
+            for (let i = 2; i < 100; i++) {
+                clock.mockReturnValue(i * 100);
+                progress(i, i % 2 === 0);
+            }
+            let updates = mocks.events.mock.calls.filter(
+                ([event]) => event.type === 'worker' && event.message.type === 'progress',
+            );
+            expect(updates).toHaveLength(1);
+            clock.mockReturnValue(10000);
+            progress(100, true);
+            expect(
+                mocks.events.mock.calls.filter(
+                    ([event]) => event.type === 'worker' && event.message.type === 'progress',
+                ),
+            ).toHaveLength(1);
+            progress(101);
+            clock.mockReturnValue(10001);
+            progress(102);
+            progress(103);
+            expect(
+                mocks.events.mock.calls.filter(
+                    ([event]) => event.type === 'worker' && event.message.type === 'progress',
+                ),
+            ).toHaveLength(2);
+            clock.mockRestore();
+            await complete({
+                status: 'paused',
+                diagnostics: [
+                    {
+                        code: 'OPERATION_DEADLINE',
+                        stage: 'worker-control',
+                        status: 'blocked',
+                        remediation: 'The configured overall operation time limit was reached.',
+                    },
+                ],
+            });
+            updates = mocks.events.mock.calls.filter(
+                ([event]) => event.type === 'worker' && event.message.type === 'progress',
+            );
+            expect(updates.map(([event]) => event.message.sequence)).toEqual([1, 101]);
+            const snapshot = mocks.events.mock.calls.find(([event]) => event.type === 'activity-snapshot')?.[0];
+            expect(snapshot.messages.map((message: WorkerMessage) => message.sequence)).toEqual([1, 101, 102, 103]);
+            const saved = await service.load();
+            const evidence = JSON.parse(
+                await readFile(path.join(await service.root(), saved.phases.mapping.evidence[0]), 'utf8'),
+            );
+            expect(evidence.lastObservedActivity).toHaveLength(4);
+            expect(evidence.lastObservedActivity[0]).toContain('vertices: 1;');
+            expect(evidence.lastObservedActivity.slice(-2).join(' ')).toContain('vertices: 103;');
+        } finally {
+            clock.mockRestore();
+        }
+    });
     it('adds honest recovery evidence for a legacy paused phase with no recorded stop cause, without inventing a timeout', async () => {
         await context.create();
         const original = await service.load();

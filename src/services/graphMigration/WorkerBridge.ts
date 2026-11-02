@@ -132,7 +132,7 @@ export class WorkerBridge implements vscode.Disposable {
             this.deadlineTimer = setTimeout(() => {
                 if (this.process !== owned || this.terminal) return;
                 this.deadlineReached = true;
-                this.pause();
+                this.pause('operation-deadline');
                 this.onFailure('OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED', 'paused', true);
             }, project.limits.maximumOperationMillis);
             this.deadlineTimer.unref();
@@ -189,25 +189,39 @@ export class WorkerBridge implements vscode.Disposable {
                 }
                 this.send('start', { operation, arguments: arguments_, runId: this.runId, inputHash: this.inputHash });
                 this.started = true;
-                if (this.stopping) this.send(this.stopping === 'paused' ? 'pause' : 'cancel', {});
+                if (this.stopping)
+                    this.send(
+                        this.stopping === 'paused' ? 'pause' : 'cancel',
+                        this.deadlineReached ? { reason: 'operation-deadline' } : {},
+                    );
             } else if (parsed.data.runId !== this.runId || parsed.data.operationId !== this.operationId) {
                 this.failProtocol();
                 return;
             }
             if (this.stopping && (parsed.data.type === 'result' || parsed.data.type === 'error')) {
                 const payload = parsed.data.payload;
-                const code = this.deadlineReached
-                    ? 'OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED'
-                    : this.stopping === 'paused'
-                      ? 'OPERATOR_PAUSED'
-                      : 'OPERATOR_CANCELLED';
+                const code =
+                    this.deadlineReached && this.stopping === 'paused'
+                        ? 'OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED'
+                        : this.stopping === 'paused'
+                          ? 'OPERATOR_PAUSED'
+                          : 'OPERATOR_CANCELLED';
                 this.onMessage({
                     ...parsed.data,
                     payload: {
                         ...(payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {}),
                         status: this.stopping,
                         diagnostics: [
-                            ...safeDiagnostics(payload),
+                            ...safeDiagnostics(payload).filter(
+                                (diagnostic) =>
+                                    diagnostic.code !== code &&
+                                    (!this.deadlineReached ||
+                                        ![
+                                            'OPERATOR_PAUSED',
+                                            'OPERATION_DEADLINE',
+                                            'OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED',
+                                        ].includes(diagnostic.code)),
+                            ),
                             hostDiagnostic(new GraphDiagnosticError(code, 'worker-control')),
                         ],
                     },
@@ -276,14 +290,16 @@ export class WorkerBridge implements vscode.Disposable {
     }
     cancel(): void {
         if (!this.process) return;
+        this.clearDeadlineTimer();
         this.stopping = 'cancelled';
         if (this.started) this.send('cancel', {});
         this.armStopTimer();
     }
-    pause(): void {
+    pause(reason: 'operator' | 'operation-deadline' = 'operator'): void {
         if (!this.process) return;
+        if (reason === 'operator') this.clearDeadlineTimer();
         this.stopping = 'paused';
-        if (this.started) this.send('pause', {});
+        if (this.started) this.send('pause', reason === 'operation-deadline' ? { reason } : {});
         this.armStopTimer();
     }
     dispose(): void {

@@ -126,7 +126,7 @@ Stop any active migration before replacing the extension. Settings and workspace
 For a package with the same version as your installed preview, you can force replacement from PowerShell:
 
 ```powershell
-code --install-extension ".\vscode-cosmosdb-0.39.11.vsix" --force
+code --install-extension ".\vscode-cosmosdb-0.39.12.vsix" --force
 ```
 
 If the CLI prints `DEP0169` after reporting that the extension was successfully installed, installation succeeded.
@@ -226,9 +226,13 @@ by restarting. No budget or authorization gate is bypassed.
 Version 0.39.11 displays activity **inside the step being executed**, including enumeration count/page
 substeps, observed vertex/edge counts, reserved request attempts, saved local checkpoints, reconciliation,
 merge, request/response activity, RU pacing and retry waits. Load retains target-confirmed batch counters.
-Every worker operation emits a two-second elapsed-time heartbeat; this proves worker-process activity,
+Every worker operation emits a ten-second elapsed-time heartbeat; this proves worker-process activity,
 not source response, target confirmation, percentage complete or ETA. A visible current line accompanies
-a keyboard-focusable, bounded last-20-update activity log. No raw stderr, queries, identities, partition
+a keyboard-focusable activity log. Version 0.39.12 shows the first update, at most one meaningful summary
+every ten seconds and the final two actual observations when the worker stops. Ordinary request/response
+chatter does not replace periodic count/stage summaries. History is bounded to 20 lines while retaining
+the first update and recent samples/tail; terminal status and diagnostics are never delayed by sampling.
+No raw stderr, queries, identities, partition
 values, paths, provider messages or credentials are forwarded. Frequent counters are not live-announced;
 phase/status changes remain accessible without moving focus.
 
@@ -250,6 +254,28 @@ Install the current VSIX and reopen the saved project to inspect the existing pa
 live pause cause cannot be reconstructed if it was never saved. For another attempt, use guided Prepare
 and review its duration/request/total-RU/RU-per-second limits. Do not delete journals or increase budgets
 automatically. If an actual overall deadline is observed, review that duration separately from RU controls.
+
+An observed deadline is **not an operator Pause**. Version 0.39.12 carries the host's fixed deadline cause
+into the worker, so a deadline-driven child stop produces `OPERATION_DEADLINE`, not `OPERATOR_PAUSED`.
+The host acknowledgement shows one canonical `OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED` diagnostic.
+An earlier saved report containing both codes is retained unchanged; its explicit deadline observation
+still identifies an expired time allowance, not an exhausted RU/s throughput limit.
+
+Guided Prepare previously capped its duration field at 600 seconds. It now accepts an explicitly reviewed
+**10-86400 seconds** for a **new bounded preparation**, consistent with the existing worker contract.
+This covers identity reading **and global/partition count reconciliation**, not just reading the final edge.
+The host clock begins at process launch; source elapsed time starts later, so a host deadline near a
+597-second source observation is consistent with the former 600-second ceiling. Observed identities are
+not certified complete until reconciliation finishes. Reserved attempts include retry reservations and
+are not the actual request count.
+
+After an observed deadline, reopen the next unfinished **Run**, preserve the old checkpoint/journal, and
+explicitly review a longer duration (for example 1800 seconds), request ceiling, total RU allowance, pacing
+and stable-source assertion before **Start bounded read-only preparation**. This creates a fresh owned run
+and archives the previous project; it does not extend the expired run or guarantee completion within that
+example duration. Known expired-duration results do not offer Resume even if the last checkpoint elapsed
+time is slightly below the source plan ceiling. Other verified resumable runs remain eligible. No limits,
+checkpoint bytes, journal accounting or approvals are automatically increased, reset or relabeled.
 
 Set optional `limits.maximumOperationMillis` between 1,000 and 86,400,000 milliseconds to impose a per-operation
 editor worker deadline. Old projects without this field retain their existing behavior. Changing the budget changes

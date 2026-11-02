@@ -37,6 +37,7 @@ public final class Engine {
     public void requestActivity(SourceRequestActivity value) { requestActivity.accept(value); }
     public void cancel() { cancelled.set(true); }
     public void pause() { paused.set(true); }
+    public void pauseForDeadline() { deadlineExceeded=true;paused.set(true); }
     public boolean stopping() {
         if (System.nanoTime() >= deadlineNanos) { deadlineExceeded = true; paused.set(true); }
         return cancelled.get() || paused.get();

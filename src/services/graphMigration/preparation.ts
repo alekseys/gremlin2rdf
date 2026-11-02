@@ -33,7 +33,7 @@ export const prepareSourceSchema = z
                     v.reduce((size, value) => size + Buffer.byteLength(value, 'utf8'), 0) <= 524288,
             ),
         maximumRequests: z.number().int().min(4).max(100000),
-        maximumDurationSeconds: z.number().int().min(10).max(600),
+        maximumDurationSeconds: z.number().int().min(10).max(86400),
         ruBudget: z
             .string()
             .regex(/^[0-9]+(?:\.[0-9]+)?$/u)
@@ -201,6 +201,19 @@ export async function discoverPreparation(workspace: string, p: GraphProject): P
                 phase.blockers.some((blocker) =>
                     /\bSOURCE_RU_(?:BUDGET_EXHAUSTED|UNOBSERVABLE|ACCOUNTING_REVIEW)\b/u.test(blocker),
                 );
+            const durationBlocked =
+                phase?.inputHash === inputHash(p) &&
+                phase.blockers.some((blocker) =>
+                    /\b(?:OPERATION_DEADLINE(?:_PARTIAL_STATE_PRESERVED)?|SOURCE_ENUMERATION_DURATION_LIMIT)\b/u.test(
+                        blocker,
+                    ),
+                );
+            if (durationBlocked)
+                notices.push(
+                    l10n.t(
+                        'This run reached its reviewed operation/enumeration duration, which includes count reconciliation. Preserve its checkpoint and RU journal. Review a new bounded run with sufficient duration below; Resume does not renew the original time allowance or verify interrupted request charges.',
+                    ),
+                );
             if (accountingBlocked)
                 notices.push(
                     l10n.t(
@@ -209,6 +222,7 @@ export async function discoverPreparation(workspace: string, p: GraphProject): P
                 );
             if (
                 !accountingBlocked &&
+                !durationBlocked &&
                 state.runId === p.runId &&
                 state.inputHash === inputHash(p) &&
                 state.requests < limits.maximumRequests &&

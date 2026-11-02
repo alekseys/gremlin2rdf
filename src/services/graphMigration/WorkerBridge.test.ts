@@ -121,6 +121,21 @@ function bridge() {
     return new WorkerBridge('package', storage(), vi.fn(), vi.fn());
 }
 describe('worker credential isolation', () => {
+    it('does not relabel an actual operator pause as a deadline while waiting for the owned worker to stop', async () => {
+        vi.useFakeTimers();
+        const failure = vi.fn();
+        const worker = new WorkerBridge('package', storage(), vi.fn(), failure);
+        const input = project();
+        input.limits.maximumOperationMillis = 1000;
+        await worker.start(input, 'run', 'synthetic', []);
+        const child = mocks.spawn.mock.results[0].value;
+        worker.pause();
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(failure).not.toHaveBeenCalled();
+        expect(child.kill).not.toHaveBeenCalled();
+        child.emit('close', 0);
+        expect(failure).toHaveBeenCalledWith('WORKER_DISCONNECTED', 'paused');
+    });
     it('enforces the overall deadline and terminates only the owned worker after pause grace', async () => {
         vi.useFakeTimers();
         const failure = vi.fn();
@@ -166,6 +181,12 @@ describe('worker credential isolation', () => {
         );
         const start = JSON.parse(child.stdin.read().toString().trim());
         await vi.advanceTimersByTimeAsync(1000);
+        expect(JSON.parse(child.stdin.read().toString().trim())).toMatchObject({
+            type: 'pause',
+            payload: { reason: 'operation-deadline' },
+            runId: input.runId,
+            operationId: start.operationId,
+        });
         const frame = {
             protocolVersion: 1,
             runId: input.runId,
@@ -191,7 +212,24 @@ describe('worker credential isolation', () => {
                     ...frame,
                     type: 'result',
                     sequence: 2,
-                    payload: { status: 'succeeded', artifact: { relativePath: 'artifacts/report.json' } },
+                    payload: {
+                        status: 'succeeded',
+                        artifact: { relativePath: 'artifacts/report.json' },
+                        diagnostics: [
+                            {
+                                code: 'OPERATOR_PAUSED',
+                                stage: 'worker-control',
+                                status: 'blocked',
+                                remediation: 'The operator requested Pause.',
+                            },
+                            {
+                                code: 'OPERATION_DEADLINE',
+                                stage: 'worker-control',
+                                status: 'blocked',
+                                remediation: 'The configured overall operation time limit was reached.',
+                            },
+                        ],
+                    },
                 }) + '\n',
             ),
         );

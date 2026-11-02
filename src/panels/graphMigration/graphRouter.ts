@@ -68,6 +68,7 @@ export const graphEvidencePhaseSchema = z.enum(graphEvidencePhases);
 export type GraphEvidencePhase = z.infer<typeof graphEvidencePhaseSchema>;
 export type GraphEvent =
     | { type: 'worker'; message: WorkerMessage }
+    | { type: 'activity-snapshot'; phase: string; messages: WorkerMessage[] }
     | { type: 'diagnostic'; code: string; pending?: boolean }
     | { type: 'project'; project: GraphProject; currentInputHash?: string };
 export interface GraphRouterContext extends BaseRouterContext {
