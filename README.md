@@ -10,7 +10,7 @@ not a Microsoft Marketplace release.
 
 ## Install and choose your target
 
-1. Install **`vscode-cosmosdb-0.39.15.vsix`** using VS Code's **Extensions > Install from VSIX**, then reload.
+1. Install **`vscode-cosmosdb-0.39.16.vsix`** using VS Code's **Extensions > Install from VSIX**, then reload.
    Stop active migrations before upgrading; this replaces the extension, not its saved projects.
 2. Open your application's folder as a trusted workspace and enable:
 
@@ -53,6 +53,13 @@ Source writes, cleanup and publication require separate scoped approval.
 Projects stay separate: `.cosmosdb-graph-migration/` for Jena and `.cosmosdb-age-migration/` for AGE.
 Keep their artifacts and checkpoints local. Specific sanitized failures identify the failed substep and remedy;
 connection success alone does not establish source fidelity or live migration readiness.
+
+Version 0.39.16 makes repeated Step 2 review visibly focus the request limit, explains pending VS Code
+confirmation and exposes a read-only connection recheck when earlier evidence is stale. Historical step
+evidence remains checksum-verified and readable after inventory adoption. Readiness checks the actual owned
+extraction filename, rather than assuming `records.ndjson`; missing application/release proof still blocks cutover.
+The [installed-VSIX desktop harness](docs/graph-migration/workbench.md#installed-vsix-end-to-end-test) exercises
+the real workbench and packaged workers against private loopback fixtures, not your operational databases.
 
 For Fuseki, use an existing **dataset URL** such as `http://localhost:3030/ekg`, not just `http://localhost:3030`.
 If the intended dataset is absent, your operator must create or mount it separately; the extension does not.

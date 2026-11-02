@@ -333,7 +333,7 @@ export function GraphMigrationWorkbench() {
     const { announce } = useAnnounce();
     const [project, setProject] = useState<GraphProject | null>(null);
     const [currentInputHash, setCurrentInputHash] = useState<string>();
-    const [enumerationReview, setEnumerationReview] = useState(false);
+    const [enumerationReview, setEnumerationReview] = useState(0);
     const [suggestions, setSuggestions] = useState<SetupSuggestions>();
     const [configuration, setConfiguration] = useState('');
     const [trusted, setTrusted] = useState(false);
@@ -472,7 +472,10 @@ export function GraphMigrationWorkbench() {
         authorizationLabel = l10n.t('Authorize');
     const run = async (operation: GraphOperation) => {
         if (operation === 'source-enumerate') {
-            setEnumerationReview(true);
+            setEnumerationReview((version) => version + 1);
+            announce(
+                l10n.t('Run settings are open. Review the limits and stable-source confirmation before starting.'),
+            );
             return;
         }
         setBusy(true);
@@ -523,7 +526,7 @@ export function GraphMigrationWorkbench() {
             : (phase?.status ?? 'not-started');
     };
     useEffect(() => {
-        setEnumerationReview(false);
+        setEnumerationReview(0);
         if (nextLabel) announce(l10n.t('Next unfinished step: {phase}', { phase: nextLabel }));
     }, [nextOperation, nextLabel, announce]);
     const renderOperation = ([operation, label]: [GraphOperation, string], showActions = true) => {
@@ -626,7 +629,7 @@ export function GraphMigrationWorkbench() {
                             {operation === 'source-enumerate' && enumerationStopped && (
                                 <Button
                                     disabled={disabled}
-                                    onClick={() => setEnumerationReview(true)}
+                                    onClick={() => void action(() => run('source-enumerate'))}
                                     aria-description={l10n.t(
                                         'Review request, duration and RU limits for a new bounded preparation. The stopped run and its evidence remain preserved.',
                                     )}
@@ -728,7 +731,7 @@ export function GraphMigrationWorkbench() {
                         {extractionPrerequisite && <p>{extractionPrerequisite}</p>}
                         {operation === 'source-enumerate' &&
                             (operation === nextPhase?.[0] || enumerationStopped) &&
-                            (enumerationReview || enumerationRequestLimited) &&
+                            (enumerationReview > 0 || enumerationRequestLimited) &&
                             project && (
                                 <GraphPreparation
                                     key={`${project.runId}-${currentInputHash}`}
@@ -736,6 +739,10 @@ export function GraphMigrationWorkbench() {
                                     currentInputHash={currentInputHash}
                                     disabled={disabled}
                                     executionDisabled={phaseDisabled}
+                                    reviewVersion={enumerationReview}
+                                    checkConnections={
+                                        nextOperation === 'preflight' ? () => run('preflight') : undefined
+                                    }
                                     action={action}
                                     run={run}
                                     enumerationOnly

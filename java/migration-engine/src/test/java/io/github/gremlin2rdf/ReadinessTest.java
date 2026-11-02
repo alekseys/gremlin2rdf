@@ -8,6 +8,56 @@ import org.junit.jupiter.api.io.TempDir;
 
 class ReadinessTest {
     @TempDir Path root;
+    @Test void structuralEvidenceUsesTheOwnedRunSpecificExtractionInsteadOfALiteralDefaultFile() throws Exception {
+        var source=root.resolve("records-readiness.ndjson");
+        Files.writeString(source,"verified-fixture-bytes");
+        var result=new HashMap<String,Object>();
+        result.put("status","succeeded");result.put("sourceHash",SafeFiles.fileHash(source));
+        result.put("mismatchedRecords",0);result.put("unresolvedEndpoints",0);
+        result.put("graphContentExact",true);result.put("derivedConsistent",true);result.put("shaclConforms",true);
+        var original=attach(evidence("validate",result),source);
+        var phases=new HashMap<>(original.phases());
+        phases.put("extract",new Project.Phase("succeeded",List.of(),List.of("records-readiness.ndjson"),original.inputHash()));
+        var project=new Project(original.schemaVersion(),original.migrationKind(),original.baselineRepositorySha(),original.runId(),
+            original.protocolVersion(),original.workerVersion(),original.mapping(),original.source(),original.target(),original.limits(),
+            original.consistency(),phases,original.approvals(),original.applicationHashes(),original.artifacts());
+        var readiness=Readiness.build(project,root);
+        assertEquals("succeeded",readiness.gates().get("structural").status());
+        assertEquals("blocked",readiness.status());
+        assertFalse(readiness.diagnostics().isEmpty());
+        for (var phase : List.of(
+            new Project.Phase("stale", List.of(), List.of("records-readiness.ndjson"), project.inputHash()),
+            new Project.Phase("succeeded", List.of(), List.of("records-readiness.ndjson"), "0".repeat(64)),
+            new Project.Phase("succeeded", List.of(), List.of(), project.inputHash()))) {
+            var changed = new HashMap<>(project.phases());
+            changed.put("extract", phase);
+            var rejected = new Project(project.schemaVersion(), project.migrationKind(), project.baselineRepositorySha(),
+                project.runId(), project.protocolVersion(), project.workerVersion(), project.mapping(), project.source(),
+                project.target(), project.limits(), project.consistency(), changed, project.approvals(),
+                project.applicationHashes(), project.artifacts());
+            assertEquals("stale", Readiness.build(rejected, root).gates().get("structural").status());
+        }
+        var unowned = project.artifacts().stream().map(artifact -> artifact.relativePath().endsWith(".ndjson") ?
+            new Project.Artifact(artifact.relativePath(), artifact.sha256(), "previous-run", true) : artifact).toList();
+        var rejected = new Project(project.schemaVersion(), project.migrationKind(), project.baselineRepositorySha(),
+            project.runId(), project.protocolVersion(), project.workerVersion(), project.mapping(), project.source(),
+            project.target(), project.limits(), project.consistency(), project.phases(), project.approvals(),
+            project.applicationHashes(), unowned);
+        assertEquals("stale", Readiness.build(rejected, root).gates().get("structural").status());
+        Files.writeString(source,"changed");
+        assertEquals("stale",Readiness.build(project,root).gates().get("structural").status());
+        Files.writeString(root.resolve("records.ndjson"),"verified-fixture-bytes");
+        assertEquals("stale",Readiness.build(project,root).gates().get("structural").status());
+        Files.delete(source);
+        assertEquals("stale",Readiness.build(project,root).gates().get("structural").status());
+    }
+    @Test void legacyCliCanonicalFileStillEstablishesCurrentStructuralEvidence() throws Exception {
+        var source=root.resolve("records.ndjson");
+        Files.writeString(source,"legacy-bytes");
+        var project=evidence("validate",Map.of("status","succeeded","sourceHash",SafeFiles.fileHash(source),
+            "mismatchedRecords",0,"unresolvedEndpoints",0,"graphContentExact",true,"derivedConsistent",true,"shaclConforms",true));
+        assertEquals("succeeded",Readiness.build(project,root).gates().get("structural").status());
+    }
     private Project evidence(String phase, Map<String, Object> result) throws Exception {
         var project = RecoveryTest.project("readiness");
         Path file = root.resolve("evidence.json");

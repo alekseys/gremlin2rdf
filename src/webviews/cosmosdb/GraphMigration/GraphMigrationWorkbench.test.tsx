@@ -253,6 +253,44 @@ describe('graph workbench boundaries and keyboard access', () => {
         expect(await screen.findByText(/operation could not complete/)).toBeInTheDocument();
         expect(mocks.prepareSource).not.toHaveBeenCalled();
     });
+    it('focuses already-open review controls and exposes pending host confirmation instead of appearing inert', async () => {
+        const configured = bootstrapProject();
+        configured.source!.ruPerSecond = '400';
+        const hash = inputHash(configured);
+        for (const phase of Object.values(configured.phases)) phase.inputHash = hash;
+        mocks.load.mockResolvedValue({ project: configured, trusted: true, currentInputHash: hash });
+        mocks.preparation.mockResolvedValue({
+            partitions: ['fixture'],
+            origins: [],
+            notices: [],
+            coverage: 'unverified-candidates',
+        });
+        let cancelReview: () => void = () => {};
+        mocks.prepareSource.mockImplementation(
+            () =>
+                new Promise<void>((resolve) => {
+                    cancelReview = resolve;
+                }),
+        );
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        const user = userEvent.setup();
+        const review = await screen.findByRole('button', { name: 'Review run settings' });
+        await user.click(review);
+        const requests = await screen.findByRole('spinbutton', { name: 'Maximum reserved request attempts' });
+        await user.clear(requests);
+        await user.type(requests, '40000');
+        await user.click(review);
+        expect(requests).toHaveFocus();
+        expect(requests).toHaveValue(40000);
+        await user.click(screen.getByRole('checkbox', { name: /I confirm source writes are paused/ }));
+        await user.click(screen.getByRole('button', { name: 'Start bounded read-only preparation' }));
+        expect(
+            await screen.findByText(/Waiting for confirmation in the VS Code dialog outside this panel/),
+        ).toBeInTheDocument();
+        await act(async () => cancelReview());
+        expect(screen.queryByText(/Waiting for confirmation in the VS Code dialog outside this panel/)).toBeNull();
+        expect(screen.getByRole('button', { name: 'Start bounded read-only preparation' })).not.toBeDisabled();
+    });
     it('does not silently restart an expired run with the hidden 120-second default and opens distinct evidence buttons', async () => {
         const configured = bootstrapProject();
         configured.limits.maximumOperationMillis = 120000;

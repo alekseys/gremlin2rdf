@@ -4,12 +4,12 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as vscode from 'vscode';
-import { writeNewArtifact } from '../../services/graphMigration/artifacts';
+import { writeNewArtifact, fileHash } from '../../services/graphMigration/artifacts';
 import { canonicalJson, inputHash, type WorkerMessage } from '../../services/graphMigration/contracts';
 import { type SafeDiagnostic } from '../../services/graphMigration/diagnostics';
 import { GraphProjectService } from '../../services/graphMigration/GraphProjectService';
@@ -132,6 +132,34 @@ async function complete(payload: WorkerMessage['payload']) {
 }
 
 describe('persisted graph editor workflow', () => {
+    it('opens preserved phase evidence from an earlier run only when referenced and checksum-valid', async () => {
+        await context.create();
+        const project = await service.load(),
+            root = await service.root();
+        const file = 'artifacts/preserved-enumeration.json';
+        await mkdir(path.join(root, 'artifacts'), { recursive: true });
+        await writeFile(path.join(root, file), '{"status":"blocked"}');
+        project.artifacts.push({
+            relativePath: file,
+            ownerRunId: 'previous-run',
+            sha256: await fileHash(path.join(root, file)),
+            sensitive: true,
+        });
+        project.phases['source-enumerate'] = {
+            status: 'stale',
+            inputHash: '0'.repeat(64),
+            evidence: [file],
+            blockers: [],
+        };
+        await service.save(project);
+        await context.openArtifact(file);
+        expect(mocks.showTextDocument).toHaveBeenCalledWith(path.join(root, file), { preview: true });
+        await writeFile(path.join(root, file), '{}');
+        await expect(context.openArtifact(file)).rejects.toThrow('integrity');
+        project.phases['source-enumerate'].evidence = [];
+        await service.save(project);
+        await expect(context.openArtifact(file)).rejects.toThrow('not owned');
+    });
     it('persists storage action/attempts and precise worker stage without changing inputs or granting success', async () => {
         await context.create();
         const before = await service.load();

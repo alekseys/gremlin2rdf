@@ -10,7 +10,7 @@ public final class Readiness {
     public record Gate(String status, List<String> evidence, List<String> blockers) {}
     public record Report(int schemaVersion, String status, String readiness, String runId, String inputHash,
                          Map<String, Gate> gates, Map<String, String> applicationGraphs, List<String> cutover,
-                         List<String> rollback, boolean sensitiveArtifact) {}
+                         List<String> rollback, List<Map<String,Object>> diagnostics, boolean sensitiveArtifact) {}
     public static Report build(Project project, Path root) throws IOException {
         Map<String, Gate> gates = new TreeMap<>();
         gates.put("structural", gate(project, root, "validate", result ->
@@ -71,7 +71,11 @@ public final class Readiness {
                 "Do not restart applications or mutate credentials automatically"),
             List.of("Before target-only writes, restore the previous reviewed application configuration",
                 "After target-only writes, require reconciliation; reverse synchronization is not implemented",
-                "Cleanup requires separate approval and verified ownership for each named graph"), true);
+                "Cleanup requires separate approval and verified ownership for each named graph"),
+            gates.entrySet().stream().filter(entry -> !entry.getValue().status().equals("succeeded"))
+                .map(entry -> Diagnostics.report(entry.getValue().status().equals("stale") ?
+                    "READINESS_INPUT_STALE" : "READINESS_EVIDENCE_REQUIRED","readiness-" + entry.getKey().toLowerCase(Locale.ROOT)))
+                .toList(), true);
     }
     private static boolean allSucceeded(JsonNode cases) {
         for (var item : cases) if (!item.path("status").asText().equals("succeeded")) return false;
@@ -150,13 +154,28 @@ public final class Readiness {
                 || !predicate.test(measured))
                 return new Gate("blocked", List.of(reference), List.of("Evidence does not establish the required measurable gate"));
             if ((name.equals("validate") || name.equals("functional")) &&
-                (!Files.isRegularFile(root.resolve("records.ndjson"), LinkOption.NOFOLLOW_LINKS)
-                    || !SafeFiles.fileHash(root.resolve("records.ndjson")).equals(envelope.path("result").path("sourceHash").asText())))
+                !canonicalInputVerified(project,root,envelope.path("result").path("sourceHash").asText()))
                 return new Gate("stale", List.of(reference), List.of("Canonical input changed or is not available for evidence verification"));
             accepted.add(reference);
         }
         return accepted.isEmpty() ? new Gate("blocked", List.of(), List.of("No current owned result envelope establishes this gate"))
             : new Gate("succeeded", List.copyOf(accepted), List.of());
+    }
+    private static boolean canonicalInputVerified(Project project, Path root, String checksum) throws IOException {
+        var extraction = project.phases().get("extract");
+        if (extraction != null) {
+            if (!extraction.status().equals("succeeded") || !project.inputHash().equals(extraction.inputHash())) return false;
+            for (var artifact : project.artifacts()) {
+                if (artifact.ownerRunId().equals(project.runId()) && extraction.evidence().contains(artifact.relativePath())
+                    && artifact.relativePath().endsWith(".ndjson") && artifact.sha256().equals(checksum)) {
+                    var source = SafeFiles.resolve(root, artifact.relativePath());
+                    return Files.isRegularFile(source, LinkOption.NOFOLLOW_LINKS) && SafeFiles.fileHash(source).equals(checksum);
+                }
+            }
+            return false;
+        }
+        var legacy = SafeFiles.resolve(root, "records.ndjson");
+        return Files.isRegularFile(legacy, LinkOption.NOFOLLOW_LINKS) && SafeFiles.fileHash(legacy).equals(checksum);
     }
     private static boolean strictMeasuredTypes(JsonNode result) {
         if (!result.isObject()) return false;

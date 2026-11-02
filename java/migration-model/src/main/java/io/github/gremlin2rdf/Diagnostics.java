@@ -78,6 +78,8 @@ public final class Diagnostics {
         Map.entry("AUTHORIZATION_REQUIRED", "Provide current explicit operation/input/resource-scoped approval. Read-only preparation never enables source writes."),
         Map.entry("PREPARE_DISK_SPACE", "Free sufficient space on the local artifact filesystem before enumeration or extraction."),
         Map.entry("PREPARE_JAVA_VERSION", "Run the extension host with Java 21 or newer."),
+        Map.entry("READINESS_INPUT_STALE", "This readiness gate cannot verify its current input bytes. Preserve evidence and verify the selected owned extraction or application input before regenerating the affected check; do not edit success flags."),
+        Map.entry("READINESS_EVIDENCE_REQUIRED", "This readiness gate lacks current verified execution evidence or required measurements. Review this named gate in the readiness report and run/import its actual evidence. Successful data transfer alone is not production cutover readiness."),
         Map.entry("OPERATION_CAUSE_UNKNOWN", "The cause is not classified. Review the failed substep and safe diagnostic code; do not assume a missing inventory caused an endpoint failure.")
     );
     public static Map<String,Object> report(String code,String stage) {

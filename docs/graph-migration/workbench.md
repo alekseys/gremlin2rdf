@@ -72,6 +72,54 @@ checkpoint, evidence and request journal, and invalidates prior approvals. Editi
 the old run or submits source requests. Resume cannot renew an exhausted allowance. The reviewed limits remain
 bounded; no completion duration or request count is guaranteed.
 
+Version 0.39.16 makes repeated **Review run settings** focus the request ceiling without resetting edited
+fields. If a newly created run invalidated connection evidence, the review form explains the prerequisite and
+offers **Check read-only connections** in place; Start/Resume cannot bypass the check. While the host is asking
+for approval, the panel explicitly identifies the pending VS Code confirmation dialog outside the webview.
+Dismissal returns the controls without creating a run. The extension does not change the user's dialog style.
+
+Preserved phase evidence from an earlier run can be opened read-only after inventory adoption only when the
+phase still references its recorded artifact and the confined non-symlink file matches its SHA-256. This does
+not make old evidence current or grant write permission. Readiness verifies the current succeeded extract
+phase's owned canonical file, including `records-{runId}.ndjson`; legacy CLI runs without an extract phase
+retain `records.ndjson` support. Changed, missing, unowned or stale extraction inputs cannot establish a pass.
+Named safe readiness diagnostics identify missing/stale gates instead of a generic warning.
+
+## Installed-VSIX end-to-end test
+
+On Windows, `npm run graph:test:vsix` installs the current built VSIX into a fresh, isolated VS Code profile
+and runs the actual workbench, tRPC host, pinned Java source worker and Jena sink. It requires the normal
+repository Node/Playwright dependencies, Java 21+, installed VS Code at its default path, the installed Azure
+Resource Groups extension and Python packages pinned in `test/graph-vsix/requirements.txt`. Set
+`GRAPH_E2E_VSIX` to select another built package. This is an explicit desktop integration test, not a default
+unit test or a connection to your saved workspace/profile/accounts.
+
+The harness generates an explicitly trusted temporary workspace, a private verified localhost TLS
+GraphSON fixture and a real transactional loopback Fuseki dataset. It copies extension code only, not user
+accounts or settings. A custom dialog style in this isolated test profile makes the real scoped host
+confirmations automatable; it does not disable trust, skip approvals or modify the user's profile.
+It verifies worker JAR bytes against the installed package. The fixture rejects mutations and unknown
+read templates; it is **not a Cosmos dialect/service simulator or evidence of Azure compatibility**.
+
+The flow executes read-only preflight, a deliberately exhausted 16-attempt preparation, repeated review,
+confirmation cancellation, a separately reviewed 200-attempt retry, retained evidence opening, reconciled
+enumeration/adoption, assessment, strict fidelity, mapping, extraction, explicitly approved private load,
+structural/SHACL validation, golden queries and readiness reporting. The three-vertex/three-edge source
+contains a partition-qualified ID collision, typed/repeated property occurrences with metadata, parallel
+edges, a self-loop and cross-partition endpoints. These fixture ceilings are not recommendations for live graphs.
+
+The compressed WebSocket case exercises the pinned Netty 4.1.72.Final optional
+[jzlib dependency](https://github.com/netty/netty/blob/netty-4.1.72.Final/codec/pom.xml), packaged at the
+[upstream managed version 1.1.3](https://github.com/netty/netty/blob/netty-4.1.72.Final/pom.xml).
+No Gremlin/Netty version override or TLS weakening is involved.
+
+The harness requires passed core migration gates and **blocked** production readiness for unexecuted
+application inventory/build, CRUD failure injection, large load, two-hour soak and dependency-audit proof.
+It never manufactures those reports, authorizes publication or labels the local transfer production-ready.
+Its temporary root contains `verification.json`, screenshots, persisted reports, journals and checkpoints;
+fixture helpers and the isolated Code instance are stopped on exit. Test roots contain private fixture
+certificate/key files; do not publish them as production evidence or credentials.
+
 ## Simplified connection setup
 
 The project page uses source/target connection cards, a numbered sequence overview and status badges with icons.
@@ -166,7 +214,7 @@ Stop any active migration before replacing the extension. Settings and workspace
 For a package with the same version as your installed preview, you can force replacement from PowerShell:
 
 ```powershell
-code --install-extension ".\vscode-cosmosdb-0.39.15.vsix" --force
+code --install-extension ".\vscode-cosmosdb-0.39.16.vsix" --force
 ```
 
 If the CLI prints `DEP0169` after reporting that the extension was successfully installed, installation succeeded.

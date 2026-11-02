@@ -33,23 +33,25 @@ class DeadlineHttpClientTest {
     }
     @Test void streamingBodyCannotOutliveTheConfiguredDeadlineAfterHeaders() throws Exception {
         var executor = Executors.newSingleThreadExecutor();
+        var releaseBody = new CountDownLatch(1);
         var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.setExecutor(executor);
         server.createContext("/", exchange -> {
             try (exchange) {
                 exchange.sendResponseHeaders(200, 0);
                 exchange.getResponseBody().write(1); exchange.getResponseBody().flush();
-                try { Thread.sleep(1000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+                try { releaseBody.await(5, TimeUnit.SECONDS); }
+                catch (InterruptedException e) { Thread.currentThread().interrupt(); }
             }
         });
         server.start();
-        try (var client = new DeadlineHttpClient(300, null, null, 1024)) {
+        try (var client = new DeadlineHttpClient(1000, null, null, 1024)) {
             var response = client.send(HttpRequest.newBuilder(
                 URI.create("http://127.0.0.1:" + server.getAddress().getPort())).build(), HttpResponse.BodyHandlers.ofInputStream());
             long start = System.nanoTime();
             try (var body = response.body()) { assertThrows(IOException.class, body::readAllBytes); }
             assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start) < 2000);
-        } finally { server.stop(0); executor.shutdownNow(); }
+        } finally { releaseBody.countDown(); server.stop(0); executor.shutdownNow(); }
     }
     @Test void unsafeMemorySettingsFailBeforeOpeningAnyEndpoint() {
         assertThrows(IllegalArgumentException.class, () -> new Project.Limits(1001, 1048576, 262144, 1000, 0, 10, 1, 0));

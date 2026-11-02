@@ -23,6 +23,8 @@ export function GraphPreparation({
     run,
     enumerationOnly = false,
     executionDisabled = false,
+    reviewVersion = 0,
+    checkConnections,
 }: {
     project: GraphProject;
     currentInputHash?: string;
@@ -31,9 +33,12 @@ export function GraphPreparation({
     run: (operation: GraphOperation) => Promise<void>;
     enumerationOnly?: boolean;
     executionDisabled?: boolean;
+    reviewVersion?: number;
+    checkConnections?: () => Promise<void>;
 }) {
     const client = useTrpcClient<GraphAppRouter>();
     const reviewButtonRef = useRef<HTMLButtonElement>(null);
+    const requestsRef = useRef<HTMLInputElement>(null);
     const [candidates, setCandidates] = useState<PreparationCandidates>();
     const expired = hasCurrentEnumerationDeadline(project, currentInputHash);
     const requestLimited = hasCurrentEnumerationRequestLimit(project, currentInputHash);
@@ -47,6 +52,9 @@ export function GraphPreparation({
         [rate, setRate] = useState(project.source?.ruPerSecond ?? ''),
         [stable, setStable] = useState(false),
         [starting, setStarting] = useState(false);
+    useEffect(() => {
+        if (reviewVersion > 0) requestsRef.current?.focus();
+    }, [reviewVersion]);
     useEffect(() => {
         if (expired) {
             setSeconds('');
@@ -99,6 +107,32 @@ export function GraphPreparation({
                     'Check connections independently, then build a verified identity inventory without editing project JSON.',
                 )}
             </p>
+            {enumerationOnly && reviewVersion > 0 && (
+                <p>
+                    {l10n.t('Run settings are open. Review the limits and stable-source confirmation before starting.')}
+                </p>
+            )}
+            {starting && enumerationStatus !== 'running' && (
+                <output>
+                    {l10n.t(
+                        'Waiting for confirmation in the VS Code dialog outside this panel. Confirm the displayed budgets to start, or dismiss the dialog to keep the existing run unchanged.',
+                    )}
+                </output>
+            )}
+            {executionDisabled && !disabled && (
+                <>
+                    <p>
+                        {l10n.t(
+                            'Settings can be edited, but starting this run requires the earliest unfinished migration step to pass. If connection evidence became stale after creating the new run, recheck it here; no budgets or checkpoints are reset.',
+                        )}
+                    </p>
+                    {checkConnections && (
+                        <Button onClick={() => void action(checkConnections)}>
+                            {l10n.t('Check read-only connections')}
+                        </Button>
+                    )}
+                </>
+            )}
             {!enumerationOnly && (
                 <>
                     <Button disabled={disabled} onClick={() => void action(() => run('preflight'))}>
@@ -179,6 +213,7 @@ export function GraphPreparation({
                         )}
                     >
                         <Input
+                            ref={requestsRef}
                             aria-required={true}
                             type="number"
                             min={4}

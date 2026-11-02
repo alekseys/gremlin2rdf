@@ -1002,7 +1002,10 @@ export class GraphMigrationTab extends BaseTab {
     private async openArtifact(relativePath: string): Promise<void> {
         const project = await this.service.load();
         const artifact = project.artifacts.find(
-            (a) => a.relativePath === relativePath && a.ownerRunId === project.runId,
+            (a) =>
+                a.relativePath === relativePath &&
+                (a.ownerRunId === project.runId ||
+                    Object.values(project.phases).some((phase) => phase.evidence.includes(relativePath))),
         );
         if (!artifact) throw new Error(l10n.t('The artifact is not owned by this run.'));
         const root = await this.service.root(),

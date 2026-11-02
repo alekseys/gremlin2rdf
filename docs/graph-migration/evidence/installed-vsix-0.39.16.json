@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "scope": "Private loopback fixtures in an isolated real VS Code profile; not an operational Cosmos graph or production cutover",
+  "version": "0.39.16",
+  "baselineCommit": "803dd91f8d89f41989e546ef2b83dd3d51b66ac8",
+  "package": {
+    "file": "vscode-cosmosdb-0.39.16.vsix",
+    "bytes": 112995961,
+    "sha256": "91b692076fd024c01c05b87f5a011fd189bc01019fc0e46ba7b6c4b51407e9c9",
+    "zipAndNestedJarCrcVerified": true,
+    "workerManifestChecksumsVerified": true
+  },
+  "execution": {
+    "command": "npm run graph:test:vsix",
+    "exitCode": 0,
+    "coreMigration": "succeeded",
+    "productionReadiness": "blocked",
+    "pageErrors": 0,
+    "source": {
+      "transport": "Verified TLS GraphSON v2 WebSocket with negotiated compression",
+      "driver": "3.4.13",
+      "vertices": 3,
+      "edges": 3,
+      "requests": 211,
+      "requestCharge": 211,
+      "compressedConnections": 8,
+      "rejectedTemplates": 0
+    },
+    "target": "Real Jena 6.2.0 transactional in-memory loopback Fuseki dataset",
+    "verifiedControls": [
+      "Actual read-only connection check without seeded success evidence",
+      "Deliberate 16-reserved-attempt exhaustion produces owned blocked evidence",
+      "Repeated Review focuses request input without resetting edited limits",
+      "Pending host confirmation is visible in the panel",
+      "Cancelling confirmation preserves the existing run and edited settings",
+      "Stopped Step 2 exposes its required read-only connection recheck",
+      "Separately reviewed 200-attempt retry preserves prior stopped evidence",
+      "Reconciled identity inventory adoption",
+      "Historical phase Evidence opens after adoption with exact checksum verification",
+      "Scoped target-write approval is executed through the actual host dialog"
+    ],
+    "passedOperations": [
+      "preflight",
+      "source-enumerate and verified inventory adoption",
+      "assess",
+      "source-compatibility",
+      "mapping",
+      "extract",
+      "load",
+      "validate",
+      "functional"
+    ],
+    "readiness": {
+      "passed": ["structural", "queries", "sourceCompatibility"],
+      "blockedMissingEvidence": ["application", "applicationInputs", "crud", "load", "soak", "dependencies"],
+      "publicationAuthorized": false,
+      "explanation": "The isolated transfer is not application equivalence, CRUD failure-injection, 100000-vertex/1000000-edge load, two-hour soak, dependency-audit or live Cosmos evidence."
+    },
+    "preservation": "All recorded artifact bytes match their saved SHA-256; old stopped evidence and enumeration checkpoint/journal remain preserved."
+  },
+  "validation": {
+    "localizationKeys": 2423,
+    "formatExitCode": 0,
+    "fullLintExitCode": 0,
+    "typeScriptBuildTargets": 3,
+    "typeScriptBuildExitCode": 0,
+    "vitest": { "filesPassed": 256, "testsPassed": 6033, "testsSkipped": 5, "exitCode": 0 },
+    "relationalSkill": { "testsPassed": 434, "testsSkipped": 2, "exitCode": 0 },
+    "java": { "testsPassed": 149, "testsSkipped": 0, "exitCode": 0 },
+    "packagedOfflineSmoke": { "testsPassed": 1, "exitCode": 0 },
+    "independentAgeTranslationExitCode": 0,
+    "ageUiAndRepositoryTemplateUnchanged": true,
+    "agePublishedExecutableSha256": "7d4a769c1538a075bd2db4562535604f54e2eba76e5303415664602f125e4552"
+  },
+  "diagnosedDefects": [
+    "Idempotently reopening already-visible Step 2 review provided no observable focus feedback",
+    "Earlier stale prerequisite could disable preparation execution without an in-place explanation/recheck",
+    "Host confirmation occurs outside the webview and was not explicitly identified there",
+    "Opening retained evidence incorrectly required current-run ownership after inventory adoption",
+    "Readiness incorrectly assumed records.ndjson instead of the current owned extraction filename",
+    "Negotiated nondefault WebSocket compression lacked pinned optional jzlib runtime classes"
+  ],
+  "limits": [
+    "The user's exact inert-button cause was not proven; genuine packaged controls were exercised and observable defects corrected.",
+    "The GraphSON fixture accepts only explicitly recognized bounded templates and does not prove Cosmos dialect/service compatibility.",
+    "No operational source, user credentials, production target, deployed TDB2 files, source mutations or publication were accessed.",
+    "No live, large-load, soak, application or release evidence is manufactured."
+  ]
+}
