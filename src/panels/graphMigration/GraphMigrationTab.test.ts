@@ -140,6 +140,53 @@ async function complete(payload: WorkerMessage['payload']) {
 }
 
 describe('persisted graph editor workflow', () => {
+    it('dispatches an explicitly selected document source to its packaged SDK without a Gremlin fallback on failure', async () => {
+        await context.create();
+        await context.saveSetup({
+            sourceMode: 'cosmos-documents',
+            documentEndpoint: 'https://fixture.documents.azure.com/',
+            documentProfile: 'property-bags-v1',
+            documentFidelity: 'strict',
+            host: '',
+            database: 'db',
+            container: 'graph',
+            partitionKeyPath: '/pk',
+            datasetUrl: 'http://localhost:3030/graph',
+            consistency: 'immutable',
+        });
+        await context.run('preflight', '', '', '');
+        expect(mocks.start).toHaveBeenCalledWith(
+            expect.objectContaining({ source: expect.objectContaining({ sourceMode: 'cosmos-documents' }) }),
+            expect.any(String),
+            'preflight',
+            expect.arrayContaining([
+                path.join(
+                    'test-extension',
+                    'resources',
+                    'graph-migration',
+                    'document-source',
+                    'win-x64',
+                    'DocumentSource.exe',
+                ),
+            ]),
+        );
+        await complete({
+            status: 'blocked',
+            diagnostics: [
+                {
+                    status: 'blocked',
+                    code: 'ENDPOINT_AUTHORIZATION',
+                    stage: 'source-document-feed',
+                    remediation: 'No access. Explicit mode switch is required to try Gremlin.',
+                },
+            ],
+        });
+        expect(mocks.start).toHaveBeenCalledTimes(1);
+        const stopped = await service.load();
+        expect(stopped.source?.sourceMode).toBe('cosmos-documents');
+        expect(stopped.phases.preflight.status).toBe('blocked');
+        expect(stopped.phases.preflight.blockers.join(' ')).toContain('ENDPOINT_AUTHORIZATION');
+    });
     it('does not certify a terminal success if owned shutdown subsequently fails', async () => {
         await context.create();
         await context.run('mapping', '', '', '');

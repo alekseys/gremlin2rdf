@@ -5,7 +5,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, expect, it } from 'vitest';
@@ -64,6 +64,106 @@ function project() {
         artifacts: [],
     });
 }
+it('switches modes only explicitly and archives the prior run without touching its complete inventory or journals', async () => {
+    const run = await new GraphProjectService(root).root();
+    const form = {
+        host: 'account.gremlin.cosmos.azure.com',
+        database: 'db',
+        container: 'graph',
+        partitionKeyPath: '/pk',
+        datasetUrl: 'http://localhost:3030/graph',
+        consistency: 'immutable' as const,
+    };
+    const legacy = await applySetup(project(), form, run);
+    const inventory =
+        Array.from({ length: 3917 }, (_, index) =>
+            JSON.stringify({
+                schemaVersion: 1,
+                kind: 'vertex',
+                partition: { type: 'string', lexical: 'p' },
+                id: { type: 'string', lexical: String(index) },
+                ownerId: null,
+                edgeScope: null,
+            }),
+        ).join('\n') + '\n';
+    await writeFile(path.join(run, legacy.source!.identityManifest), inventory);
+    legacy.source!.identityManifestHash = createHash('sha256').update(inventory).digest('hex');
+    await writeFile(path.join(run, `source-requests-${legacy.runId}.json`), 'preserved-accounting');
+    const before = JSON.stringify(legacy);
+    const changed = await applySetup(
+        legacy,
+        {
+            ...form,
+            sourceMode: 'cosmos-documents',
+            documentEndpoint: 'https://account.documents.azure.com:443/',
+            documentProfile: 'property-bags-v1',
+        },
+        run,
+    );
+    expect(changed.runId).not.toBe(legacy.runId);
+    expect(changed.source?.identityManifest).toBe(legacy.source?.identityManifest);
+    expect(changed.source?.identityManifestHash).toBe(legacy.source?.identityManifestHash);
+    expect(changed.source?.sourceMode).toBe('cosmos-documents');
+    expect(changed.source?.host).toBe(legacy.source?.host);
+    expect(changed.approvals).toEqual([]);
+    expect(changed.phases['source-compatibility']?.status).not.toBe('succeeded');
+    expect(inputHash(changed)).not.toBe(inputHash(legacy));
+    expect(JSON.stringify(legacy)).toBe(before);
+    expect(await readFile(path.join(run, legacy.source!.identityManifest), 'utf8')).toBe(inventory);
+    expect(await readFile(path.join(run, `source-requests-${legacy.runId}.json`), 'utf8')).toBe('preserved-accounting');
+    const archive = (await readdir(path.join(run, 'artifacts'))).find((file) =>
+        file.startsWith(`source-mode-run-${legacy.runId}-`),
+    );
+    expect(JSON.parse(await readFile(path.join(run, 'artifacts', archive!), 'utf8'))).toEqual(legacy);
+    const prepared = await freshPreparation(changed, run, {
+        partitions: [],
+        maximumRequests: 20,
+        maximumDurationSeconds: 120,
+        ruBudget: '1000',
+        confirmStableSource: true,
+    });
+    expect(JSON.parse(await readFile(path.join(run, prepared.plan), 'utf8'))).toMatchObject({
+        partitions: [],
+    });
+    await expect(
+        freshPreparation(legacy, run, {
+            partitions: [],
+            maximumRequests: 20,
+            maximumDurationSeconds: 120,
+            ruBudget: '1000',
+            confirmStableSource: true,
+        }),
+    ).rejects.toThrow('Explicit candidate partitions');
+});
+it('requires an explicit credential-free document endpoint and profile instead of deriving or falling back to Gremlin', async () => {
+    const run = await new GraphProjectService(root).root();
+    const form = {
+        host: '',
+        database: 'db',
+        container: 'graph',
+        partitionKeyPath: '/pk',
+        datasetUrl: '',
+        consistency: 'immutable' as const,
+        sourceMode: 'cosmos-documents' as const,
+        documentProfile: 'flat-v1' as const,
+    };
+    await expect(applySetup(project(), form, run)).rejects.toThrow('explicit Cosmos DB');
+    for (const endpoint of [
+        'https://account.documents.azure.com/?key=private',
+        'https://user:private@account.documents.azure.com/',
+        'https://account.documents.azure.com/dbs/db',
+        'https://account.documents.azure.com/#private',
+    ])
+        await expect(applySetup(project(), { ...form, documentEndpoint: endpoint }, run)).rejects.toThrow();
+    const configured = await applySetup(
+        project(),
+        { ...form, documentEndpoint: 'https://account.documents.azure.com/' },
+        run,
+    );
+    expect(configured.source?.sourceMode).toBe('cosmos-documents');
+    expect(configured.source?.host).toBe('account.documents.azure.com');
+    expect(configured.source?.documentProfile).toBe('flat-v1');
+});
 it('infers recognized nonsecret settings and keeps conflicting endpoints unresolved', async () => {
     await writeFile(
         path.join(root, '.env'),
@@ -122,6 +222,12 @@ it('does not offer Resume over an unacknowledged enumeration checkpoint and pres
         plan: prepared.plan,
         output: prepared.output,
     });
+    await writeFile(
+        path.join(output, 'checkpoint.json'),
+        JSON.stringify({ ...JSON.parse(checkpoint), inFlight: true }),
+    );
+    expect((await discoverPreparation(root, prepared.project)).resume).toBeUndefined();
+    await writeFile(path.join(output, 'checkpoint.json'), checkpoint);
     prepared.project.phases['source-enumerate'] = {
         status: 'blocked',
         inputHash: inputHash(prepared.project),

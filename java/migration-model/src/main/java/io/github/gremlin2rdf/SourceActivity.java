@@ -10,7 +10,8 @@ public record SourceActivity(String type, String stage, long vertices, long edge
             "source-enumeration-edge-page", "source-enumeration-global-vertex-count",
             "source-enumeration-global-edge-count", "source-enumeration-partition-vertex-count",
             "source-enumeration-partition-edge-count", "source-enumeration-checkpoint",
-            "source-enumeration-reconciliation", "source-enumeration-merge").contains(stage)
+            "source-enumeration-reconciliation", "source-enumeration-merge",
+            "source-document-page","source-document-checkpoint","source-document-reconciliation").contains(stage)
             || vertices < 0 || edges < 0 || reservedRequests < 0 || elapsedMillis < 0)
             throw new IllegalArgumentException("Invalid safe source activity");
     }

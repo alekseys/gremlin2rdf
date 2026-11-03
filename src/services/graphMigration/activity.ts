@@ -38,6 +38,9 @@ const sourceStages = z.enum([
     'source-enumeration-checkpoint',
     'source-enumeration-reconciliation',
     'source-enumeration-merge',
+    'source-document-page',
+    'source-document-checkpoint',
+    'source-document-reconciliation',
 ]);
 export const sourceActivitySchema = z
     .object({
@@ -102,6 +105,11 @@ export function activityText(payload: unknown): string | undefined {
             'source-enumeration-checkpoint': l10n.t('Saved local enumeration checkpoint (coverage not yet verified)'),
             'source-enumeration-reconciliation': l10n.t('Reconciling source counts and coverage'),
             'source-enumeration-merge': l10n.t('Merging verified identity pages'),
+            'source-document-page': l10n.t('Read a bounded .NET SDK document-feed page (coverage not yet verified)'),
+            'source-document-checkpoint': l10n.t(
+                'Preserved raw documents and feed continuation (coverage not yet verified)',
+            ),
+            'source-document-reconciliation': l10n.t('Reconciling document-feed identities and counts'),
         };
         return l10n.t(
             '{stage}. Enumerated vertices: {vertices}; edges: {edges}; reserved request attempts: {requests}; elapsed: {seconds} seconds.',

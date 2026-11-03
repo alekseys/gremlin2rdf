@@ -39,6 +39,30 @@ public final class SourceCompatibility {
             throw new Diagnostics.Failure("SOURCE_EVIDENCE_CONTENT","source-compatibility-schema");
         if (!envelope.path("runId").asText().equals(project.runId()) || !envelope.path("inputHash").asText().equals(project.inputHash()))
             throw new Diagnostics.Failure("SOURCE_EVIDENCE_CONTENT","source-compatibility-run-input");
+        if ("cosmos-documents".equals(project.source().sourceMode())) {
+            if (!envelope.path("operation").asText().equals("source-compatibility") ||
+                !envelope.path("status").asText().equals("succeeded") ||
+                !result.path("status").asText().equals("succeeded") ||
+                !result.path("adapter").asText().equals("cosmos-dotnet-documents") ||
+                !result.path("sdkVersion").asText().equals("3.58.0") ||
+                !result.path("storageProfile").asText().equals(project.source().documentProfile()) ||
+                !result.path("sourceManifestHash").asText().equals(project.source().identityManifestHash()) ||
+                !yes(result,"sourceCountsReconciled") ||
+                !result.path("gremlinSemanticCompatibility").asText().equals("not-established") ||
+                !Set.of("complete","reduced").contains(result.path("documentFidelity").asText()) ||
+                !result.path("unobservable").isArray() ||
+                result.path("documentFidelity").asText().equals("complete") && !result.path("unobservable").isEmpty() ||
+                !result.path("observedVertices").isIntegralNumber() || result.path("observedVertices").asLong(-1)<0 ||
+                !result.path("observedEdges").isIntegralNumber() || result.path("observedEdges").asLong(-1)<0 ||
+                !result.path("rawSnapshotHash").asText().matches("[a-f0-9]{64}") ||
+                !result.path("canonicalSha256").asText().matches("[a-f0-9]{64}") ||
+                project.mapping().fidelity().equals("strict") && !result.path("documentFidelity").asText().equals("complete"))
+                throw new Diagnostics.Failure("SOURCE_EVIDENCE_CONTENT","source-document-fidelity");
+            Path canonical=SafeFiles.resolve(root,result.path("canonicalPath").asText());
+            if (!Files.isRegularFile(canonical) || !SafeFiles.fileHash(canonical).equals(result.path("canonicalSha256").asText()))
+                throw new Diagnostics.Failure("SOURCE_EVIDENCE_INTEGRITY","source-document-canonical");
+            return result;
+        }
         if (!result.path("driverVersion").asText().equals("3.4.13") ||
             !result.path("serializer").asText().equals("GraphSONMessageSerializerV2d0"))
             throw new Diagnostics.Failure("SOURCE_EVIDENCE_CONTENT","source-compatibility-driver-serializer");

@@ -21,6 +21,36 @@ class ValidationTest {
         assertThrows(IOException.class, () -> Validation.inventory(counts, "c", 4194304));
         assertFalse(counts.containsKey("c"));
     }
+    @Test void documentTargetChecksAreScopedObservationsNotStrictSourceEquivalence() throws Exception {
+        var strict=RecoveryTest.approved(RecoveryTest.project("document-validation"));
+        Path records=root.resolve("records.ndjson");
+        Synthetic.generate(new Synthetic.Profile(1,42,2,1,1),records);
+        var tree=(com.fasterxml.jackson.databind.node.ObjectNode)Json.MAPPER.valueToTree(strict);
+        ((com.fasterxml.jackson.databind.node.ObjectNode)tree.get("mapping")).put("fidelity","reduced");
+        var reduced=RecoveryTest.approved(Json.MAPPER.treeToValue(tree,Project.class));
+        tree=(com.fasterxml.jackson.databind.node.ObjectNode)Json.MAPPER.valueToTree(reduced);
+        tree.withArray("approvals").add(Json.MAPPER.valueToTree(Approval.sign(reduced,"reduced-fidelity",
+            List.of(reduced.mapping().hash()),java.time.Instant.now().plusSeconds(300).toString(),"env:GRAPH_TEST_APPROVAL_KEY")));
+        reduced=Json.MAPPER.treeToValue(tree,Project.class);
+        try(var sink=new Sink(reduced,RDFConnection.connect(DatasetFactory.createTxnMem()))){
+            new Engine().load(reduced,records,root.resolve("state"),sink,update->{},batch->{});
+            var legacy=Validation.validate(reduced,records,sink);
+            assertEquals("blocked",legacy.status());
+            assertFalse(legacy.strictInputFidelity());
+            var source=tree.putObject("source");
+            source.put("scope","fixture").put("host","localhost").put("port",443).put("database","fixture")
+                .put("container","graph").put("partitionKeyPath","/pk").put("extractionStrategy","verified-identity-manifest")
+                .put("identityManifest","identities.ndjson").put("identityManifestHash","0".repeat(64))
+                .put("sourceMode","cosmos-documents").put("documentEndpoint","https://localhost/")
+                .put("documentProfile","property-bags-v1");
+            var documents=Json.MAPPER.treeToValue(tree,Project.class);
+            var observed=Validation.validate(documents,records,sink);
+            assertEquals("succeeded",observed.status());
+            assertTrue(observed.graphContentExact());
+            assertEquals("observed-document-canonical-only",observed.validationScope());
+            assertFalse(observed.strictInputFidelity());
+        }
+    }
     @Test void atomicInputReplacementCannotProduceAReportForUnvalidatedBytes() throws Exception {
         var project = RecoveryTest.approved(RecoveryTest.project("validation-replacement"));
         var dataset = DatasetFactory.createTxnMem();

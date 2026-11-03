@@ -98,45 +98,51 @@ export function hasCurrentEnumerationRequestLimit(project: GraphProject, current
 export function hostDiagnostic(error: unknown, stage = 'preparation'): SafeDiagnostic {
     const code = error instanceof GraphDiagnosticError ? error.code : 'HOST_PREPARATION_UNKNOWN';
     const remediation =
-        code === 'WORKER_PREVIOUS_STOP_REASON_UNKNOWN'
+        code === 'PROJECT_STATE_REPLACE_BUSY'
             ? l10n.t(
-                  'This earlier run is paused but no stop acknowledgement or report was recorded. Its exact stop reason is unknown; a timeout, operator stop or resource problem is not inferred. Preserve existing checkpoints and request journals. Guided Prepare must verify them before Resume or a newly reviewed bounded run.',
+                  'Local project replacement remained busy after five bounded attempts. Preserve project.json and project.pending; neither is certified as the new saved state. Close viewers or scanners holding this owned file and verify pending-state recovery before another save. No source request or migration success is inferred.',
               )
-            : code === 'OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED' || code === 'OPERATION_DEADLINE'
+            : code === 'WORKER_PREVIOUS_STOP_REASON_UNKNOWN'
               ? l10n.t(
-                    'The configured overall operation time limit was reached; this is not a completed enumeration or migration. Preserved checkpoints and RU journals still require verification. Review the execution duration separately from the total RU, RU/s and enumeration limits before starting another reviewed run; an interrupted request may have unknown spend.',
+                    'This earlier run is paused but no stop acknowledgement or report was recorded. Its exact stop reason is unknown; a timeout, operator stop or resource problem is not inferred. Preserve existing checkpoints and request journals. Guided Prepare must verify them before Resume or a newly reviewed bounded run.',
                 )
-              : code === 'WORKER_TERMINATION_REQUESTED_PARTIAL_STATE_PRESERVED'
+              : code === 'OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED' || code === 'OPERATION_DEADLINE'
                 ? l10n.t(
-                      'The worker did not finish within the five-second stop grace period and termination was requested. Partial artifacts and RU journals are preserved, not certified complete. Verify checkpoint and in-flight request accounting before any retry.',
+                      'The configured overall operation time limit was reached; this is not a completed enumeration or migration. Preserved checkpoints and RU journals still require verification. Review the execution duration separately from the total RU, RU/s and enumeration limits before starting another reviewed run; an interrupted request may have unknown spend.',
                   )
-                : code === 'OPERATOR_PAUSED' || code === 'OPERATOR_CANCELLED'
+                : code === 'WORKER_TERMINATION_REQUESTED_PARTIAL_STATE_PRESERVED'
                   ? l10n.t(
-                        'The operator requested a stop. Partial artifacts and checkpoints are preserved, not certified complete. Guided Prepare offers Resume only when the owned checkpoint, budgets and request journal permit it; unknown in-flight spend requires a newly reviewed run.',
+                        'The worker did not finish within the five-second stop grace period and termination was requested. Partial artifacts and RU journals are preserved, not certified complete. Verify checkpoint and in-flight request accounting before any retry.',
                     )
-                  : code === 'WORKER_DISCONNECTED'
+                  : code === 'OPERATOR_PAUSED' || code === 'OPERATOR_CANCELLED'
                     ? l10n.t(
-                          'The owned worker exited without a valid completion acknowledgement. Partial state is preserved; do not infer success or zero request cost. Verify the owned checkpoints and RU journal before retrying.',
+                          'The operator requested a stop. Partial artifacts and checkpoints are preserved, not certified complete. Guided Prepare offers Resume only when the owned checkpoint, budgets and request journal permit it; unknown in-flight spend requires a newly reviewed run.',
                       )
-                    : code === 'CREDENTIAL_REFERENCE_UNAVAILABLE'
-                      ? l10n.t('Use Store credentials securely for the configured source/target reference, then retry.')
-                      : code === 'WORKER_PACKAGE_INVALID'
+                    : code === 'WORKER_DISCONNECTED'
+                      ? l10n.t(
+                            'The owned worker exited without a valid completion acknowledgement. Partial state is preserved; do not infer success or zero request cost. Verify the owned checkpoints and RU journal before retrying.',
+                        )
+                      : code === 'CREDENTIAL_REFERENCE_UNAVAILABLE'
                         ? l10n.t(
-                              'Reinstall the complete current VSIX or rebuild its pinned workers. Do not replace individual JAR files.',
+                              'Use Store credentials securely for the configured source/target reference, then retry.',
                           )
-                        : code === 'SOURCE_CONFIGURATION_REQUIRED'
-                          ? l10n.t('Save the Gremlin source connection settings first.')
-                          : code === 'SOURCE_INVENTORY_REQUIRED'
-                            ? l10n.t(
-                                  'Complete read-only identity enumeration first. Its prior failure is separate evidence; an empty bootstrap inventory cannot establish source fidelity.',
-                              )
-                            : code === 'SOURCE_COMPATIBILITY_NOT_CURRENT'
+                        : code === 'WORKER_PACKAGE_INVALID'
+                          ? l10n.t(
+                                'Reinstall the complete current VSIX or rebuild its pinned workers. Do not replace individual JAR files.',
+                            )
+                          : code === 'SOURCE_CONFIGURATION_REQUIRED'
+                            ? l10n.t('Save the Gremlin source connection settings first.')
+                            : code === 'SOURCE_INVENTORY_REQUIRED'
                               ? l10n.t(
-                                    'Extraction needs a succeeded source fidelity check for the current inputs. Resolve the enumeration blocker first, then run fidelity. Connection and mapping success do not replace that evidence.',
+                                    'Complete read-only identity enumeration first. Its prior failure is separate evidence; an empty bootstrap inventory cannot establish source fidelity.',
                                 )
-                              : l10n.t(
-                                    'Review the saved configuration, owned artifact paths and confirmed state. The cause is not yet classified; do not assume an inventory problem caused it.',
-                                );
+                              : code === 'SOURCE_COMPATIBILITY_NOT_CURRENT'
+                                ? l10n.t(
+                                      'Extraction needs a succeeded source fidelity check for the current inputs. Resolve the enumeration blocker first, then run fidelity. Connection and mapping success do not replace that evidence.',
+                                  )
+                                : l10n.t(
+                                      'Review the saved configuration, owned artifact paths and confirmed state. The cause is not yet classified; do not assume an inventory problem caused it.',
+                                  );
     return { status: 'blocked', code, stage: error instanceof GraphDiagnosticError ? error.stage : stage, remediation };
 }
 export function hasFidelityInventory(project: GraphProject): boolean {

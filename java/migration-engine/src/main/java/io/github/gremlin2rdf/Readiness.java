@@ -25,6 +25,14 @@ public final class Readiness {
                 && result.path("serializer").asText().equals("GraphSONMessageSerializerV2d0")
                 && result.path("partitionQualifiedLookup").asBoolean() && result.path("propertyFidelity").asBoolean()
                 && result.path("edgeFidelity").asBoolean()));
+        if (project.source()!=null && "cosmos-documents".equals(project.source().sourceMode())) {
+            gates.put("documentFidelity",gate(project,root,"source-compatibility",result ->
+                result.path("adapter").asText().equals("cosmos-dotnet-documents") &&
+                result.path("sourceCountsReconciled").asBoolean() &&
+                Set.of("complete","reduced").contains(result.path("documentFidelity").asText())));
+            gates.put("sourceCompatibility",new Gate("blocked",List.of(),
+                List.of("Document fidelity does not establish Gremlin semantic equivalence; no live comparative benchmark or runtime-type proof is inferred")));
+        }
         try { SourceCompatibility.read(project, root); }
         catch (IOException | IllegalArgumentException e) {
             gates.put("sourceCompatibility", new Gate("blocked", List.of(), List.of("Current owned source compatibility observations are not verified")));

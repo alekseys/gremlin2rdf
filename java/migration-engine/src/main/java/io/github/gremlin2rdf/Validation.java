@@ -28,7 +28,7 @@ public final class Validation {
                          long mismatchedRecords, long unresolvedEndpoints, boolean graphContentExact,
                          boolean derivedConsistent, String consistency, boolean sensitiveArtifact,
                          Map<String, Long> verticesByPartitionAndLabel, Map<String, Long> edgesByPartitionAndLabel,
-                         boolean shaclConforms) {}
+                         boolean shaclConforms,String validationScope,boolean strictInputFidelity) {}
     public static Report validate(Project project, Path source, Sink sink) throws IOException {
         Engine engine = new Engine();
         engine.deadline(project.limits().maximumOperationMillis());
@@ -193,12 +193,15 @@ public final class Validation {
         boolean derivedConsistent = project.mapping().derivedRelationships() ? !sink.connection().queryAsk(derived.asQuery())
             : !sink.connection().queryAsk(derivedEmpty.asQuery());
         boolean strict = project.mapping().fidelity().equals("strict") && !project.consistency().equals("best-effort");
+        boolean documents=project.source()!=null && "cosmos-documents".equals(project.source().sourceMode());
         if (!sourceHash.equals(java.util.HexFormat.of().formatHex(digest.digest()))
             || !sourceHash.equals(SafeFiles.fileHash(source))) throw new InputChanged();
         return new Report(1, project.runId(), project.inputHash(), sourceHash,
-            exact && endpoints == 0 && derivedConsistent && strict && conforms ? "succeeded" : "blocked",
+            exact && endpoints == 0 && derivedConsistent && (strict || documents) && conforms ? "succeeded" : "blocked",
             vertices, edges, properties, meta, mismatch, endpoints, exact, derivedConsistent, project.consistency(), true,
-            Map.copyOf(vertexCounts), Map.copyOf(edgeCounts), conforms);
+            Map.copyOf(vertexCounts), Map.copyOf(edgeCounts), conforms,
+            documents ? "observed-document-canonical-only" : strict ? "strict-canonical-input" : "reduced-input-not-strict",
+            !documents && strict && exact && endpoints==0 && derivedConsistent && conforms);
     }
     private static Shapes shapes(Mapping mapping) throws IOException {
         try (var input = Validation.class.getResourceAsStream("/canonical-v1.shacl.ttl")) {

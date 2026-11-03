@@ -83,6 +83,12 @@ export function GraphConnectionSetup({
         partitionKeyPath: '/pk',
         datasetUrl: '',
         consistency: '',
+        sourceMode: 'cosmos-documents',
+        documentEndpoint: '',
+        documentProfile: 'property-bags-v1',
+        documentFidelity: 'strict',
+        documentRuBudget: '',
+        documentRuPerSecond: '',
     });
     useEffect(() => {
         setValues({
@@ -92,9 +98,15 @@ export function GraphConnectionSetup({
             partitionKeyPath: project.source?.partitionKeyPath ?? suggestions?.values.partitionKeyPath ?? '/pk',
             datasetUrl: project.target?.datasetUrl ?? suggestions?.values.datasetUrl ?? '',
             consistency: project.source && project.consistency !== 'best-effort' ? project.consistency : '',
+            sourceMode: project.source ? (project.source.sourceMode ?? 'gremlin') : 'cosmos-documents',
+            documentEndpoint: project.source?.documentEndpoint ?? suggestions?.values.documentEndpoint ?? '',
+            documentProfile: project.source?.documentProfile ?? 'property-bags-v1',
+            documentFidelity: project.mapping.fidelity,
+            documentRuBudget: project.source?.ruBudget ?? '',
+            documentRuPerSecond: project.source?.ruPerSecond ?? '',
         });
     }, [project, suggestions]);
-    const fields: [keyof Omit<ConnectionSetup, 'consistency'>, string, string][] = [
+    const fields: ['host' | 'database' | 'container' | 'partitionKeyPath' | 'datasetUrl', string, string][] = [
         ['host', l10n.t('Gremlin endpoint'), l10n.t('For example, my-account.gremlin.cosmos.azure.com')],
         ['database', l10n.t('Cosmos DB database'), ''],
         ['container', l10n.t('Gremlin graph (container)'), ''],
@@ -134,8 +146,126 @@ export function GraphConnectionSetup({
                         <CheckmarkCircleRegular aria-hidden={true} />
                         {l10n.t('Required')}
                     </span>
+                    <Field label={l10n.t('Source read mode')} required>
+                        <Select
+                            value={values.sourceMode}
+                            disabled={disabled}
+                            onChange={(_, data) =>
+                                setValues((current) => ({
+                                    ...current,
+                                    sourceMode: data.value === 'cosmos-documents' ? 'cosmos-documents' : 'gremlin',
+                                }))
+                            }
+                        >
+                            <option value="cosmos-documents">
+                                {l10n.t('Cosmos .NET SDK document feed (default)')}
+                            </option>
+                            <option value="gremlin">{l10n.t('Gremlin traversal (explicit secondary mode)')}</option>
+                        </Select>
+                    </Field>
+                    <p className={styles.intro}>
+                        {l10n.t(
+                            'Modes never fall back automatically. Switching modes archives the prior run, preserves its inventory and journals, and requires fresh mode-bound evidence and approvals. Existing legacy runs remain Gremlin until you explicitly switch.',
+                        )}
+                    </p>
+                    {values.sourceMode === 'cosmos-documents' && (
+                        <>
+                            <Field
+                                required
+                                label={l10n.t('Cosmos .NET SDK document endpoint')}
+                                hint={l10n.t(
+                                    'Copy the account .NET SDK URI, for example https://my-account.documents.azure.com:443/. The same stored source key is used; do not enter a key here.',
+                                )}
+                            >
+                                <Input
+                                    value={values.documentEndpoint ?? ''}
+                                    disabled={disabled}
+                                    onChange={(_, data) =>
+                                        setValues((current) => ({ ...current, documentEndpoint: data.value }))
+                                    }
+                                />
+                            </Field>
+                            <Field
+                                required
+                                label={l10n.t('Document storage profile')}
+                                hint={l10n.t(
+                                    'Select the account layout explicitly. Unknown shapes stop; document fidelity is not Gremlin runtime type equivalence. Missing occurrence IDs or numeric type provenance require separately approved reduced fidelity.',
+                                )}
+                            >
+                                <Select
+                                    value={values.documentProfile}
+                                    disabled={disabled}
+                                    onChange={(_, data) =>
+                                        setValues((current) => ({
+                                            ...current,
+                                            documentProfile: data.value === 'flat-v1' ? 'flat-v1' : 'property-bags-v1',
+                                        }))
+                                    }
+                                >
+                                    <option value="property-bags-v1">
+                                        {l10n.t('Vertex property bags with occurrence IDs')}
+                                    </option>
+                                    <option value="flat-v1">{l10n.t('FlatSchema scalar vertex properties')}</option>
+                                </Select>
+                            </Field>
+                            <Field
+                                required
+                                label={l10n.t('Document conversion fidelity')}
+                                hint={l10n.t(
+                                    'Strict blocks any required unobservable occurrence IDs, metadata or numeric runtime types. Reduced preserves observed data and raw documents but cannot establish strict equivalence; saving this selection is not approval. Authorize the current reduced-fidelity scope separately before probing or extraction.',
+                                )}
+                            >
+                                <Select
+                                    value={values.documentFidelity}
+                                    disabled={disabled}
+                                    onChange={(_, data) =>
+                                        setValues((current) => ({
+                                            ...current,
+                                            documentFidelity: data.value === 'strict' ? 'strict' : 'reduced',
+                                        }))
+                                    }
+                                >
+                                    <option value="strict">{l10n.t('Strict (block unobservable fidelity)')}</option>
+                                    <option value="reduced">
+                                        {l10n.t('Reduced (requires separate scoped approval)')}
+                                    </option>
+                                </Select>
+                            </Field>
+                            <Field
+                                label={l10n.t('Document-source total-run RU allowance')}
+                                hint={l10n.t(
+                                    'Set an explicit positive total allowance before document-feed operations. This is not provisioned throughput; changing it invalidates evidence and does not reset an existing journal.',
+                                )}
+                            >
+                                <Input
+                                    value={values.documentRuBudget ?? ''}
+                                    disabled={disabled}
+                                    onChange={(_, data) =>
+                                        setValues((current) => ({ ...current, documentRuBudget: data.value }))
+                                    }
+                                />
+                            </Field>
+                            <Field
+                                label={l10n.t('Document-source pacing (RU/s)')}
+                                hint={l10n.t(
+                                    'Set a separate positive pacing rate. A single request may cost more than one second of this rate. No source throughput or resources are changed.',
+                                )}
+                            >
+                                <Input
+                                    value={values.documentRuPerSecond ?? ''}
+                                    disabled={disabled}
+                                    onChange={(_, data) =>
+                                        setValues((current) => ({ ...current, documentRuPerSecond: data.value }))
+                                    }
+                                />
+                            </Field>
+                        </>
+                    )}
                     {fields
-                        .filter(([key]) => key !== 'datasetUrl')
+                        .filter(
+                            ([key]) =>
+                                key !== 'datasetUrl' && (key !== 'host' || values.sourceMode !== 'cosmos-documents'),
+                        )
                         .map(([key, label, hint]) => (
                             <Field
                                 key={key}

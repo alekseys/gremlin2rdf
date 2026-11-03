@@ -3,6 +3,13 @@
 This experimental fork implements a distinct graph migration kind, `cosmos-gremlin-to-jena`.
 It does not relabel relational project fields or replace the existing migration workflow.
 
+New source configurations default to the explicit [.NET Cosmos document-feed profile](document-source.md);
+mode-less existing projects retain Gremlin until the operator selects a different mode. Version 0.39.18's private
+installed-VSIX document and retained-Gremlin migrations passed through target validation and golden queries.
+The [sanitized receipt](evidence/installed-vsix-0.39.18.json) separates observed document conversion from strict
+equivalence and records the unchanged AccountOverview focus failure in the latest broad unit run.
+This is an experimental offline-verified preview, not live-account or production-release certification.
+
 ## Prerequisites and entry points
 
 Use Java 21 and the pinned Maven Wrapper under `java/`. Build/package with `npm run graph:prepare`.
@@ -43,6 +50,12 @@ using live adapters or the separately approved native source fixture operations.
 typed application access. `cosmos-gremlin-source` runs the pinned 3.4.13 driver in a separate JVM, never on Jena's runtime
 dependency line. `examples-before` and `examples-after` exercise supported application transformations.
 `graph-testkit` creates only private loopback Fuseki/TDB2 processes for actual offline execution and recovery evidence.
+
+New connection forms default to the read-only **Cosmos .NET SDK document feed**; see
+[document-source profiles](document-source.md). Existing projects without an explicit source mode retain their legacy
+Gremlin adapter and hashes. Selecting another mode archives the prior run, keeps its inventory and accounting, and
+requires fresh mode-bound evidence and approvals. An SDK failure never invokes Gremlin automatically. Comparative live
+benchmarks are not automatic or authorized by selecting a mode.
 
 The editor exchanges bounded, versioned NDJSON frames with an owned worker. Large results stay in owned artifacts.
 Checksummed concrete outputs and current input hashes are verified before evidence registration or later approval.

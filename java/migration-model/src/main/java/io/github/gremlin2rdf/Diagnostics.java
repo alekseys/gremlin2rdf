@@ -18,6 +18,8 @@ public final class Diagnostics {
     private static final Map<String,String> REMEDIES = Map.ofEntries(
         Map.entry("CREDENTIAL_REFERENCE_UNAVAILABLE", "Use Store credentials securely for the configured reference, then retry. Do not paste credentials into configuration or artifacts."),
         Map.entry("SOURCE_CONFIGURATION_REQUIRED", "Save the Gremlin hostname, database, container and partition key in the connection form."),
+        Map.entry("SOURCE_DOCUMENT_READ_ONLY", "The .NET document-feed mode supports read-only preparation and extraction only. No Gremlin fallback or source mutation was attempted. Choose Gremlin explicitly in a separate reviewed mode-bound run if its authorized operations are required."),
+        Map.entry("SOURCE_MODE_MISMATCH", "This source adapter does not match the explicitly selected project source mode. Use its packaged adapter or explicitly switch modes in the connection form to create a separate reviewed run. No automatic fallback or continuation reinterpretation was attempted."),
         Map.entry("SOURCE_ENUMERATION_PLAN_MISSING", "The selected local enumeration plan is missing. Use Find partition candidates in guided Prepare and resume preserved preparation when offered, or explicitly review budgets before starting a new bounded preparation. Do not delete checkpoints or create an empty plan."),
         Map.entry("SOURCE_ENUMERATION_PLAN_INVALID", "The selected enumeration plan is malformed or exceeds its supported size/schema/bounds. Preserve it and checkpoints. Select the existing reviewed plan or use guided Prepare to review a separate bounded run; no source request was submitted."),
         Map.entry("INTERNAL_ADAPTER_CONFIGURATION", "The packaged source adapter has an internal driver configuration defect. Install the corrected complete VSIX and reload VS Code; editing inventory or credentials cannot fix cluster construction."),
@@ -50,6 +52,12 @@ public final class Diagnostics {
         Map.entry("SOURCE_EXTRACTION_COUNTS", "Live source counts do not reconcile with the selected inventory or acknowledged snapshot. Preserve progress, verify paused writes/immutable source and review a fresh inventory; do not accept partial coverage."),
         Map.entry("SOURCE_EXTRACTION_DISK", "The artifact filesystem lacks the required free space. Free sufficient local space without removing acknowledged migration state, then resume the same owned inputs."),
         Map.entry("SOURCE_EXTRACTION_RECORD", "A source record or identity/order/fidelity observation failed validation. Preserve the checkpoint and review supported source fidelity; source values are not echoed or approximated."),
+        Map.entry("SOURCE_SYSTEM_METADATA_UNOBSERVABLE", "This fixed system-property read did not return exactly one non-null value. The safe stage identifies the required property, not a local artifact defect. Preserve the successful inventory and request journal; strict fidelity remains blocked. Do not invent metadata, delete the inventory or change file permissions."),
+        Map.entry("SOURCE_SYSTEM_METADATA_INVALID", "The observed system metadata has an unsupported type or disagrees with the observed edge endpoints. The safe stage identifies the failing check; values remain private. Preserve the inventory and request accounting. Strict fidelity cannot silently omit or coerce metadata."),
+        Map.entry("SOURCE_RECORD_CHANGED", "The record ETag changed between the two read-only snapshot checks. Confirm an immutable source or paused application writes before retrying; the mixed-version record was not accepted. The successful identity inventory is preserved."),
+        Map.entry("SOURCE_RECORD_UNSUPPORTED", "The observed property count, projection or typed record cannot satisfy the declared fidelity contract. Review the safe record substep; this is not evidence of corrupt local files. Values are not dropped, stringified or echoed."),
+        Map.entry("SOURCE_RECORD_READ_FAILED", "A source-record read failed without a classified provider cause. The safe substep identifies the request; this does not establish a local artifact or permissions defect. Preserve inventory and request accounting; raw provider messages and source values remain redacted."),
+        Map.entry("SOURCE_RESPONSE_CARDINALITY", "The fixed bounded source traversal returned other than one top-level result. Review its safe request substep; no record or metadata value was accepted. This does not establish local artifact corruption. Request charge remains accounted."),
         Map.entry("SOURCE_REQUEST_JOURNAL", "The RU request journal is unowned, incompatible or corrupt for these inputs. Preserve it and its budgets; review exact run/input ownership before continuing. Do not delete the journal to bypass an exhausted or unobservable ceiling."),
         Map.entry("SOURCE_PARTITION_COVERAGE", "The candidate partitions do not cover live source counts. Add missing live partition values in guided Prepare and re-enumerate; seed candidates alone never prove coverage."),
         Map.entry("SOURCE_COUNTS_CHANGED", "Source counts changed during enumeration. Confirm paused writes or an immutable source and repeat the bounded read-only run; preserve its checkpoint."),
@@ -83,8 +91,9 @@ public final class Diagnostics {
         Map.entry("OPERATION_CAUSE_UNKNOWN", "The cause is not classified. Review the failed substep and safe diagnostic code; do not assume a missing inventory caused an endpoint failure.")
     );
     public static Map<String,Object> report(String code,String stage) {
-        return Map.of("status","blocked","code", REMEDIES.containsKey(code) ? code : "OPERATION_CAUSE_UNKNOWN",
-            "stage",stage,"remediation",REMEDIES.getOrDefault(code,REMEDIES.get("OPERATION_CAUSE_UNKNOWN")));
+        return Map.of("status","blocked","code", REMEDIES.containsKey(code) || DocumentDiagnostics.CODES.contains(code) ? code : "OPERATION_CAUSE_UNKNOWN",
+            "stage",stage,"remediation",REMEDIES.getOrDefault(code,DocumentDiagnostics.CODES.contains(code)
+                ? DocumentDiagnostics.remedy(code) : REMEDIES.get("OPERATION_CAUSE_UNKNOWN")));
     }
     public static Map<String,Object> report(String code,String stage,Integer httpStatus) {
         var result=new TreeMap<>(report(code,stage));
@@ -131,7 +140,7 @@ public final class Diagnostics {
         return report("OPERATION_CAUSE_UNKNOWN",stage);
     }
     public static Failure acknowledged(String code,String stage) {
-        return new Failure(REMEDIES.containsKey(code) ? code : "OPERATION_CAUSE_UNKNOWN",stage);
+        return new Failure(REMEDIES.containsKey(code) || DocumentDiagnostics.CODES.contains(code) ? code : "OPERATION_CAUSE_UNKNOWN",stage);
     }
     public static Failure artifactFailure(java.io.IOException error,String stage) {
         return acknowledged(Json.MAPPER.valueToTree(failure(error,stage)),stage);
@@ -141,7 +150,7 @@ public final class Diagnostics {
         if (!stage.matches("[a-z][a-z0-9-]{0,79}")) stage=fallbackStage;
         String code=diagnostic.path("code").asText();
         var status=diagnostic.path("httpStatus");
-        var failure=new Failure(REMEDIES.containsKey(code) ? code : "OPERATION_CAUSE_UNKNOWN",stage,
+        var failure=new Failure(REMEDIES.containsKey(code) || DocumentDiagnostics.CODES.contains(code) ? code : "OPERATION_CAUSE_UNKNOWN",stage,
             status.isIntegralNumber() && status.canConvertToInt() ? status.intValue() : null);
         var fields=new TreeMap<String,Object>();
         if(Set.of("create-pending","write-pending","flush-pending","atomic-replace").contains(diagnostic.path("artifactAction").asText()))

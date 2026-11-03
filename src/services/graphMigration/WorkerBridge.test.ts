@@ -122,6 +122,52 @@ function bridge() {
     return new WorkerBridge('package', storage(), vi.fn(), vi.fn());
 }
 describe('worker credential isolation', () => {
+    it.runIf(process.platform === 'win32' && process.arch === 'x64')(
+        'verifies every SDK runtime file and never falls back to the Gremlin adapter',
+        async () => {
+            const selected = project();
+            selected.source = {
+                ...selected.source!,
+                sourceMode: 'cosmos-documents',
+                documentEndpoint: 'https://fixture.documents.azure.com/',
+                documentProfile: 'property-bags-v1',
+            };
+            let corrupt = true;
+            const reads: string[] = [];
+            mocks.readFile.mockImplementation(async (name: string) => {
+                reads.push(name);
+                if (name.includes('document-source') && name.endsWith('worker-manifest.json'))
+                    return JSON.stringify({
+                        schemaVersion: 1,
+                        rid: 'win-x64',
+                        executable: 'DocumentSource.exe',
+                        sdkVersion: '3.58.0',
+                        files: {
+                            'DocumentSource.exe': hash,
+                            'Microsoft.Azure.Cosmos.Client.dll': corrupt ? '0'.repeat(64) : hash,
+                        },
+                    });
+                if (name.endsWith('cosmos-gremlin-source-0.1.0.jar'))
+                    throw new Error('Gremlin must not be a document-mode prerequisite');
+                return name.endsWith('worker-manifest.json') ? JSON.stringify({ workerSha256: hash }) : bytes;
+            });
+            mocks.get.mockResolvedValue('private-source-key');
+            const worker = bridge();
+            await expect(worker.start(selected, 'run', 'source-compatibility', [])).rejects.toMatchObject({
+                code: 'WORKER_PACKAGE_INVALID',
+                stage: 'document-source-integrity',
+            });
+            expect(mocks.spawn).not.toHaveBeenCalled();
+            corrupt = false;
+            await worker.start(selected, 'run', 'source-compatibility', []);
+            expect(mocks.spawn).toHaveBeenCalledTimes(1);
+            expect(reads.some((name) => name.endsWith('cosmos-gremlin-source-0.1.0.jar'))).toBe(false);
+            const child = mocks.spawn.mock.results[0].value;
+            child.emit('close', 2);
+            expect(mocks.spawn).toHaveBeenCalledTimes(1);
+            expect(selected.source.sourceMode).toBe('cosmos-documents');
+        },
+    );
     it('waits for the owned process close before allowing completion to expose another Run', async () => {
         const message = vi.fn(),
             failure = vi.fn();

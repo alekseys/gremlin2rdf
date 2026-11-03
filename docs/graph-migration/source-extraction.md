@@ -1,5 +1,9 @@
 # Read-only source extraction and evidence
 
+New connection forms default to the separate [Cosmos .NET document-feed profile](document-source.md).
+The following traversal-specific contracts describe the explicitly selected secondary Gremlin mode and existing legacy
+runs; they are not prerequisites for document-feed preparation. Switching modes never silently reuses continuations.
+
 The isolated `cosmos-gremlin-source` JVM uses the pinned 3.4.13 driver and GraphSON V2.
 It submits only fixed, parameter-bound count and projection scripts. Neither extraction
 nor compatibility probing provisions a container, submits arbitrary code or mutates source records.

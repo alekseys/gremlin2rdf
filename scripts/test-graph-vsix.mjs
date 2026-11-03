@@ -6,8 +6,10 @@ import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { graphProjectSchema, inputHash } from '../src/services/graphMigration/contracts.ts';
+const documents = process.env.GRAPH_E2E_SOURCE_MODE === 'cosmos-documents';
 
 const root = await mkdtemp(path.join(tmpdir(), 'gremlin2rdf-vsix-'));
+console.log(JSON.stringify({ root, sourceMode: documents ? 'cosmos-documents' : 'gremlin', fixtureStage: 'created' }));
 const helpers = [];
 process.on('exit', () => {
     for (const child of helpers) child.kill();
@@ -23,9 +25,13 @@ async function ready(file) {
     }
     throw new Error(`Local fixture failed to start: ${path.basename(file)}`);
 }
-const sourceFixture = spawn('python', ['test\\graph-vsix\\source_fixture.py', root], {
-    stdio: ['pipe', 'pipe', 'pipe'],
-});
+const sourceFixture = spawn(
+    'python',
+    [documents ? 'test\\graph-vsix\\document_fixture.py' : 'test\\graph-vsix\\source_fixture.py', root],
+    {
+        stdio: ['pipe', 'pipe', 'pipe'],
+    },
+);
 helpers.push(sourceFixture);
 let sourceOutput = '';
 sourceFixture.stdout.on('data', (chunk) => {
@@ -103,6 +109,13 @@ const project = graphProjectSchema.parse({
         ruPerSecond: '1000',
         customCaRef: 'env:GRAPH_E2E_CA',
         syntheticTestContainer: false,
+        ...(documents
+            ? {
+                  sourceMode: 'cosmos-documents',
+                  documentEndpoint: `https://localhost:${sourcePort}/`,
+                  documentProfile: 'property-bags-v1',
+              }
+            : {}),
     },
     target: {
         datasetUrl: dataset,
@@ -160,21 +173,31 @@ await writeFile(
     JSON.stringify({ offlineFixture: true, status: 'blocked' }),
 );
 const sourceJar = path.resolve('resources', 'graph-migration', 'cosmos-gremlin-source-0.1.0.jar');
-execFileSync(path.join(jdk, 'bin', 'javac.exe'), ['-cp', sourceJar, '-d', root, 'test\\graph-vsix\\DriverProbe.java'], {
-    timeout: 30000,
-});
-console.log(
+if (!documents) {
     execFileSync(
-        path.join(jdk, 'bin', 'java.exe'),
-        [
-            '-cp',
-            [sourceJar, root].join(path.delimiter),
-            'io.github.gremlin2rdf.source.DriverProbe',
-            path.join(runRoot, 'project.json'),
-        ],
-        { encoding: 'utf8', timeout: 30000, env: { ...process.env, GRAPH_E2E_CA: path.join(root, 'fixture-ca.pem') } },
-    ),
-);
+        path.join(jdk, 'bin', 'javac.exe'),
+        ['-cp', sourceJar, '-d', root, 'test\\graph-vsix\\DriverProbe.java'],
+        {
+            timeout: 30000,
+        },
+    );
+    console.log(
+        execFileSync(
+            path.join(jdk, 'bin', 'java.exe'),
+            [
+                '-cp',
+                [sourceJar, root].join(path.delimiter),
+                'io.github.gremlin2rdf.source.DriverProbe',
+                path.join(runRoot, 'project.json'),
+            ],
+            {
+                encoding: 'utf8',
+                timeout: 30000,
+                env: { ...process.env, GRAPH_E2E_CA: path.join(root, 'fixture-ca.pem') },
+            },
+        ),
+    );
+}
 const code = 'C:\\Program Files\\Microsoft VS Code\\Code.exe';
 const launcher = await readFile('C:\\Program Files\\Microsoft VS Code\\bin\\code.cmd', 'utf8');
 const relativeCli = launcher.match(/"%~dp0([^"]*cli\.js)"/)?.[1];
@@ -221,7 +244,9 @@ const app = await electron.launch({
     env: {
         ...process.env,
         DEBUGTELEMETRY: 'v',
-        GRAPH_E2E_KEY: 'private-generated-fixture-token',
+        GRAPH_E2E_KEY: documents
+            ? Buffer.from('private-generated-fixture-token').toString('base64')
+            : 'private-generated-fixture-token',
         GRAPH_E2E_CA: path.join(root, 'fixture-ca.pem'),
     },
     timeout: 60000,
@@ -233,19 +258,37 @@ try {
     page.setDefaultTimeout(30000);
     page.on('pageerror', (error) => errors.push(error.message));
     await page.locator('.monaco-workbench').waitFor();
-    await page.waitForTimeout(5000);
     const trust = page.getByRole('button', { name: /Yes, I trust/i });
-    if (await trust.count()) await trust.click();
-    if (await page.getByText('Manage', { exact: true }).count()) {
+    const manage = page.getByText('Manage', { exact: true });
+    for (let attempt = 0; attempt < 60 && !(await trust.isVisible()) && !(await manage.isVisible()); attempt++)
+        await page.waitForTimeout(500);
+    if (await trust.isVisible()) await trust.click();
+    else {
+        await manage.waitFor();
         await page.getByText('Manage', { exact: true }).click();
         await page.getByRole('button', { name: 'Trust', exact: true }).click();
-        await page.waitForTimeout(1000);
         const confirmTrust = page.getByRole('button', { name: /Trust Folder & Enable Features/ });
-        if (await confirmTrust.count()) await confirmTrust.click();
-        await page.waitForTimeout(1000);
+        const trustedFolder = page.getByText('You trust this folder', { exact: true });
+        for (
+            let attempt = 0;
+            attempt < 60 && !(await confirmTrust.isVisible()) && !(await trustedFolder.isVisible());
+            attempt++
+        )
+            await page.waitForTimeout(500);
+        if (await confirmTrust.isVisible()) await confirmTrust.click();
+        else await trustedFolder.waitFor();
     }
+    await page
+        .getByText('Restricted Mode is intended for safe code browsing.', { exact: false })
+        .waitFor({ state: 'hidden' });
+    console.log(JSON.stringify({ fixtureStage: 'isolated-workspace-trusted-through-ui' }));
     await page.keyboard.press('Control+Shift+P');
     await page.locator('.quick-input-widget input').fill('>Open Gremlin to RDF Migration');
+    await page
+        .locator('.quick-input-list .monaco-list-row')
+        .filter({ hasText: 'Open Gremlin to RDF Migration' })
+        .first()
+        .waitFor();
     await page.keyboard.press('Enter');
     let webview;
     for (let i = 0; i < 60; i++) {
@@ -265,12 +308,14 @@ try {
     await review.click();
     const requests = webview.getByRole('spinbutton', { name: 'Maximum reserved request attempts' });
     await requests.waitFor({ timeout: 15000 });
-    await requests.fill('16');
+    await requests.fill(documents ? '4' : '16');
     await review.click();
-    assert.equal(await requests.inputValue(), '16', 'Repeated Review must preserve edited settings');
+    assert.equal(await requests.inputValue(), documents ? '4' : '16', 'Repeated Review must preserve edited settings');
     assert.equal(await requests.evaluate((input) => input === input.ownerDocument.activeElement), true);
-    await webview.getByRole('button', { name: 'Find partition candidates' }).click();
-    await webview.getByText('2 candidates found.', { exact: false }).waitFor({ timeout: 10000 });
+    await webview
+        .getByRole('button', { name: documents ? 'Review document-feed preparation' : 'Find partition candidates' })
+        .click();
+    if (!documents) await webview.getByText('2 candidates found.', { exact: false }).waitFor({ timeout: 10000 });
     await webview.getByRole('button', { name: 'Check read-only connections', exact: true }).click();
     await settled('preflight');
     await webview.getByRole('checkbox', { name: /I confirm source writes are paused/ }).check();
@@ -279,7 +324,7 @@ try {
     await start.click();
     await webview.getByText(/Waiting for confirmation in the VS Code dialog outside this panel/).waitFor();
     await page.getByRole('button', { name: 'Cancel', exact: true }).click();
-    assert.equal(await requests.inputValue(), '16', 'Dismissed confirmation must preserve settings');
+    assert.equal(await requests.inputValue(), documents ? '4' : '16', 'Dismissed confirmation must preserve settings');
     await start.click();
     await page.getByRole('button', { name: 'Start bounded read-only preparation', exact: true }).click();
     async function state() {
@@ -292,10 +337,14 @@ try {
         }
         throw new Error('Approved preparation did not create its reviewed run');
     }
-    async function settled(operation, expectedStatus = 'succeeded') {
+    async function settled(operation, expectedStatus = 'succeeded', previousEvidence) {
         for (let i = 0; i < 240; i++) {
             const current = await state();
             const phase = current.phases[operation];
+            if (previousEvidence && phase?.evidence[0] === previousEvidence) {
+                await page.waitForTimeout(500);
+                continue;
+            }
             if (phase && phase.status !== 'running' && phase.status !== 'stale') {
                 if (phase.status !== expectedStatus)
                     throw new Error(`${operation}: ${phase.status} ${phase.blockers.join(' ')}`);
@@ -307,8 +356,13 @@ try {
     }
     await changedRun(project.runId);
     const stopped = await settled('source-enumerate', 'blocked');
+    console.log(JSON.stringify({ fixtureStage: 'reviewed-budget-stop-observed' }));
     assert.ok(
-        stopped.phases['source-enumerate'].blockers.some((value) => value.includes('SOURCE_ENUMERATION_REQUEST_LIMIT')),
+        stopped.phases['source-enumerate'].blockers.some(
+            (value) =>
+                value.includes('SOURCE_ENUMERATION_REQUEST_LIMIT') ||
+                (documents && value.includes('SOURCE_SPEND_UNKNOWN')),
+        ),
     );
     await writeFile(path.join(root, 'request-limit-project.json'), JSON.stringify(stopped, null, 2));
     const stoppedEvidence = stopped.phases['source-enumerate'].evidence[0];
@@ -318,10 +372,14 @@ try {
     const recheck = webview.getByRole('button', { name: 'Check read-only connections', exact: true });
     await recheck.click();
     await settled('preflight');
-    await webview.getByRole('button', { name: 'Find partition candidates' }).click();
-    await webview.getByText('2 candidates found.', { exact: false }).waitFor();
+    console.log(JSON.stringify({ fixtureStage: 'retry-preflight-observed' }));
+    await webview
+        .getByRole('button', { name: documents ? 'Review document-feed preparation' : 'Find partition candidates' })
+        .click();
+    if (!documents) await webview.getByText('2 candidates found.', { exact: false }).waitFor();
     await webview.getByRole('checkbox', { name: /I confirm source writes are paused/ }).check();
     await start.click();
+    console.log(JSON.stringify({ fixtureStage: 'retry-start-clicked' }));
     await page.getByRole('button', { name: 'Start bounded read-only preparation', exact: true }).click();
     await changedRun(stopped.runId);
     for (let i = 0; i < 240; i++) {
@@ -332,6 +390,7 @@ try {
         await page.waitForTimeout(500);
     }
     const enumerated = await state();
+    console.log(JSON.stringify({ fixtureStage: 'enumeration-adoption-observed' }));
     assert.notEqual(enumerated.source.identityManifest, 'identities.ndjson', 'Inventory was not adopted');
     assert.equal(
         enumerated.phases['source-enumerate'].status,
@@ -404,6 +463,50 @@ try {
         ['report', 'Evaluate readiness'],
     ];
     for (const [operation, label] of phases) {
+        if (operation === 'source-compatibility' && !documents) {
+            const beforeFault = await state();
+            await writeFile(path.join(root, 'source-fault.json'), JSON.stringify({ missingSystemKey: '_attachments' }));
+            await webview.getByRole('button', { name: `Run for ${label}`, exact: true }).click();
+            await settled(operation, 'blocked');
+            const failed = await state();
+            assert.equal(failed.phases[operation].status, 'blocked');
+            assert.ok(
+                failed.phases[operation].blockers.some(
+                    (value) =>
+                        value.includes('SOURCE_SYSTEM_METADATA_UNOBSERVABLE') &&
+                        value.includes('source-record-system-attachments'),
+                ),
+            );
+            assert.equal(failed.runId, beforeFault.runId);
+            assert.equal(failed.source.identityManifestHash, beforeFault.source.identityManifestHash);
+            const faultEvidence = failed.phases[operation].evidence[0];
+            const savedFault = await readFile(path.join(runRoot, faultEvidence));
+            await writeFile(path.join(root, 'source-record-failure.json'), savedFault);
+            await writeFile(path.join(root, 'source-fault.json'), JSON.stringify({}));
+            await page.screenshot({ path: path.join(root, 'source-record-blocked.png') });
+        }
+        if (operation === 'source-compatibility' && documents) {
+            const strictBefore = await state();
+            await webview.getByRole('button', { name: `Run for ${label}`, exact: true }).click();
+            const strict = await settled(operation, 'blocked');
+            assert.ok(
+                strict.phases[operation].blockers.some((value) => value.includes('DOCUMENT_FIDELITY_UNOBSERVABLE')),
+            );
+            assert.equal(strict.source.identityManifestHash, strictBefore.source.identityManifestHash);
+            await webview
+                .locator('summary')
+                .filter({ hasText: /^Configuration and mapping$/ })
+                .click();
+            await webview.getByRole('combobox', { name: 'Document conversion fidelity' }).selectOption('reduced');
+            await webview.getByRole('button', { name: 'Save connection settings', exact: true }).click();
+            await page.waitForTimeout(1000);
+            await webview.getByRole('button', { name: 'Run for Check read-only connections', exact: true }).click();
+            await settled('preflight', 'succeeded', strict.phases.preflight?.evidence[0]);
+            await webview.getByRole('button', { name: 'Run for Assess application', exact: true }).click();
+            await settled('assess', 'succeeded', strict.phases.assess?.evidence[0]);
+            await webview.getByRole('button', { name: 'Authorize reduced document fidelity', exact: true }).click();
+            await page.getByRole('button', { name: 'Authorize', exact: true }).click();
+        }
         const current = await state();
         if (
             current.phases[operation]?.status === 'succeeded' &&
@@ -416,12 +519,23 @@ try {
         }
         const button = webview.getByRole('button', { name: `Run for ${label}`, exact: true });
         await button.click();
-        await settled(operation, operation === 'report' ? 'blocked' : 'succeeded');
+        await settled(
+            operation,
+            operation === 'report' ? 'blocked' : 'succeeded',
+            current.phases[operation]?.evidence[0],
+        );
     }
     const current = await state();
     const report = JSON.parse(await readFile(path.join(runRoot, current.phases.report.evidence[0]), 'utf8'));
-    for (const name of ['structural', 'queries', 'sourceCompatibility'])
+    for (const name of ['structural', 'queries', documents ? 'documentFidelity' : 'sourceCompatibility'])
         assert.equal(report.result.gates[name].status, 'succeeded', name);
+    if (documents) assert.equal(report.result.gates.sourceCompatibility.status, 'blocked');
+    if (documents) {
+        assert.equal(report.result.gates.strictEquivalence.status, 'blocked');
+        const validation = JSON.parse(await readFile(path.join(runRoot, current.phases.validate.evidence[0]), 'utf8'));
+        assert.equal(validation.result.validationScope, 'observed-document-canonical-only');
+        assert.equal(validation.result.strictInputFidelity, false);
+    }
     for (const name of ['application', 'applicationInputs', 'crud', 'load', 'soak', 'dependencies'])
         assert.equal(report.result.gates[name].status, 'blocked', `Unexecuted ${name} proof must not pass`);
     assert.equal(
@@ -433,7 +547,8 @@ try {
         assert.equal(createHash('sha256').update(bytes).digest('hex'), artifact.sha256, artifact.relativePath);
     }
     const source = JSON.parse(await readFile(path.join(root, 'source-summary.json'), 'utf8'));
-    assert.ok(source.compressedConnections > 0, 'Negotiated compressed transport must be exercised');
+    if (!documents) assert.ok(source.compressedConnections > 0, 'Negotiated compressed transport must be exercised');
+    else assert.equal(source.mutations, 0, 'SDK source must remain read-only');
     assert.equal(source.rejectedTemplates, 0);
     await page.screenshot({ path: path.join(root, 'completed-core-migration.png') });
     await writeFile(path.join(root, 'passed-project.json'), JSON.stringify(current, null, 2));
@@ -458,8 +573,19 @@ try {
     );
     console.log(JSON.stringify({ root, status: 'core-migration-succeeded-release-readiness-blocked', errors }));
 } catch (error) {
+    console.error(JSON.stringify({ root, status: 'failed', message: error.message, errors }));
+    await writeFile(
+        path.join(root, 'failure.json'),
+        JSON.stringify({ status: 'failed', message: error.message, errors }),
+    );
     if (page) {
-        await page.screenshot({ path: path.join(root, 'failure.png') });
+        try {
+            await page.screenshot({ path: path.join(root, 'failure.png'), timeout: 5000 });
+        } catch (captureError) {
+            console.error(
+                JSON.stringify({ fixtureStage: 'diagnostic-screenshot-failed', message: captureError.message }),
+            );
+        }
         await writeFile(path.join(root, 'failure-dom.txt'), await page.locator('body').innerText());
         for (const [i, frame] of page.frames().entries())
             await writeFile(
@@ -470,7 +596,6 @@ try {
                     .catch(() => 'unavailable'),
             );
     }
-    console.error(JSON.stringify({ root, status: 'failed', message: error.message, errors }));
     await writeFile(path.join(root, 'source-fixture.log'), sourceOutput);
     throw error;
 } finally {

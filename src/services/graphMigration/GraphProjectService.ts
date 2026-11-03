@@ -7,6 +7,7 @@ import { open, rename, mkdir, lstat, realpath, unlink } from 'node:fs/promises';
 import * as path from 'node:path';
 import { readBounded } from './artifacts';
 import { graphMigrationFolder, graphProjectSchema, invalidateEvidence, type GraphProject } from './contracts';
+import { GraphDiagnosticError } from './diagnostics';
 
 export class GraphProjectService {
     constructor(private readonly workspacePath: string) {}
@@ -38,7 +39,24 @@ export class GraphProjectService {
             } finally {
                 await file.close();
             }
-            await rename(pending, path.join(root, 'project.json'));
+            for (let attempt = 1; attempt <= 5; attempt++) {
+                try {
+                    await rename(pending, path.join(root, 'project.json'));
+                    break;
+                } catch (error) {
+                    if (
+                        !(
+                            error instanceof Error &&
+                            'code' in error &&
+                            ['EPERM', 'EACCES', 'EBUSY'].includes(String(error.code))
+                        )
+                    )
+                        throw error;
+                    if (attempt === 5)
+                        throw new GraphDiagnosticError('PROJECT_STATE_REPLACE_BUSY', 'project-atomic-replace');
+                    await new Promise((resolve) => setTimeout(resolve, attempt * 100));
+                }
+            }
         } finally {
             await lock.close();
             await unlink(lockPath);

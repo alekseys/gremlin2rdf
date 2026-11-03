@@ -26,7 +26,7 @@ export const prepareSourceSchema = z
     .object({
         partitions: z
             .array(partition)
-            .min(1)
+            .min(0)
             .max(1000)
             .refine(
                 (v) =>
@@ -128,7 +128,9 @@ export async function discoverPreparation(workspace: string, p: GraphProject): P
     const partitions = new Set<string>(),
         origins: string[] = [],
         notices: string[] = [];
-    for (const relative of ['gremlin-partitions.json', 'data/gremlin/gremlin_load_file.txt']) {
+    for (const relative of p.source?.sourceMode === 'cosmos-documents'
+        ? []
+        : ['gremlin-partitions.json', 'data/gremlin/gremlin_load_file.txt']) {
         try {
             const text = (await readBounded(await ownedPath(workspace, relative), 16777216)).toString('utf8');
             const found = relative.endsWith('.json')
@@ -181,6 +183,7 @@ export async function discoverPreparation(workspace: string, p: GraphProject): P
                     inputHash: z.string(),
                     requests: z.number().nonnegative(),
                     elapsedMillis: z.number().nonnegative(),
+                    inFlight: z.boolean().optional(),
                 })
                 .passthrough()
                 .parse(
@@ -237,6 +240,7 @@ export async function discoverPreparation(workspace: string, p: GraphProject): P
                 );
             if (
                 !accountingBlocked &&
+                state.inFlight !== true &&
                 !durationBlocked &&
                 !requestsBlocked &&
                 !pendingCheckpoint &&
@@ -265,6 +269,8 @@ export async function freshPreparation(
     const input = prepareSourceSchema.parse(value);
     if (!p.source || !['quiesced', 'immutable'].includes(p.consistency))
         throw new Error('Stable configured source required');
+    if (p.source.sourceMode !== 'cosmos-documents' && input.partitions.length === 0)
+        throw new Error('Explicit candidate partitions are required for Gremlin enumeration');
     const archived = `artifacts/previous-run-${p.runId}-${globalThis.crypto.randomUUID()}.json`;
     await writeNewArtifact(root, archived, JSON.stringify(p, null, 2));
     const runId = globalThis.crypto.randomUUID();
@@ -291,7 +297,10 @@ export async function freshPreparation(
         JSON.stringify(
             {
                 schemaVersion: 1,
-                partitions: input.partitions.map((lexical) => ({ type: 'string', lexical })),
+                partitions:
+                    p.source.sourceMode === 'cosmos-documents'
+                        ? []
+                        : input.partitions.map((lexical) => ({ type: 'string', lexical })),
                 pageSize: 100,
                 maximumRequests: input.maximumRequests,
                 maximumDurationMillis: input.maximumDurationSeconds * 1000,
@@ -368,7 +377,10 @@ export async function adoptEnumeration(p: GraphProject, root: string, directory:
                 sha256: checksum,
                 vertices: manifest.vertices,
                 edges: manifest.edges,
-                coverage: 'live-global-and-partition-counts-reconciled',
+                coverage:
+                    p.source.sourceMode === 'cosmos-documents'
+                        ? 'document-feed-and-counts-reconciled'
+                        : 'live-global-and-partition-counts-reconciled',
                 manifestSha256: await fileHash(await ownedPath(root, manifestPath)),
             },
             null,
@@ -411,7 +423,7 @@ export async function restoreAdoptedInventoryPhase(project: GraphProject, root: 
             manifestSha256: z.string().regex(/^[a-f0-9]{64}$/u),
             vertices: z.number().int().nonnegative(),
             edges: z.number().int().nonnegative(),
-            coverage: z.literal('live-global-and-partition-counts-reconciled'),
+            coverage: z.enum(['live-global-and-partition-counts-reconciled', 'document-feed-and-counts-reconciled']),
         })
         .parse(
             JSON.parse((await readBounded(await readVerified(receiptPath, artifact.sha256), 1048576)).toString('utf8')),

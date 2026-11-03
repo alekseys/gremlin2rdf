@@ -14,13 +14,15 @@ final class SourceDiagnostics {
         String stage=fallback;ResponseException response=null;Map<String,Object> classified=null;
         int depth=0;
         for (Throwable cause=error;cause!=null && depth++<16;cause=cause.getCause()) {
-            if (cause instanceof Context context && stage.equals(fallback)) stage=context.stage;
+            if (cause instanceof Context context) stage=context.stage;
             if (cause instanceof Diagnostics.Failure && classified==null) classified=Diagnostics.failure(cause,stage);
             if (cause instanceof ResponseException r) { response=r;break; }
         }
         if (response==null) {
             var report=new TreeMap<>(classified==null ? Diagnostics.failure(error,stage) : classified);
-            if (!stage.equals(fallback) && !String.valueOf(report.get("code")).startsWith("ARTIFACT_")) report.put("stage",stage);
+            if (classified==null && stage.startsWith("source-record-") && report.get("code").equals("ARTIFACT_OR_STATE_ERROR"))
+                report=new TreeMap<>(Diagnostics.report("SOURCE_RECORD_READ_FAILED",stage));
+            if (Set.of("source-request","source-response-cardinality").contains(report.get("stage"))) report.put("stage",stage);
             if (Set.of("source-enumeration-vertex-page","source-enumeration-edge-page").contains(report.get("stage")))
                 report.put("templateId","source-keyset-page-v2");
             return report;

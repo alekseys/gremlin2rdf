@@ -12,7 +12,12 @@ import { expect, it, vi } from 'vitest';
 import { type GraphProject } from '../../../services/graphMigration/contracts';
 import { GraphConnectionSetup } from './GraphConnectionSetup';
 
-const project = { source: null, target: null, consistency: 'immutable' } as GraphProject;
+const project = {
+    source: null,
+    target: null,
+    consistency: 'immutable',
+    mapping: { fidelity: 'strict' },
+} as GraphProject;
 it('shows inferred connections and explicit consistency while keeping technical defaults out of the form', async () => {
     const save = vi.fn(async () => {});
     render(
@@ -36,7 +41,9 @@ it('shows inferred connections and explicit consistency while keeping technical 
             />
         </FluentProvider>,
     );
-    expect(screen.getByRole('textbox', { name: 'Gremlin endpoint' })).toHaveValue('account.gremlin.cosmos.azure.com');
+    expect(screen.getByRole('combobox', { name: 'Source read mode' })).toHaveValue('cosmos-documents');
+    expect(screen.queryByRole('textbox', { name: 'Gremlin endpoint' })).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Cosmos .NET SDK document endpoint' })).toHaveValue('');
     expect(screen.getByRole('textbox', { name: 'Partition key path' })).toHaveValue('/tenant');
     expect(screen.getByRole('combobox', { name: 'Source consistency' })).toHaveValue('');
     const user = userEvent.setup();
@@ -49,8 +56,42 @@ it('shows inferred connections and explicit consistency while keeping technical 
             expect.objectContaining({
                 host: 'account.gremlin.cosmos.azure.com',
                 consistency: 'quiesced',
+                sourceMode: 'cosmos-documents',
             }),
         ),
     );
     expect(screen.queryByRole('textbox', { name: 'Graph project JSON' })).not.toBeInTheDocument();
+});
+it('retains a saved legacy Gremlin mode until an explicit selection, without network or automatic fallback', async () => {
+    const save = vi.fn(async () => {});
+    const legacy = {
+        ...project,
+        source: {
+            host: 'account.gremlin.cosmos.azure.com',
+            database: 'db',
+            container: 'graph',
+            partitionKeyPath: '/pk',
+        },
+    } as GraphProject;
+    render(
+        <FluentProvider theme={webLightTheme}>
+            <GraphConnectionSetup project={legacy} disabled={false} save={save} />
+        </FluentProvider>,
+    );
+    expect(screen.getByRole('combobox', { name: 'Source read mode' })).toHaveValue('gremlin');
+    const user = userEvent.setup();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Source read mode' }), 'cosmos-documents');
+    expect(screen.queryByRole('textbox', { name: 'Gremlin endpoint' })).not.toBeInTheDocument();
+    await user.type(
+        screen.getByRole('textbox', { name: 'Cosmos .NET SDK document endpoint' }),
+        'https://account.documents.azure.com:443/',
+    );
+    await user.click(screen.getByRole('button', { name: 'Save connection settings' }));
+    expect(save).toHaveBeenCalledWith(
+        expect.objectContaining({
+            sourceMode: 'cosmos-documents',
+            documentEndpoint: 'https://account.documents.azure.com:443/',
+            documentProfile: 'property-bags-v1',
+        }),
+    );
 });

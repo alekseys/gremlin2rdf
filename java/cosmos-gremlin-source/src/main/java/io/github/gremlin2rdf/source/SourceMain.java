@@ -18,7 +18,6 @@ public final class SourceMain implements AutoCloseable {
     private final Cluster cluster;
     private final Client client;
     private final int timeout;
-    private final SourceCodec codec;
     private final io.github.gremlin2rdf.Project typedProject;
     private final SourceRequests requests;
     private final boolean connectivityOnly;
@@ -26,8 +25,9 @@ public final class SourceMain implements AutoCloseable {
     private SourceMain(JsonNode project,boolean connectivityOnly) throws IOException {
         this.connectivityOnly=connectivityOnly;
         this.project = project; config = project.path("source");
-        try { typedProject = io.github.gremlin2rdf.Json.MAPPER.treeToValue(project, io.github.gremlin2rdf.Project.class); codec = new SourceCodec(typedProject); }
+        try { typedProject = io.github.gremlin2rdf.Json.MAPPER.treeToValue(project, io.github.gremlin2rdf.Project.class); Objects.requireNonNull(typedProject.source()); }
         catch (IOException e) { throw new IllegalArgumentException("Strict source project required", e); }
+        requireGremlinMode(typedProject);
         if (!config.path("extractionStrategy").asText().equals("verified-identity-manifest"))
             throw new IllegalArgumentException("Safe enumeration requires a verified identity manifest");
         String reference = config.path("authenticationRef").asText();
@@ -59,6 +59,10 @@ public final class SourceMain implements AutoCloseable {
         builder.sslContext(new SourceTls(config.path("host").asText(), config.path("port").asInt(),
             config.path("customCaRef").isNull() ? null : io.github.gremlin2rdf.Project.secret(config.path("customCaRef").asText())));
         return builder;
+    }
+    static void requireGremlinMode(io.github.gremlin2rdf.Project project) throws io.github.gremlin2rdf.Diagnostics.Failure {
+        if (project.source()!=null && "cosmos-documents".equals(project.source().sourceMode()))
+            throw new io.github.gremlin2rdf.Diagnostics.Failure("SOURCE_MODE_MISMATCH","source-adapter-mode");
     }
     static Cluster createCluster(Cluster.Builder builder) throws io.github.gremlin2rdf.Diagnostics.Failure {
         try { return builder.create(); }
@@ -93,48 +97,10 @@ public final class SourceMain implements AutoCloseable {
     }
     private io.github.gremlin2rdf.GraphRecord extract(JsonNode entry, String manifestHash) throws Exception {
         var identity = io.github.gremlin2rdf.Json.MAPPER.treeToValue(entry, io.github.gremlin2rdf.IdentityEntry.class);
-        boolean vertex = entry.path("kind").asText().equals("vertex");
-        if (!vertex && !entry.path("kind").asText().equals("edge")) throw new IllegalArgumentException("Unknown manifest record");
-        Map<String, Object> bindings = new HashMap<>();
-        bindings.put("g2rPartition", SourceCodec.scalar(entry.path("partition"))); bindings.put("g2rElementId", SourceCodec.scalar(entry.path("id")));
-        bindings.put("g2rPartitionProperty", config.path("partitionKeyPath").asText().substring(1));
-        if (!vertex) bindings.put("g2rOwnerId", SourceCodec.scalar(entry.path("ownerId")));
-        String selection = vertex ? "g.V([g2rPartition,g2rElementId])" : "g.V([g2rPartition,g2rOwnerId]).outE().hasId(g2rElementId)";
-        Object initialEtag = systemValue(selection, bindings, "_etag");
-        long count = SourceCodec.count(query(selection + ".properties().count()", bindings));
-        if (count > 10000)
-            throw new IllegalArgumentException("Source property collection cannot fit bounded frame");
-        String projection = vertex
-            ? ".project('id','label','partition','properties').by(id()).by(label()).by(values(g2rPartitionProperty))"
-                + ".by(properties().project('key','value','id','meta').by(key()).by(value()).by(id()).by(valueMap()).fold())"
-            : ".project('id','label','partition','source','destination','properties').by(id()).by(label())"
-                + ".by(outV().values(g2rPartitionProperty))"
-                + ".by(outV().project('id','partition').by(id()).by(values(g2rPartitionProperty)))"
-                + ".by(inV().project('id','partition').by(id()).by(values(g2rPartitionProperty)))"
-                + ".by(properties().project('key','value').by(key()).by(value()).fold())";
-        if (vertex && typedProject.mapping().fidelity().equals("reduced"))
-            projection = ".project('id','label','partition','properties').by(id()).by(label()).by(values(g2rPartitionProperty))"
-                + ".by(properties().project('key','value').by(key()).by(value()).fold())";
-        var row = new HashMap<Object, Object>(SourceCodec.object(query(selection + projection, bindings)));
-        Map<String, Object> metadata = new TreeMap<>();
-        metadata.put("_etag", initialEtag);
-        for (String key : vertex ? List.of("_ts", "_self", "_attachments", "_rid")
-            : List.of("_ts", "_self", "_attachments", "_rid", "inVPartition", "outVPartition"))
-            metadata.put(key, systemValue(selection, bindings, key));
-        if (!SourceCodec.value(initialEtag).equals(SourceCodec.value(systemValue(selection, bindings, "_etag"))))
-            throw new IOException("Source changed during record snapshot; mixed versions cannot be accepted");
-        row.put("metadata", metadata);
-        var result = codec.normalize(identity, row, count, manifestHash);
-        if (!io.github.gremlin2rdf.SourceCompatibility.metadataComplete(result)) throw new IOException("Required observable source system metadata is missing or has incorrect types");
-        return result;
+        return SourceSnapshot.read(typedProject,identity,manifestHash,this::query);
     }
     private Object systemValue(String selection, Map<String, Object> bindings, String key) throws Exception {
-        Map<String, Object> parameters = new HashMap<>(bindings); parameters.put("g2rSystemKey", key);
-        Object folded = query("g.withStrategies(ProjectionStrategy.build().IncludeSystemProperties(g2rSystemKey).create())"
-            + selection.substring(1) + ".values(g2rSystemKey).fold()", parameters);
-        if (!(folded instanceof List<?> values) || values.size() != 1 || values.getFirst() == null)
-            throw new IOException("Required system metadata did not return exactly one observable value");
-        return values.getFirst();
+        return SourceSnapshot.systemValue(this::query,selection,bindings,key);
     }
     private long count(io.github.gremlin2rdf.GraphRecord.Kind kind, io.github.gremlin2rdf.GraphRecord.Value partition, String label) throws Exception {
         Map<String, Object> bindings = new HashMap<>();
@@ -214,6 +180,7 @@ public final class SourceMain implements AutoCloseable {
             Path configuration = Path.of(args[1]), manifest = Path.of(args[2]), output = Path.of(args[3]);
             if (Files.size(configuration) > 1048576) throw new IllegalArgumentException("Invalid config bounds");
             var parsed = io.github.gremlin2rdf.Json.MAPPER.readValue(Files.readAllBytes(configuration), io.github.gremlin2rdf.Project.class);
+            requireGremlinMode(parsed);
             Path root = configuration.toRealPath().getParent();
             if (args[0].equals("enumerate")) {
                 var plan = readEnumerationPlan(root,args[2]);

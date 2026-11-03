@@ -529,7 +529,7 @@ export function GraphMigrationWorkbench() {
             : (phase?.status ?? 'not-started');
     };
     useEffect(() => {
-        setEnumerationReview(0);
+        if (nextOperation !== 'preflight' && nextOperation !== 'source-enumerate') setEnumerationReview(0);
         if (nextLabel) announce(l10n.t('Next unfinished step: {phase}', { phase: nextLabel }));
     }, [nextOperation, nextLabel, announce]);
     const renderOperation = ([operation, label]: [GraphOperation, string], showActions = true) => {
@@ -704,6 +704,16 @@ export function GraphMigrationWorkbench() {
                                     {authorizationLabel}
                                 </Button>
                             )}
+                            {(operation === 'source-compatibility' || operation === 'extract') &&
+                                project?.source?.sourceMode === 'cosmos-documents' &&
+                                project.mapping.fidelity === 'reduced' && (
+                                    <Button
+                                        disabled={phaseDisabled}
+                                        onClick={() => void action(() => client.approve.mutate('reduced-fidelity'))}
+                                    >
+                                        {l10n.t('Authorize reduced document fidelity')}
+                                    </Button>
+                                )}
                             {(operation === 'rewrite-apply' || operation === 'fixture-test') && (
                                 <Button
                                     disabled={phaseDisabled}
@@ -740,6 +750,13 @@ export function GraphMigrationWorkbench() {
                             })}
                         </div>
                         {extractionPrerequisite && <p>{extractionPrerequisite}</p>}
+                        {operation === 'validate' && project?.source?.sourceMode === 'cosmos-documents' && (
+                            <p>
+                                {l10n.t(
+                                    'Document-source validation verifies that the target matches the owned canonical conversion and SHACL. It does not restore unobservable source metadata or numeric runtime types, prove Gremlin semantics, or establish strict cutover equivalence. Those readiness gates remain separate.',
+                                )}
+                            </p>
+                        )}
                         {operation === 'source-enumerate' &&
                             (operation === nextPhase?.[0] || enumerationStopped) &&
                             (enumerationReview > 0 || enumerationRequestLimited) &&
@@ -940,9 +957,13 @@ export function GraphMigrationWorkbench() {
                                         />
                                     </Field>
                                     <p>
-                                        {l10n.t(
-                                            'Enumeration is read-only and requires explicit partition values, string IDs, a quiesced or immutable source, and request/duration budgets. Review the generated identity manifest before configuring a new extraction run.',
-                                        )}
+                                        {project.source?.sourceMode === 'cosmos-documents'
+                                            ? l10n.t(
+                                                  'The default .NET Cosmos SDK document feed is read-only and mode-bound. It preserves raw documents and decodes only the explicitly selected storage profile. Document fidelity is reported separately from unestablished Gremlin semantic equivalence. There is no automatic Gremlin fallback or live benchmark.',
+                                              )
+                                            : l10n.t(
+                                                  'Enumeration is read-only and requires explicit partition values, string IDs, a quiesced or immutable source, and request/duration budgets. Review the generated identity manifest before configuring a new extraction run.',
+                                              )}
                                     </p>
                                     {project.mapping.fidelity === 'reduced' && (
                                         <Button

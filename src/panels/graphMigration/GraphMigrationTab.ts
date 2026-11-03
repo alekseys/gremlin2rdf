@@ -203,15 +203,24 @@ export class GraphMigrationTab extends BaseTab {
                 root = await this.service.root(),
                 hash = inputHash(project);
             const confirm = await vscode.window.showWarningMessage(
-                l10n.t(
-                    'Enumerate up to {partitions} candidate partitions using read-only requests, at most {requests} reserved attempts, {seconds} seconds and a total-run allowance of {ru} RU (not RU/s)? Coverage is unverified until live counts reconcile. This preserves the old run and creates fresh preparation/extraction runs; old approvals and evidence will not authorize new writes.',
-                    {
-                        partitions: value.partitions.length,
-                        requests: value.maximumRequests,
-                        seconds: value.maximumDurationSeconds,
-                        ru: value.ruBudget,
-                    },
-                ) +
+                (project.source?.sourceMode === 'cosmos-documents'
+                    ? l10n.t(
+                          'Read all container feed partitions through the .NET SDK, at most {requests} reserved attempts, {seconds} seconds and a total-run allowance of {ru} RU (not RU/s)? Coverage is unverified until feed and counts reconcile. This preserves the old run and creates fresh mode-bound runs; old approvals will not authorize new writes. Errors stop without Gremlin fallback.',
+                          {
+                              requests: value.maximumRequests,
+                              seconds: value.maximumDurationSeconds,
+                              ru: value.ruBudget,
+                          },
+                      )
+                    : l10n.t(
+                          'Enumerate up to {partitions} candidate partitions using read-only requests, at most {requests} reserved attempts, {seconds} seconds and a total-run allowance of {ru} RU (not RU/s)? Coverage is unverified until live counts reconcile. This preserves the old run and creates fresh preparation/extraction runs; old approvals and evidence will not authorize new writes.',
+                          {
+                              partitions: value.partitions.length,
+                              requests: value.maximumRequests,
+                              seconds: value.maximumDurationSeconds,
+                              ru: value.ruBudget,
+                          },
+                      )) +
                     ' ' +
                     l10n.t(
                         'Migration pacing: {rate}. Charges pace subsequent requests; a single request can exceed one second of this rate.',
@@ -734,6 +743,22 @@ export class GraphMigrationTab extends BaseTab {
             await createOwnedDirectory(root, 'artifacts');
             let command: string = operation,
                 args: string[] = [];
+            const sourceAdapter =
+                project.source?.sourceMode === 'cosmos-documents'
+                    ? path.join(
+                          ext.context.extensionPath,
+                          'resources',
+                          'graph-migration',
+                          'document-source',
+                          'win-x64',
+                          'DocumentSource.exe',
+                      )
+                    : path.join(
+                          ext.context.extensionPath,
+                          'resources',
+                          'graph-migration',
+                          'cosmos-gremlin-source-0.1.0.jar',
+                      );
             switch (operation) {
                 case 'benchmark-load':
                 case 'benchmark-soak': {
@@ -770,15 +795,7 @@ export class GraphMigrationTab extends BaseTab {
                     break;
                 }
                 case 'preflight':
-                    args = [
-                        projectFile,
-                        path.join(
-                            ext.context.extensionPath,
-                            'resources',
-                            'graph-migration',
-                            'cosmos-gremlin-source-0.1.0.jar',
-                        ),
-                    ];
+                    args = [projectFile, sourceAdapter];
                     break;
                 case 'target-probe':
                     command = 'preflight';
@@ -820,12 +837,7 @@ export class GraphMigrationTab extends BaseTab {
                     command = 'source-enumerate';
                     args = [
                         projectFile,
-                        path.join(
-                            ext.context.extensionPath,
-                            'resources',
-                            'graph-migration',
-                            'cosmos-gremlin-source-0.1.0.jar',
-                        ),
+                        sourceAdapter,
                         sourcePath.replaceAll('\\', '/'),
                         outputPath.replaceAll('\\', '/'),
                     ];
@@ -839,12 +851,7 @@ export class GraphMigrationTab extends BaseTab {
                 case 'source-recipes':
                     args = [
                         projectFile,
-                        path.join(
-                            ext.context.extensionPath,
-                            'resources',
-                            'graph-migration',
-                            'cosmos-gremlin-source-0.1.0.jar',
-                        ),
+                        sourceAdapter,
                         'population-plan.json',
                         operation === 'source-recipes' ? 'source-recipes.ndjson' : 'source-ownership.json',
                     ];
@@ -938,6 +945,9 @@ export class GraphMigrationTab extends BaseTab {
                         );
                     if (!project.source)
                         throw new Error(l10n.t('Configure the source and verified identity manifest first.'));
+                    if (operation === 'source-compatibility' && project.source.sourceMode === 'cosmos-documents') {
+                        project.source.compatibilityEvidence = `artifacts/source-compatibility-${project.runId}-${globalThis.crypto.randomUUID()}.json`;
+                    }
                     const output = operation === 'source-compatibility' ? project.source.compatibilityEvidence : null;
                     if (operation === 'source-compatibility' && !output)
                         throw new Error(l10n.t('Configure a new relative compatibility evidence path first.'));
@@ -954,12 +964,7 @@ export class GraphMigrationTab extends BaseTab {
                     command = operation;
                     args = [
                         projectFile,
-                        path.join(
-                            ext.context.extensionPath,
-                            'resources',
-                            'graph-migration',
-                            'cosmos-gremlin-source-0.1.0.jar',
-                        ),
+                        sourceAdapter,
                         path.join(root, project.source.identityManifest),
                         output ? path.join(root, output) : path.join(root, `records-${project.runId}.ndjson`),
                     ];

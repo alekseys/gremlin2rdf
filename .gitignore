@@ -6,6 +6,7 @@
 .cosmosdb-age-migration/
 resources/graph-migration/*.jar
 resources/graph-migration/worker-manifest.json
+resources/graph-migration/document-source/
 resources/age-migration/
 .cosmosdb-data/
 .cosmosdb-logs/

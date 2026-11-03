@@ -204,6 +204,19 @@
               "type": "string",
               "const": "verified-identity-manifest"
             },
+            "sourceMode": {
+              "type": "string",
+              "enum": ["cosmos-documents", "gremlin"]
+            },
+            "documentEndpoint": {
+              "type": "string",
+              "format": "uri",
+              "pattern": "^https://[^/?#@]+/?$"
+            },
+            "documentProfile": {
+              "type": "string",
+              "enum": ["property-bags-v1", "flat-v1"]
+            },
             "identityManifest": {
               "type": "string",
               "minLength": 1
@@ -272,7 +285,22 @@
             "customCaRef",
             "syntheticTestContainer"
           ],
-          "additionalProperties": false
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "required": ["sourceMode"],
+                "properties": {
+                  "sourceMode": {
+                    "const": "cosmos-documents"
+                  }
+                }
+              },
+              "then": {
+                "required": ["documentEndpoint", "documentProfile"]
+              }
+            }
+          ]
         },
         {
           "type": "null"

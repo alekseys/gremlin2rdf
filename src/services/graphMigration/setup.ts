@@ -18,6 +18,20 @@ export const connectionSetupSchema = z
         partitionKeyPath: z.string().max(256),
         datasetUrl: z.string().max(2000),
         consistency: z.enum(['quiesced', 'immutable', '']).default(''),
+        sourceMode: z.enum(['cosmos-documents', 'gremlin']).optional(),
+        documentEndpoint: z.string().max(2000).optional(),
+        documentProfile: z.enum(['property-bags-v1', 'flat-v1']).optional(),
+        documentFidelity: z.enum(['strict', 'reduced']).optional(),
+        documentRuBudget: z
+            .string()
+            .max(40)
+            .regex(/^(?:|[0-9]+(?:\.[0-9]+)?)$/u)
+            .optional(),
+        documentRuPerSecond: z
+            .string()
+            .max(40)
+            .regex(/^(?:|[0-9]+(?:\.[0-9]+)?)$/u)
+            .optional(),
     })
     .strict();
 export type ConnectionSetup = z.infer<typeof connectionSetupSchema>;
@@ -27,7 +41,7 @@ export interface SetupSuggestions {
     notices: string[];
 }
 
-type ConnectionField = Exclude<keyof ConnectionSetup, 'consistency'>;
+type ConnectionField = 'host' | 'database' | 'container' | 'partitionKeyPath' | 'datasetUrl' | 'documentEndpoint';
 const aliases: Record<string, ConnectionField> = {
     gremlinhost: 'host',
     cosmosgremlinhost: 'host',
@@ -63,6 +77,8 @@ const aliases: Record<string, ConnectionField> = {
     graphsourcedatabase: 'database',
     graphsourcecontainer: 'container',
     graphsourcepartitionkeypath: 'partitionKeyPath',
+    graphdocumentendpoint: 'documentEndpoint',
+    cosmosdocumentendpoint: 'documentEndpoint',
     graphtargetdataseturl: 'datasetUrl',
 };
 const normalized = (key: string) => key.toLowerCase().replace(/[^a-z0-9]/gu, '');
@@ -116,11 +132,12 @@ function safeSuggestion(field: ConnectionField, value: string): string | undefin
             return undefined;
         }
     }
-    if (field === 'datasetUrl') {
+    if (field === 'datasetUrl' || field === 'documentEndpoint') {
         const target = graphProjectSchema.shape.target.unwrap().shape.datasetUrl.safeParse(value);
         if (!target.success) return undefined;
         const url = new URL(value);
-        if (url.search) return undefined;
+        if (url.search || (field === 'documentEndpoint' && (url.pathname !== '/' || url.protocol !== 'https:')))
+            return undefined;
         return value.replace(/\/+$/u, '');
     }
     if (field === 'partitionKeyPath') {
@@ -247,7 +264,20 @@ export async function discoverSetup(workspace: string, environment: NodeJS.Proce
 
 export async function applySetup(project: GraphProject, value: ConnectionSetup, root: string): Promise<GraphProject> {
     const input = connectionSetupSchema.parse(value);
-    const sourceFields = [input.host, input.database, input.container].map((text) => text.trim());
+    const previous = project;
+    const mode = input.sourceMode ?? project.source?.sourceMode ?? 'gremlin';
+    if (mode === 'cosmos-documents' && input.documentFidelity)
+        project = { ...project, mapping: { ...project.mapping, fidelity: input.documentFidelity } };
+    const documentEndpoint = input.documentEndpoint?.trim() || project.source?.documentEndpoint;
+    if (mode === 'cosmos-documents' && (!documentEndpoint || !safeSuggestion('documentEndpoint', documentEndpoint)))
+        throw new Error(
+            l10n.t('Enter the explicit Cosmos DB .NET SDK account endpoint without credentials or resource paths.'),
+        );
+    const sourceFields = [
+        input.host || (mode === 'cosmos-documents' && documentEndpoint ? new URL(documentEndpoint).hostname : ''),
+        input.database,
+        input.container,
+    ].map((text) => text.trim());
     if (sourceFields.some(Boolean)) {
         if (!sourceFields.every(Boolean) || !input.consistency)
             throw new Error(l10n.t('Enter the Gremlin host, database, graph and source consistency before saving.'));
@@ -276,11 +306,28 @@ export async function applySetup(project: GraphProject, value: ConnectionSetup, 
                 partitionKeyPath: input.partitionKeyPath.trim(),
                 authenticationRef: project.source?.authenticationRef ?? 'env:GRAPH_SOURCE_KEY',
                 extractionStrategy: 'verified-identity-manifest',
+                ...(input.sourceMode === undefined && project.source?.sourceMode === undefined
+                    ? {}
+                    : { sourceMode: mode }),
+                ...(mode === 'cosmos-documents'
+                    ? {
+                          documentEndpoint,
+                          documentProfile:
+                              input.documentProfile ?? project.source?.documentProfile ?? 'property-bags-v1',
+                      }
+                    : {}),
                 identityManifest,
                 identityManifestHash: await fileHash(manifest),
                 compatibilityEvidence: project.source?.compatibilityEvidence ?? 'artifacts/source-compatibility.json',
-                ruBudget: project.source?.ruBudget ?? null,
-                ...(project.source?.ruPerSecond === undefined ? {} : { ruPerSecond: project.source.ruPerSecond }),
+                ruBudget:
+                    mode === 'cosmos-documents' && input.documentRuBudget
+                        ? input.documentRuBudget
+                        : (project.source?.ruBudget ?? null),
+                ...(mode === 'cosmos-documents' && input.documentRuPerSecond
+                    ? { ruPerSecond: input.documentRuPerSecond }
+                    : project.source?.ruPerSecond === undefined
+                      ? {}
+                      : { ruPerSecond: project.source.ruPerSecond }),
                 customCaRef: project.source?.customCaRef ?? null,
                 syntheticTestContainer: project.source?.syntheticTestContainer ?? false,
             },
@@ -312,5 +359,19 @@ export async function applySetup(project: GraphProject, value: ConnectionSetup, 
         };
     } else if (project.target)
         throw new Error(l10n.t('Use advanced settings to remove an existing target configuration.'));
+    if (previous.source && (previous.source.sourceMode ?? 'gremlin') !== mode) {
+        await writeNewArtifact(
+            root,
+            `artifacts/source-mode-run-${previous.runId}-${globalThis.crypto.randomUUID()}.json`,
+            JSON.stringify(previous, null, 2),
+        );
+        project = {
+            ...project,
+            runId: globalThis.crypto.randomUUID(),
+            approvals: [],
+        };
+        if (project.source)
+            project.source.compatibilityEvidence = `artifacts/source-compatibility-${project.runId}.json`;
+    }
     return invalidateEvidence(graphProjectSchema.parse(project));
 }

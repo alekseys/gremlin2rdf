@@ -4,9 +4,11 @@ on:
   pull_request:
     paths:
       - 'java/**'
+      - 'dotnet/DocumentSource/**'
       - 'src/**/graphMigration/**'
       - 'src/webviews/cosmosdb/GraphMigration/**'
       - 'scripts/*graph*'
+      - 'scripts/*document*'
       - 'schemas/graph-migration/**'
       - 'skills/cosmosdb-graph-migration/**'
       - '.github/workflows/graph-migration.yml'
@@ -53,6 +55,20 @@ jobs:
       - run: node node_modules/vitest/vitest.mjs run GraphMigrationTab.test.ts GraphMigrationWorkbench.test.tsx WorkerBridge.test.ts artifacts.test.ts contracts.test.ts performance.test.ts
       - run: node scripts/run-reference-graph-benchmark.mjs smoke
       - run: node scripts/benchmark-graph-paths.mjs --private-fixture-confirmed
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        if: runner.os == 'Windows'
+        with:
+          dotnet-version: '10.0.403'
+      - name: Locked document SDK and actual offline SDK feed fixtures
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          dotnet restore dotnet/DocumentSource/DocumentSource.csproj --locked-mode
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet build dotnet/DocumentSource/DocumentSource.csproj --no-restore
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & dotnet/DocumentSource/bin/Debug/net10.0/win-x64/DocumentSource.exe self-test
+          exit $LASTEXITCODE
       - name: Preserve private offline acceptance evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9

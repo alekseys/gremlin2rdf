@@ -37,6 +37,7 @@ export function GraphPreparation({
     checkConnections?: () => Promise<void>;
 }) {
     const client = useTrpcClient<GraphAppRouter>();
+    const documents = project.source?.sourceMode === 'cosmos-documents';
     const reviewButtonRef = useRef<HTMLButtonElement>(null);
     const requestsRef = useRef<HTMLInputElement>(null);
     const [candidates, setCandidates] = useState<PreparationCandidates>();
@@ -84,7 +85,7 @@ export function GraphPreparation({
         };
     }, [enumerationOnly, client, action, enumerationStatus]);
     const valid =
-        partitions.length > 0 &&
+        (documents || partitions.length > 0) &&
         partitions.length <= 1000 &&
         /^\d+(?:\.\d+)?$/u.test(ru) &&
         Number(ru) > 0 &&
@@ -154,11 +155,18 @@ export function GraphPreparation({
                     })
                 }
             >
-                {l10n.t('Find partition candidates')}
+                {documents ? l10n.t('Review document-feed preparation') : l10n.t('Find partition candidates')}
             </Button>
-            {(candidates || enumerationOnly) && (
+            {(documents || candidates || enumerationOnly) && (
                 <>
-                    {candidates && (
+                    {documents && (
+                        <p>
+                            {l10n.t(
+                                'The .NET SDK scans all container feed partitions with bounded pages and continuation tokens. No Gremlin queries or partition candidate list are required. Completion requires feed and count reconciliation; failures stop without switching source modes.',
+                            )}
+                        </p>
+                    )}
+                    {candidates && !documents && (
                         <p>
                             <output aria-live="polite">
                                 {l10n.t(
@@ -186,17 +194,19 @@ export function GraphPreparation({
                             </p>
                         </>
                     )}
-                    <details>
-                        <summary>{l10n.t('Review or add partition values')}</summary>
-                        <Field label={l10n.t('String partition values, one per line')} required>
-                            <Textarea
-                                aria-required={true}
-                                value={text}
-                                onChange={(_, data) => setText(data.value)}
-                                disabled={disabled}
-                            />
-                        </Field>
-                    </details>
+                    {!documents && (
+                        <details>
+                            <summary>{l10n.t('Review or add partition values')}</summary>
+                            <Field label={l10n.t('String partition values, one per line')} required>
+                                <Textarea
+                                    aria-required={true}
+                                    value={text}
+                                    onChange={(_, data) => setText(data.value)}
+                                    disabled={disabled}
+                                />
+                            </Field>
+                        </details>
+                    )}
                     <Field
                         label={l10n.t('Maximum reserved request attempts')}
                         required
@@ -315,7 +325,7 @@ export function GraphPreparation({
                                 setStarting(true);
                                 try {
                                     await client.prepareSource.mutate({
-                                        partitions,
+                                        partitions: documents ? [] : partitions,
                                         maximumRequests: Number(requests),
                                         maximumDurationSeconds: Number(seconds),
                                         ruBudget: ru,

@@ -43,5 +43,17 @@ for (const [name, schema] of Object.entries({
     'typed-value': typedValueSchema,
 })) {
     const document = { ...z.toJSONSchema(schema), $id: `urn:gremlin2rdf:schema:v1:${name}` };
+    if (name === 'project') {
+        const source = document.properties.source.anyOf.find((branch) => branch.type === 'object');
+        if (!source) throw new Error('Project source schema is missing its object contract');
+        source.allOf = [
+            {
+                if: { required: ['sourceMode'], properties: { sourceMode: { const: 'cosmos-documents' } } },
+                then: { required: ['documentEndpoint', 'documentProfile'] },
+            },
+        ];
+        source.properties.documentEndpoint.format = 'uri';
+        source.properties.documentEndpoint.pattern = '^https://[^/?#@]+/?$';
+    }
     await writeFile(new URL(`${name}.schema.json`, folder), JSON.stringify(document, null, 2) + '\n');
 }

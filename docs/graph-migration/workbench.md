@@ -172,6 +172,14 @@ password values are never surfaced. Unsupported/malformed files and conflicting 
 not a guessed endpoint. Suggestions are collected in the trusted workspace and identify their origin; existing
 saved connection values take precedence. Discovery makes no network request and does not establish compatibility.
 
+New forms select **Cosmos .NET SDK document feed (default)**. Supply the explicit account `.NET SDK URI`, not an inferred
+conversion of the Gremlin endpoint, and choose the document storage profile. `GRAPH_DOCUMENT_ENDPOINT` and
+`COSMOS_DOCUMENT_ENDPOINT` are recognized non-secret suggestions. Saved legacy projects remain Gremlin until explicitly
+switched. A mode change archives the old project and preserves its complete identity inventory and journals; it creates
+a new run without old approvals or compatibility. Document preparation scans the SDK feed without Gremlin queries or
+partition candidates. Errors stop, never switch modes or launch a comparison benchmark.
+See [document fidelity and mode-bound recovery](document-source.md).
+
 Saving the form derives standard `/query`, `/update` and `/data` endpoints for the supplied Fuseki dataset URL.
 Use the actual existing dataset path, for example `http://localhost:3030/ekg`; the server root alone does not
 establish a dataset. If the intended dataset is absent, an operator must create or mount it separately. Custom

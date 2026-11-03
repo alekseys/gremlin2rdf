@@ -122,6 +122,9 @@ def evaluate(script, bindings):
         selected = [v for v in selected if v["label"] == bindings["g2rObservedLabel"]]
     if "g2rSystemKey" in bindings:
         assert len(selected) == 1
+        fault_path = root / "source-fault.json"
+        if fault_path.exists() and json.loads(fault_path.read_text()).get("missingSystemKey") == bindings["g2rSystemKey"]:
+            return []
         row = selected[0]
         metadata = {"_etag": "stable", "_ts": 123, "_self": "fixture", "_attachments": "fixture", "_rid": "fixture",
                     "inVPartition": row.get("destination", {}).get("partition"),

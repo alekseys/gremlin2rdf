@@ -24,13 +24,27 @@ public record Project(
                          String identityManifest, String identityManifestHash, String compatibilityEvidence,
                          String ruBudget, String customCaRef, boolean syntheticTestContainer,
                          @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
-                         String ruPerSecond) {
+                         String ruPerSecond,
+                         @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+                         String sourceMode,
+                         @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+                         String documentEndpoint,
+                         @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+                         String documentProfile) {
+        public Source(String scope, String host, int port, String database, String container,
+                      String partitionKeyPath, String authenticationRef, String extractionStrategy,
+                      String identityManifest, String identityManifestHash, String compatibilityEvidence,
+                      String ruBudget, String customCaRef, boolean syntheticTestContainer, String ruPerSecond) {
+            this(scope,host,port,database,container,partitionKeyPath,authenticationRef,extractionStrategy,
+                identityManifest,identityManifestHash,compatibilityEvidence,ruBudget,customCaRef,syntheticTestContainer,
+                ruPerSecond,null,null,null);
+        }
         public Source(String scope, String host, int port, String database, String container,
                       String partitionKeyPath, String authenticationRef, String extractionStrategy,
                       String identityManifest, String identityManifestHash, String compatibilityEvidence,
                       String ruBudget, String customCaRef, boolean syntheticTestContainer) {
             this(scope,host,port,database,container,partitionKeyPath,authenticationRef,extractionStrategy,
-                identityManifest,identityManifestHash,compatibilityEvidence,ruBudget,customCaRef,syntheticTestContainer,null);
+                identityManifest,identityManifestHash,compatibilityEvidence,ruBudget,customCaRef,syntheticTestContainer,null,null,null,null);
         }
         public Source {
             reference(authenticationRef); reference(customCaRef);
@@ -43,6 +57,15 @@ public record Project(
             if (identityManifestHash == null || !identityManifestHash.matches("[a-f0-9]{64}"))
                 throw new IllegalArgumentException("Verified identity manifest checksum required");
             if (compatibilityEvidence != null) SafeFiles.relative(compatibilityEvidence);
+            if (sourceMode != null && !List.of("cosmos-documents","gremlin").contains(sourceMode))
+                throw new IllegalArgumentException("Unknown source mode");
+            if ("cosmos-documents".equals(sourceMode)) {
+                endpoint(documentEndpoint);
+                var uri=URI.create(documentEndpoint);
+                if (!List.of("property-bags-v1","flat-v1").contains(documentProfile) ||
+                    !"https".equals(uri.getScheme()) || uri.getRawQuery()!=null || !List.of("","/").contains(uri.getPath()))
+                    throw new IllegalArgumentException("Explicit document account endpoint and storage profile required");
+            }
             if (ruBudget != null && new java.math.BigDecimal(ruBudget).signum() <= 0)
                 throw new IllegalArgumentException("Positive source RU budget required");
             if (ruPerSecond != null && (!ruPerSecond.matches("[0-9]{1,10}(?:\\.[0-9]{1,9})?")
@@ -112,8 +135,13 @@ public record Project(
         if (source != null) reference(source.authenticationRef());
     }
     public String inputHash() {
+        Object boundSource=source==null ? "" : source;
+        if (source!=null && "cosmos-documents".equals(source.sourceMode())) {
+            var tree=(com.fasterxml.jackson.databind.node.ObjectNode)Json.MAPPER.valueToTree(source);
+            tree.putNull("compatibilityEvidence");boundSource=tree;
+        }
         return Json.hash(List.of(migrationKind, schemaVersion, baselineRepositorySha, runId, protocolVersion,
-            workerVersion, mapping, source == null ? "" : source, target == null ? "" : target, limits, consistency, applicationHashes));
+            workerVersion, mapping, boundSource, target == null ? "" : target, limits, consistency, applicationHashes));
     }
     public String graph(String role) {
         if (target == null || !List.of("canonical", "derived", "metadata", "validation").contains(role))

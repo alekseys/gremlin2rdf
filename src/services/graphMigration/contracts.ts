@@ -392,6 +392,9 @@ export const graphProjectSchema = z
                 partitionKeyPath: z.string().regex(/^\/[^/]{1,255}$/u),
                 authenticationRef: reference,
                 extractionStrategy: z.literal('verified-identity-manifest'),
+                sourceMode: z.enum(['cosmos-documents', 'gremlin']).optional(),
+                documentEndpoint: endpoint.optional(),
+                documentProfile: z.enum(['property-bags-v1', 'flat-v1']).optional(),
                 identityManifest: relativePath,
                 identityManifestHash: hash,
                 compatibilityEvidence: relativePath.nullable(),
@@ -410,6 +413,21 @@ export const graphProjectSchema = z
                     .optional(),
             })
             .strict()
+            .superRefine((source, context) => {
+                if (source.sourceMode === 'cosmos-documents' && (!source.documentEndpoint || !source.documentProfile))
+                    context.addIssue({
+                        code: 'custom',
+                        message: 'Document mode requires its explicit endpoint and storage profile',
+                    });
+                if (source.documentEndpoint) {
+                    const url = new URL(source.documentEndpoint);
+                    if (url.protocol !== 'https:' || url.pathname !== '/' || url.search)
+                        context.addIssue({
+                            code: 'custom',
+                            message: 'Use the account document endpoint without resource paths or query parameters',
+                        });
+                }
+            })
             .nullable(),
         target: z
             .object({
@@ -516,7 +534,9 @@ export function inputHash(project: GraphProject): string {
                 project.protocolVersion,
                 project.workerVersion,
                 { ...project.mapping, exclusions: [...project.mapping.exclusions].sort() },
-                project.source ?? '',
+                project.source?.sourceMode === 'cosmos-documents'
+                    ? { ...project.source, compatibilityEvidence: null }
+                    : (project.source ?? ''),
                 project.target ?? '',
                 project.limits,
                 project.consistency,

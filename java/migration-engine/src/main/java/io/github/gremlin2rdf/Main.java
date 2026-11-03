@@ -298,6 +298,12 @@ public final class Main {
             }
             case "validate" -> {
                 require(args, 3); var project = project(args[1]);
+                if(project.source()!=null && "cosmos-documents".equals(project.source().sourceMode())){
+                    SourceCompatibility.authorizeMode(project);
+                    var observations=SourceCompatibility.read(project,Path.of(args[1]).toRealPath().getParent());
+                    if(!SafeFiles.fileHash(Path.of(args[2])).equals(observations.path("canonicalSha256").asText()))
+                        throw new Diagnostics.Failure("SOURCE_EVIDENCE_INTEGRITY","source-document-validation-input");
+                }
                 try (var sink = new Sink(project)) { yield Validation.validate(project, Path.of(args[2]), sink, engine); }
             }
             case "source-check", "source-enumerate", "extract", "source-compatibility", "source-populate", "source-cleanup", "source-recipes" -> {
@@ -308,6 +314,12 @@ public final class Main {
                 boolean recipes = args[0].equals("source-recipes");
                 boolean enumerate = args[0].equals("source-enumerate");
                 boolean check = args[0].equals("source-check");
+                boolean documents=project.source()!=null && "cosmos-documents".equals(project.source().sourceMode());
+                if (documents && (mutation || recipes))
+                    throw new Diagnostics.Failure("SOURCE_DOCUMENT_READ_ONLY","source-document-operation");
+                if (documents && !check && !enumerate) SourceCompatibility.authorizeMode(project);
+                if (documents && !check && !enumerate && !probe)
+                    SourceCompatibility.read(project,Path.of(args[1]).toRealPath().getParent());
                 PopulationPlan populationPlan = null;
                 if (mutation || recipes) {
                     Path root = Path.of(args[1]).toRealPath().getParent();
@@ -326,13 +338,22 @@ public final class Main {
                         throw new IOException("New owned observation artifact required");
                     Files.createDirectories(selected.getParent());
                 }
-                if (!sourceJar.getFileName().toString().equals("cosmos-gremlin-source-0.1.0.jar"))
+                if (!sourceJar.getFileName().toString().equals(documents ? "DocumentSource.exe" : "cosmos-gremlin-source-0.1.0.jar"))
                     throw new IllegalArgumentException("Pinned source adapter required");
-                var process = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin",
-                    System.getProperty("os.name").startsWith("Windows") ? "java.exe" : "java").toString(),
-                    "-Xmx256m", "-jar", sourceJar.toString(), check ? "check" : enumerate ? "enumerate" : probe ? "probe" : recipes ? "recipes"
-                        : mutation ? args[0].equals("source-populate") ? "populate" : "source-cleanup" : "extract",
-                    args[1], args[3], args[4], "--parent-owned")
+                if (documents) verifyDocumentAdapter(sourceJar);
+                var command=new ArrayList<String>();
+                if (!documents) command.addAll(List.of(Path.of(System.getProperty("java.home"),"bin",
+                    System.getProperty("os.name").startsWith("Windows") ? "java.exe" : "java").toString(),"-Xmx256m","-jar"));
+                command.addAll(List.of(sourceJar.toString(),check ? "check" : enumerate ? "enumerate" : probe ? "probe" : recipes ? "recipes"
+                        : mutation ? args[0].equals("source-populate") ? "populate" : "source-cleanup" : "extract",args[1]));
+                if (documents) {
+                    command.add(project.inputHash());
+                    var root=Path.of(args[1]).toRealPath().getParent();
+                    if (enumerate) command.add(args[3]);
+                    if (!check) command.add(root.relativize(output.isAbsolute() ? output.normalize() : root.resolve(output).normalize()).toString().replace('\\','/'));
+                } else command.addAll(List.of(args[3],args[4]));
+                command.add("--parent-owned");
+                var process = new ProcessBuilder(command)
                     .redirectError(ProcessBuilder.Redirect.INHERIT).start();
                 var reply = new java.util.concurrent.CompletableFuture<byte[]>();
                 Thread.startVirtualThread(() -> {
@@ -364,12 +385,15 @@ public final class Main {
                 }
                 if (acknowledgement == null || !acknowledgement.isObject())
                     throw new Diagnostics.Failure("SOURCE_PROTOCOL_INVALID","source-worker-protocol");
-                if (process.exitValue()!=0 && acknowledgement.has("code"))
+                if (process.exitValue()!=0 && acknowledgement.has("code") && !(probe && Files.exists(output)))
                     throw Diagnostics.acknowledged(acknowledgement,
                         check ? "source-connectivity" : enumerate ? "source-enumeration" : "source-operation");
                 if (check) {
                     if (process.exitValue()!=0 || !acknowledgement.path("sourceReadAccess").asBoolean() ||
-                        !acknowledgement.path("driverVersion").asText().equals("3.4.13"))
+                        !(documents
+                            ? acknowledgement.path("adapter").asText().equals("cosmos-dotnet-documents") &&
+                              acknowledgement.path("sdkVersion").asText().equals("3.58.0")
+                            : acknowledgement.path("driverVersion").asText().equals("3.4.13")))
                         throw new Diagnostics.Failure("ENDPOINT_PROVIDER_FAILURE","source-connectivity");
                     yield acknowledgement;
                 }
@@ -403,6 +427,11 @@ public final class Main {
                         || !SafeFiles.fileHash(output).equals(acknowledgement.path("artifactSha256").asText())
                         || status.equals("succeeded") && process.exitValue() != 0)
                         throw new IOException("Invalid source observation envelope or process status");
+                    if (documents && status.equals("blocked")) {
+                        ((com.fasterxml.jackson.databind.node.ObjectNode)result).set("diagnostics",
+                            Json.MAPPER.valueToTree(List.of(Diagnostics.report(result.path("code").asText(),
+                                result.path("stage").asText()))));
+                    }
                     yield result;
                 }
                 if (process.waitFor() != 0 || probe || !acknowledgement.path("status").asText().equals("succeeded")
@@ -458,6 +487,29 @@ public final class Main {
             }
             default -> throw new Gremlin.Unsupported("COMMAND_NOT_IMPLEMENTED", "Requested operation has no verified implementation");
         };
+    }
+    static void verifyDocumentAdapter(Path executable) throws IOException {
+        Path runtime=executable.getParent();
+        if (runtime==null || !runtime.getFileName().toString().equals("win-x64"))
+            throw new Diagnostics.Failure("SOURCE_ADAPTER_REQUIRED","source-document-integrity");
+        Path manifest=SafeFiles.resolve(runtime.getParent(),"worker-manifest.json");
+        if (Files.size(manifest)>65536)
+            throw new Diagnostics.Failure("SOURCE_ADAPTER_REQUIRED","source-document-integrity");
+        JsonNode packaged=Json.MAPPER.readTree(Files.readAllBytes(manifest));
+        if (packaged==null || packaged.path("schemaVersion").asInt()!=1 ||
+            !packaged.path("rid").asText().equals("win-x64") ||
+            !packaged.path("executable").asText().equals("DocumentSource.exe") ||
+            !packaged.path("sdkVersion").asText().equals("3.58.0") ||
+            !packaged.path("files").isObject() || !packaged.path("files").has("DocumentSource.exe"))
+            throw new Diagnostics.Failure("SOURCE_ADAPTER_REQUIRED","source-document-integrity");
+        var files=packaged.path("files").fields();
+        while(files.hasNext()) {
+            var entry=files.next();
+            if (!entry.getKey().matches("[A-Za-z0-9][A-Za-z0-9._-]*") ||
+                !entry.getValue().isTextual() || !entry.getValue().asText().matches("[a-f0-9]{64}") ||
+                !SafeFiles.fileHash(SafeFiles.resolve(runtime,entry.getKey())).equals(entry.getValue().asText()))
+                throw new Diagnostics.Failure("SOURCE_ADAPTER_REQUIRED","source-document-integrity");
+        }
     }
     public static Project project(String file) throws Exception {
         if (Files.size(Path.of(file)) > 1048576) throw new IllegalArgumentException("Project exceeds configured size bound");

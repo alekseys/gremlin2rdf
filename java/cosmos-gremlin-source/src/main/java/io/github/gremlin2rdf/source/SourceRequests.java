@@ -124,7 +124,8 @@ final class SourceRequests implements AutoCloseable {
                 activity("source-request-awaiting-response",0);
                 Response response = request.run(); account(response.attributes());
                 activity("source-request-completed",0);
-                if (response.values().size() != 1) throw new IOException("Unexpected bounded source result shape");
+                if (response.values().size() != 1)
+                    throw new Diagnostics.Failure("SOURCE_RESPONSE_CARDINALITY","source-response-cardinality");
                 return response.values().getFirst();
             } catch (Failure failure) {
                 try { account(failure.attributes); }

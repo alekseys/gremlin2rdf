@@ -6,6 +6,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { z } from 'zod';
 import { fileHash, readBounded } from './artifacts';
 import { inputHash, workerMessageSchema, type GraphProject, type WorkerMessage } from './contracts';
 import { GraphDiagnosticError, hostDiagnostic, safeDiagnostics, type SafeDiagnostic } from './diagnostics';
@@ -60,11 +61,42 @@ export class WorkerBridge implements vscode.Disposable {
             throw new GraphDiagnosticError('WORKER_PACKAGE_INVALID', 'worker-integrity');
         }
         if (
-            !('sourceSha256' in manifest) ||
-            (await fileHash(path.join(this.resourceDirectory, 'cosmos-gremlin-source-0.1.0.jar'))) !==
-                manifest.sourceSha256
+            project.source?.sourceMode !== 'cosmos-documents' &&
+            (!('sourceSha256' in manifest) ||
+                (await fileHash(path.join(this.resourceDirectory, 'cosmos-gremlin-source-0.1.0.jar'))) !==
+                    manifest.sourceSha256)
         )
             throw new GraphDiagnosticError('WORKER_PACKAGE_INVALID', 'source-adapter-integrity');
+        if (
+            project.source?.sourceMode === 'cosmos-documents' &&
+            ['preflight', 'source-enumerate', 'source-compatibility', 'extract'].includes(operation) &&
+            !(operation === 'preflight' && arguments_[0] === 'probe')
+        ) {
+            if (process.platform !== 'win32' || process.arch !== 'x64')
+                throw new GraphDiagnosticError('WORKER_PACKAGE_INVALID', 'document-source-platform');
+            const directory = path.join(this.resourceDirectory, 'document-source');
+            const packaged = z
+                .object({
+                    schemaVersion: z.literal(1),
+                    rid: z.literal('win-x64'),
+                    executable: z.literal('DocumentSource.exe'),
+                    sdkVersion: z.literal('3.58.0'),
+                    files: z.record(
+                        z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/u),
+                        z.string().regex(/^[a-f0-9]{64}$/u),
+                    ),
+                })
+                .parse(
+                    JSON.parse(
+                        (await readBounded(path.join(directory, 'worker-manifest.json'), 65536)).toString('utf8'),
+                    ),
+                );
+            if (!packaged.files[packaged.executable])
+                throw new GraphDiagnosticError('WORKER_PACKAGE_INVALID', 'document-source-integrity');
+            for (const [file, expected] of Object.entries(packaged.files))
+                if ((await fileHash(path.join(directory, packaged.rid, file))) !== expected)
+                    throw new GraphDiagnosticError('WORKER_PACKAGE_INVALID', 'document-source-integrity');
+        }
         if (
             operation === 'test' &&
             arguments_[0] === 'benchmark' &&

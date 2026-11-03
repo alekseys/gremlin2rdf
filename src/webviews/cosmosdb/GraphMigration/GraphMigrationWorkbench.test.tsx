@@ -703,6 +703,74 @@ describe('graph workbench boundaries and keyboard access', () => {
         await userEvent.setup().click(connections);
         expect(mocks.run).toHaveBeenCalledWith(expect.objectContaining({ operation: 'preflight' }));
     });
+    it('preserves opened document retry settings across the required connection recheck', async () => {
+        const configured = bootstrapProject();
+        configured.source = {
+            ...configured.source!,
+            sourceMode: 'cosmos-documents',
+            documentEndpoint: 'https://fixture.documents.azure.com/',
+            documentProfile: 'property-bags-v1',
+            ruPerSecond: '1000',
+        };
+        const hash = inputHash(configured);
+        configured.phases = {
+            preflight: {
+                status: 'blocked',
+                inputHash: hash,
+                evidence: [],
+                blockers: ['source-connectivity (SOURCE_ACCESS_DENIED): fixture'],
+            },
+            'source-enumerate': {
+                status: 'blocked',
+                inputHash: hash,
+                evidence: [],
+                blockers: ['source-request (SOURCE_SPEND_UNKNOWN): fixture'],
+            },
+        };
+        let listener: (event: GraphEvent) => void = () => {
+            throw new Error('Subscription was not registered');
+        };
+        mocks.subscribe.mockImplementation((_input, { onData }) => {
+            listener = onData;
+            return { unsubscribe: vi.fn() };
+        });
+        mocks.load.mockResolvedValue({ project: configured, trusted: true, currentInputHash: hash });
+        mocks.preparation.mockResolvedValue({ partitions: [], notices: [] });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        const user = userEvent.setup();
+        await user.click(await screen.findByRole('button', { name: 'Review run settings' }));
+        const requests = screen.getByRole('spinbutton', { name: 'Maximum reserved request attempts' });
+        await user.clear(requests);
+        await user.type(requests, '200');
+        act(() =>
+            listener({
+                type: 'project',
+                project: {
+                    ...configured,
+                    phases: {
+                        ...configured.phases,
+                        preflight: { status: 'running', inputHash: hash, evidence: [], blockers: [] },
+                    },
+                },
+                currentInputHash: hash,
+            }),
+        );
+        act(() =>
+            listener({
+                type: 'project',
+                project: {
+                    ...configured,
+                    phases: {
+                        ...configured.phases,
+                        preflight: { status: 'succeeded', inputHash: hash, evidence: [], blockers: [] },
+                    },
+                },
+                currentInputHash: hash,
+            }),
+        );
+        expect(screen.getByRole('button', { name: 'Review document-feed preparation' })).toBeVisible();
+        expect(screen.getByRole('spinbutton', { name: 'Maximum reserved request attempts' })).toHaveValue(200);
+    });
     it('routes the next enumeration step to guided review and preserved resume, never the default raw plan', async () => {
         const current = bootstrapProject();
         mocks.load.mockResolvedValue({ project: current, trusted: true, currentInputHash: inputHash(current) });
@@ -950,13 +1018,15 @@ describe('graph workbench boundaries and keyboard access', () => {
         });
         render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
         await waitFor(() =>
-            expect(screen.getByRole('textbox', { name: 'Gremlin endpoint' })).toHaveValue(
-                'account.gremlin.cosmos.azure.com',
-            ),
+            expect(screen.getByRole('combobox', { name: 'Source read mode' })).toHaveValue('cosmos-documents'),
         );
         expect(screen.getByText('Advanced configuration and mapping').closest('details')).not.toHaveAttribute('open');
         expect(screen.getByLabelText('Graph project JSON')).not.toBeVisible();
         const user = userEvent.setup();
+        await user.type(
+            screen.getByRole('textbox', { name: 'Cosmos .NET SDK document endpoint' }),
+            'https://account.documents.azure.com/',
+        );
         await user.selectOptions(screen.getByRole('combobox', { name: 'Source consistency' }), 'quiesced');
         await user.click(screen.getByRole('button', { name: 'Save connection settings' }));
         expect(mocks.saveSetup).toHaveBeenCalledWith(
@@ -964,6 +1034,8 @@ describe('graph workbench boundaries and keyboard access', () => {
                 host: 'account.gremlin.cosmos.azure.com',
                 partitionKeyPath: '/tenant',
                 consistency: 'quiesced',
+                sourceMode: 'cosmos-documents',
+                documentEndpoint: 'https://account.documents.azure.com/',
             }),
         );
         expect(mocks.run).not.toHaveBeenCalled();
@@ -991,7 +1063,7 @@ describe('graph workbench boundaries and keyboard access', () => {
         expect(screen.getByRole('navigation', { name: 'Migration sequence overview' })).toBeVisible();
         expect(screen.getByRole('button', { name: 'Run for Check read-only connections' })).toBeVisible();
         expect(screen.getByText('Run private two-hour mixed soak')).not.toBeVisible();
-        expect(screen.getByRole('textbox', { name: 'Gremlin endpoint' })).toBeRequired();
+        expect(screen.getByRole('textbox', { name: 'Cosmos .NET SDK document endpoint' })).toBeRequired();
         expect(screen.getByRole('textbox', { name: 'Fuseki dataset URL' })).toBeRequired();
         expect(screen.getByRole('combobox', { name: 'Source consistency' })).toBeRequired();
         expect(mocks.run).not.toHaveBeenCalled();

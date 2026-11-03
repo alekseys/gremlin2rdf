@@ -84,6 +84,7 @@ function main() {
 
     executeCommand('npm run graph:prepare', 'Preparing isolated Java graph workers');
     executeCommand('npm run age:prepare', 'Preparing independent .NET AGE worker');
+    executeCommand('npm run document:prepare', 'Preparing read-only .NET Cosmos document source');
     // Step 1: Build the extension
     executeCommand('npm run vite-prod', 'Building extension');
 
