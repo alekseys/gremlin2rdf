@@ -294,3 +294,12 @@ junit.xml
 **/junit.xml
 
 coverage/
+
+# Local scratch work and diagnostic output (not migration projects or release evidence)
+/.local/
+/tmp/
+/temp/
+/logs/
+*.trace
+*.dmp
+*.stackdump

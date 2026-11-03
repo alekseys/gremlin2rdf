@@ -13,11 +13,7 @@
     },
     "type": {
       "type": "string",
-      "enum": [
-        "progress",
-        "result",
-        "error"
-      ]
+      "enum": ["progress", "result", "error"]
     },
     "runId": {
       "type": "string"
@@ -30,14 +26,6 @@
     },
     "payload": {}
   },
-  "required": [
-    "protocolVersion",
-    "sequence",
-    "type",
-    "runId",
-    "operationId",
-    "phase",
-    "payload"
-  ],
+  "required": ["protocolVersion", "sequence", "type", "runId", "operationId", "phase", "payload"],
   "additionalProperties": false
 }

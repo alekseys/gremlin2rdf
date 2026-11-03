@@ -47,14 +47,7 @@
               "maxLength": 1024
             }
           },
-          "required": [
-            "host",
-            "database",
-            "container",
-            "partitionKeyPath",
-            "authenticationRef",
-            "scope"
-          ],
+          "required": ["host", "database", "container", "partitionKeyPath", "authenticationRef", "scope"],
           "additionalProperties": false
         },
         {
@@ -104,16 +97,7 @@
               "const": "VerifyFull"
             }
           },
-          "required": [
-            "host",
-            "port",
-            "database",
-            "username",
-            "authenticationRef",
-            "graph",
-            "ledgerSchema",
-            "sslMode"
-          ],
+          "required": ["host", "port", "database", "username", "authenticationRef", "graph", "ledgerSchema", "sslMode"],
           "additionalProperties": false
         },
         {
@@ -123,10 +107,7 @@
     },
     "consistency": {
       "type": "string",
-      "enum": [
-        "quiesced",
-        "immutable"
-      ]
+      "enum": ["quiesced", "immutable"]
     },
     "limits": {
       "type": "object",
@@ -152,12 +133,7 @@
           "maximum": 3600
         }
       },
-      "required": [
-        "batchRecords",
-        "batchBytes",
-        "timeoutSeconds",
-        "maximumOperationSeconds"
-      ],
+      "required": ["batchRecords", "batchBytes", "timeoutSeconds", "maximumOperationSeconds"],
       "additionalProperties": false
     },
     "approvals": {
@@ -168,11 +144,7 @@
         "properties": {
           "operation": {
             "type": "string",
-            "enum": [
-              "load",
-              "crud",
-              "rewrite"
-            ]
+            "enum": ["load", "crud", "rewrite"]
           },
           "inputHash": {
             "type": "string",
@@ -196,28 +168,11 @@
             "pattern": "^[a-f0-9]{64}$"
           }
         },
-        "required": [
-          "operation",
-          "inputHash",
-          "runId",
-          "target",
-          "resourceHash",
-          "expiresAt",
-          "signature"
-        ],
+        "required": ["operation", "inputHash", "runId", "target", "resourceHash", "expiresAt", "signature"],
         "additionalProperties": false
       }
     }
   },
-  "required": [
-    "schemaVersion",
-    "migrationKind",
-    "runId",
-    "source",
-    "target",
-    "consistency",
-    "limits",
-    "approvals"
-  ],
+  "required": ["schemaVersion", "migrationKind", "runId", "source", "target", "consistency", "limits", "approvals"],
   "additionalProperties": false
 }
