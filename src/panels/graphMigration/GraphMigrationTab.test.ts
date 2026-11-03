@@ -10,7 +10,12 @@ import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as vscode from 'vscode';
 import { writeNewArtifact, fileHash } from '../../services/graphMigration/artifacts';
-import { canonicalJson, inputHash, type WorkerMessage } from '../../services/graphMigration/contracts';
+import {
+    canonicalJson,
+    graphProjectSchema,
+    inputHash,
+    type WorkerMessage,
+} from '../../services/graphMigration/contracts';
 import { type SafeDiagnostic } from '../../services/graphMigration/diagnostics';
 import { GraphProjectService } from '../../services/graphMigration/GraphProjectService';
 import { adoptEnumeration, freshPreparation, seedPartitions } from '../../services/graphMigration/preparation';
@@ -24,6 +29,7 @@ const mocks = vi.hoisted(() => ({
         | ((code: string, status?: 'paused' | 'cancelled', pending?: boolean, diagnostic?: SafeDiagnostic) => void)
         | undefined,
     start: vi.fn(),
+    waitForExit: vi.fn(),
     events: vi.fn(),
     confirm: vi.fn(),
     showTextDocument: vi.fn(),
@@ -91,6 +97,7 @@ vi.mock('../../services/graphMigration/WorkerBridge', () => ({
             return mocks.active;
         }
         start = mocks.start;
+        waitForExit = mocks.waitForExit;
         cancel() {}
         pause() {}
         dispose() {}
@@ -103,6 +110,7 @@ beforeEach(async () => {
     mocks.active = false;
     mocks.trusted = true;
     mocks.start.mockResolvedValue(undefined);
+    mocks.waitForExit.mockResolvedValue(undefined);
     mocks.confirm.mockResolvedValue('Import reviewed evidence');
     workspace = await mkdtemp(path.join(tmpdir(), 'graph-editor-owned-'));
     new GraphMigrationTab({} as vscode.WebviewPanel, workspace);
@@ -132,6 +140,44 @@ async function complete(payload: WorkerMessage['payload']) {
 }
 
 describe('persisted graph editor workflow', () => {
+    it('does not certify a terminal success if owned shutdown subsequently fails', async () => {
+        await context.create();
+        await context.run('mapping', '', '', '');
+        let exited: () => void = () => {};
+        mocks.waitForExit.mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    exited = resolve;
+                }),
+        );
+        const completion = complete({ status: 'succeeded' });
+        await vi.waitFor(() => expect(mocks.waitForExit).toHaveBeenCalled());
+        mocks.failure?.('WORKER_DISCONNECTED');
+        exited();
+        await completion;
+        const phase = (await service.load()).phases.mapping;
+        expect(phase.status).toBe('failed');
+        expect(phase.blockers.join(' ')).toContain('WORKER_DISCONNECTED');
+    });
+    it('does not publish completed controls while the previous owned worker is still exiting', async () => {
+        await context.create();
+        await context.run('mapping', '', '', '');
+        let exited: () => void = () => {};
+        mocks.waitForExit.mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    exited = resolve;
+                }),
+        );
+        const before = mocks.events.mock.calls.length;
+        const completion = complete({ status: 'succeeded' });
+        await vi.waitFor(() => expect(mocks.waitForExit).toHaveBeenCalled());
+        expect((await service.load()).phases.mapping.status).toBe('running');
+        expect(mocks.events.mock.calls.slice(before).some(([event]) => event.type === 'project')).toBe(false);
+        exited();
+        await completion;
+        expect((await service.load()).phases.mapping.status).toBe('succeeded');
+    });
     it('opens preserved phase evidence from an earlier run only when referenced and checksum-valid', async () => {
         await context.create();
         const project = await service.load(),
@@ -462,6 +508,7 @@ describe('persisted graph editor workflow', () => {
                 edges: 0,
                 identityTypes: 'string-only',
                 edgeScope: 'sourceVertex',
+                sourceCountsReconciled: true,
             }),
         );
         const adopted = await adoptEnumeration(prepared.project, root, prepared.output);
@@ -470,7 +517,41 @@ describe('persisted graph editor workflow', () => {
         expect(adopted.source?.identityManifest).toBe(`${prepared.output}/identities.ndjson`);
         expect(adopted.approvals).toEqual([]);
         expect(adopted.source?.compatibilityEvidence).not.toBe(prepared.project.source?.compatibilityEvidence);
+        const receipt = `artifacts/adopted-inventory-${adopted.runId}.json`;
+        expect(adopted.phases['source-enumerate']).toMatchObject({
+            status: 'succeeded',
+            inputHash: inputHash(adopted),
+            evidence: [receipt],
+        });
+        const savedReceipt = await readFile(path.join(root, receipt));
+        const legacy = graphProjectSchema.parse({
+            ...adopted,
+            phases: {
+                ...adopted.phases,
+                'source-enumerate': {
+                    status: 'stale',
+                    inputHash: inputHash(prepared.project),
+                    evidence: [],
+                    blockers: [],
+                },
+            },
+        });
+        await service.save(legacy);
+        const recovered = await context.load();
+        expect(recovered.project?.phases['source-enumerate']).toEqual(adopted.phases['source-enumerate']);
+        expect(recovered.project?.runId).toBe(adopted.runId);
+        expect(await readFile(path.join(root, receipt))).toEqual(savedReceipt);
+        expect(mocks.start).not.toHaveBeenCalled();
+        expect((await service.load()).phases['source-enumerate'].status).toBe('succeeded');
+        const changed = graphProjectSchema.parse({ ...legacy, limits: { ...legacy.limits, batchRecords: 99 } });
+        await service.save(changed);
+        expect((await context.load()).project?.phases['source-enumerate'].status).toBe('stale');
+        await service.save(legacy);
         await writeFile(path.join(root, prepared.output, 'identities.ndjson'), 'tampered');
+        const rejected = await context.load();
+        expect(rejected.project?.phases['source-enumerate'].status).toBe('blocked');
+        expect(rejected.project?.phases['source-enumerate'].blockers[0]).toContain('INVENTORY_ADOPTION_UNVERIFIED');
+        expect(mocks.start).not.toHaveBeenCalled();
         await expect(adoptEnumeration(prepared.project, root, prepared.output)).rejects.toThrow();
     });
     it('keeps specific blocked diagnostics in the persisted phase instead of a generic failure', async () => {

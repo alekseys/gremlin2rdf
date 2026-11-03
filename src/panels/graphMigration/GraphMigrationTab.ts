@@ -45,6 +45,7 @@ import {
     adoptEnumeration,
     discoverPreparation,
     freshPreparation,
+    restoreAdoptedInventoryPhase,
     type PrepareSource,
 } from '../../services/graphMigration/preparation';
 import { applySetup, discoverSetup, type SetupSuggestions } from '../../services/graphMigration/setup';
@@ -75,6 +76,9 @@ export class GraphMigrationTab extends BaseTab {
     private activitySampler = new ActivitySampler<WorkerMessage>();
     private lastHeartbeatAt = Number.NEGATIVE_INFINITY;
     private pendingStopDiagnostic: ReturnType<typeof hostDiagnostic> | undefined;
+    private completionFailure:
+        | { status: 'failed' | 'paused' | 'cancelled'; diagnostics: ReturnType<typeof hostDiagnostic>[] }
+        | undefined;
     constructor(
         panel: vscode.WebviewPanel,
         private readonly workspacePath: string,
@@ -125,10 +129,13 @@ export class GraphMigrationTab extends BaseTab {
                     this.pendingStopDiagnostic = diagnostic;
                     return;
                 }
-                void this.finish({
+                this.completionFailure = {
                     status: status ?? 'failed',
                     diagnostics: [...(this.pendingStopDiagnostic ? [this.pendingStopDiagnostic] : []), diagnostic],
-                }).catch(() => this.events.emit({ type: 'diagnostic', code: 'STATE_SAVE_FAILED' }));
+                };
+                void this.finish(this.completionFailure).catch(() =>
+                    this.events.emit({ type: 'diagnostic', code: 'STATE_SAVE_FAILED' }),
+                );
             },
         );
         const context: GraphRouterContext = {
@@ -289,6 +296,27 @@ export class GraphMigrationTab extends BaseTab {
             this.setup = await discoverSetup(this.workspacePath, process.env);
         try {
             const project = await this.service.load();
+            if (!this.activeOperation && !this.bridge.active && vscode.workspace.isTrusted) {
+                let changed = false;
+                try {
+                    changed = await restoreAdoptedInventoryPhase(project, await this.service.root());
+                } catch {
+                    project.phases['source-enumerate'] = {
+                        ...project.phases['source-enumerate'],
+                        status: 'blocked',
+                        inputHash: inputHash(project),
+                        evidence: project.phases['source-enumerate']?.evidence ?? [],
+                        blockers: [
+                            'INVENTORY_ADOPTION_UNVERIFIED: ' +
+                                l10n.t(
+                                    'The saved inventory adoption could not be verified. Preserve its receipt, manifest and identity file; review their integrity before continuing. No source requests were submitted.',
+                                ),
+                        ],
+                    };
+                    changed = true;
+                }
+                if (changed) await this.service.save(project);
+            }
             if (!this.activeOperation && Object.values(project.phases).some((phase) => phase.status === 'running')) {
                 for (const phase of Object.values(project.phases))
                     if (phase.status === 'running') {
@@ -683,6 +711,7 @@ export class GraphMigrationTab extends BaseTab {
         this.activitySampler = new ActivitySampler<WorkerMessage>();
         this.lastHeartbeatAt = Number.NEGATIVE_INFINITY;
         this.pendingStopDiagnostic = undefined;
+        this.completionFailure = undefined;
         this.preparationStop = undefined;
         try {
             const project = await this.service.load(),
@@ -1124,6 +1153,8 @@ export class GraphMigrationTab extends BaseTab {
         }
     }
     private async finishOnce(result: unknown): Promise<void> {
+        await this.bridge.waitForExit();
+        result = this.completionFailure ?? result;
         const operation = this.activeOperation;
         if (!operation) return;
         const project = await this.service.load();

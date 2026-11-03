@@ -140,12 +140,27 @@ export function hostDiagnostic(error: unknown, stage = 'preparation'): SafeDiagn
     return { status: 'blocked', code, stage: error instanceof GraphDiagnosticError ? error.stage : stage, remediation };
 }
 export function hasFidelityInventory(project: GraphProject): boolean {
+    if (project.phases['source-enumerate']?.blockers.some((value) => value.includes('INVENTORY_ADOPTION_UNVERIFIED')))
+        return false;
     return Boolean(
         project.source &&
         (project.source.identityManifestHash !== 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' ||
             project.artifacts.some(
                 (a) => a.ownerRunId === project.runId && a.relativePath.startsWith('artifacts/adopted-inventory-'),
             )),
+    );
+}
+export function hasCurrentAdoptedInventory(project: GraphProject, currentHash: string | undefined): boolean {
+    const phase = project.phases['source-enumerate'];
+    const receipt = `artifacts/adopted-inventory-${project.runId}.json`;
+    return Boolean(
+        currentHash &&
+        phase?.status === 'succeeded' &&
+        phase.inputHash === currentHash &&
+        phase.evidence[0] === receipt &&
+        project.artifacts.some(
+            (artifact) => artifact.ownerRunId === project.runId && artifact.relativePath === receipt,
+        ),
     );
 }
 export function hasCurrentSourceCompatibility(project: GraphProject, currentInputHash: string | undefined): boolean {

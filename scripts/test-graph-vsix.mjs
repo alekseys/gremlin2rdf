@@ -230,6 +230,7 @@ const errors = [];
 let page;
 try {
     page = await app.firstWindow();
+    page.setDefaultTimeout(30000);
     page.on('pageerror', (error) => errors.push(error.message));
     await page.locator('.monaco-workbench').waitFor();
     await page.waitForTimeout(5000);
@@ -332,6 +333,48 @@ try {
     }
     const enumerated = await state();
     assert.notEqual(enumerated.source.identityManifest, 'identities.ndjson', 'Inventory was not adopted');
+    assert.equal(
+        enumerated.phases['source-enumerate'].status,
+        'succeeded',
+        'Adoption must not look like a stale enumeration',
+    );
+    const receiptPath = enumerated.phases['source-enumerate'].evidence[0];
+    const receipt = JSON.parse(await readFile(path.join(runRoot, receiptPath), 'utf8'));
+    const sourceBeforeReload = JSON.parse(await readFile(path.join(root, 'source-summary.json'), 'utf8'));
+    const legacy = structuredClone(enumerated);
+    legacy.phases['source-enumerate'] = {
+        ...legacy.phases['source-enumerate'],
+        status: 'stale',
+        inputHash: receipt.producerInputHash,
+        evidence: legacy.phases['source-enumerate'].evidence.slice(1),
+    };
+    await writeFile(path.join(runRoot, 'project.json'), JSON.stringify(legacy, null, 2));
+    await webview.getByRole('button', { name: 'Reload persisted state', exact: true }).click();
+    for (let i = 0; i < 60; i++) {
+        if ((await state()).phases['source-enumerate'].status === 'succeeded') break;
+        await page.waitForTimeout(250);
+    }
+    assert.equal(
+        (await state()).phases['source-enumerate'].inputHash,
+        inputHash(enumerated),
+        'Legacy persisted adoption must recover locally',
+    );
+    assert.equal(
+        JSON.parse(await readFile(path.join(root, 'source-summary.json'), 'utf8')).requests,
+        sourceBeforeReload.requests,
+        'Adoption recovery must not submit source requests',
+    );
+    await webview
+        .getByText(
+            'Your verified inventory is saved. Recheck connections for the new run; do not repeat enumeration.',
+            { exact: true },
+        )
+        .waitFor();
+    await webview.getByRole('button', { name: 'Go to next unfinished step', exact: true }).click();
+    const nextConnection = webview.getByRole('button', { name: 'Run for Check read-only connections', exact: true });
+    assert.equal(await nextConnection.isEnabled(), true, 'Adoption must leave the required connection Run enabled');
+    assert.equal(await nextConnection.evaluate((button) => button === button.ownerDocument.activeElement), true);
+    await page.screenshot({ path: path.join(root, 'adopted-continue.png') });
     assert.deepEqual(
         await readFile(path.join(runRoot, stoppedEvidence)),
         stoppedBytes,
@@ -347,7 +390,7 @@ try {
     await webview
         .getByRole('button', { name: 'Evidence 1 for Enumerate read-only source identities', exact: true })
         .click();
-    await page.getByRole('tab', { name: /source-enumerate/ }).waitFor();
+    await page.getByRole('tab', { name: /adopted-inventory/ }).waitFor();
     await page.getByRole('tab', { name: /Gremlin to RDF/i }).click();
     const phases = [
         ['preflight', 'Check read-only connections'],

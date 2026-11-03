@@ -87,6 +87,27 @@ Named safe readiness diagnostics identify missing/stale gates instead of a gener
 
 ## Installed-VSIX end-to-end test
 
+Version 0.39.17 records the **current inventory adoption receipt** as Step 2 success, without changing the
+original enumeration report's run or input hash. Inventory adoption intentionally creates a new run, so
+prior connection checks are still stale: the next action is **Check read-only connections**, not another
+enumeration. The top-level continuation panel names that step and **Go to next unfinished step** scrolls
+and focuses its enabled Run control. Configured connection settings no longer automatically expand over
+the workflow merely because a connection result became stale.
+
+On opening an earlier saved adopted project, the host revalidates the current owned receipt's SHA-256,
+run/input binding, selected identity bytes and reconciled producer manifest before restoring the adoption
+phase. This repair submits no source requests, creates no new run, resets no budget and grants no approval.
+Changed inputs cannot reuse an old receipt; corrupted/missing artifacts explicitly block continuation.
+Old enumeration evidence remains available with its original hash, after the current adoption receipt.
+Do not delete the inventory, reset the project or repeat enumeration solely because the original report
+belonged to the preparation run. The installed-VSIX test also reproduces the older persisted stale state,
+reloads it, asserts zero extra source requests, and verifies that the connection Run is enabled/focused
+before completing the remaining private migration.
+
+Terminal worker messages no longer publish completed controls before the owned process has exited.
+This prevents the next enabled Run from racing a still-owned Java worker. A subsequent shutdown failure
+remains a failed/paused operation rather than certifying an earlier success message.
+
 On Windows, `npm run graph:test:vsix` installs the current built VSIX into a fresh, isolated VS Code profile
 and runs the actual workbench, tRPC host, pinned Java source worker and Jena sink. It requires the normal
 repository Node/Playwright dependencies, Java 21+, installed VS Code at its default path, the installed Azure
@@ -214,7 +235,7 @@ Stop any active migration before replacing the extension. Settings and workspace
 For a package with the same version as your installed preview, you can force replacement from PowerShell:
 
 ```powershell
-code --install-extension ".\vscode-cosmosdb-0.39.16.vsix" --force
+code --install-extension ".\vscode-cosmosdb-0.39.17.vsix" --force
 ```
 
 If the CLI prints `DEP0169` after reporting that the extension was successfully installed, installation succeeded.

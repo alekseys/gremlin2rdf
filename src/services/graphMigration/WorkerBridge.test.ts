@@ -122,6 +122,58 @@ function bridge() {
     return new WorkerBridge('package', storage(), vi.fn(), vi.fn());
 }
 describe('worker credential isolation', () => {
+    it('waits for the owned process close before allowing completion to expose another Run', async () => {
+        const message = vi.fn(),
+            failure = vi.fn();
+        const worker = new WorkerBridge('package', storage(), message, failure);
+        await worker.start(project(), 'run', 'synthetic', []);
+        const child = mocks.spawn.mock.results[0].value;
+        const frame = {
+            protocolVersion: 1,
+            timestamp: new Date().toISOString(),
+            phase: 'complete',
+        };
+        child.stdout.emit(
+            'data',
+            Buffer.from(
+                JSON.stringify({
+                    ...frame,
+                    type: 'hello',
+                    runId: '',
+                    operationId: '',
+                    sequence: 0,
+                    payload: { workerVersion: '0.1.0' },
+                }) + '\n',
+            ),
+        );
+        const start = JSON.parse(child.stdin.read().toString().trim());
+        child.stdout.emit(
+            'data',
+            Buffer.from(
+                JSON.stringify({
+                    ...frame,
+                    type: 'result',
+                    runId: start.runId,
+                    operationId: start.operationId,
+                    sequence: 1,
+                    payload: { status: 'succeeded' },
+                }) + '\n',
+            ),
+        );
+        expect(message).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'result' }));
+        let resolved = false;
+        const closed = worker.waitForExit().then(() => {
+            resolved = true;
+        });
+        await Promise.resolve();
+        expect(resolved).toBe(false);
+        expect(worker.active).toBe(true);
+        child.emit('close', 0);
+        await closed;
+        expect(worker.active).toBe(false);
+        expect(failure).not.toHaveBeenCalled();
+        await worker.waitForExit();
+    });
     it('retains bounded artifact action/attempts through safe diagnostics and rendered remediation', () => {
         const diagnostic = {
             status: 'blocked',

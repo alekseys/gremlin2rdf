@@ -10,7 +10,7 @@ not a Microsoft Marketplace release.
 
 ## Install and choose your target
 
-1. Install **`vscode-cosmosdb-0.39.16.vsix`** using VS Code's **Extensions > Install from VSIX**, then reload.
+1. Install **`vscode-cosmosdb-0.39.17.vsix`** using VS Code's **Extensions > Install from VSIX**, then reload.
    Stop active migrations before upgrading; this replaces the extension, not its saved projects.
 2. Open your application's folder as a trusted workspace and enable:
 
@@ -60,6 +60,13 @@ evidence remains checksum-verified and readable after inventory adoption. Readin
 extraction filename, rather than assuming `records.ndjson`; missing application/release proof still blocks cutover.
 The [installed-VSIX desktop harness](docs/graph-migration/workbench.md#installed-vsix-end-to-end-test) exercises
 the real workbench and packaged workers against private loopback fixtures, not your operational databases.
+
+Version 0.39.17 distinguishes successful inventory adoption from stale producer evidence. Existing adopted
+projects are repaired locally after receipt, manifest and identity-file checks, without repeating enumeration.
+A prominent continuation control focuses the enabled next step; connection checks must still be rerun for
+the new input-bound run. Inventories, journals and old evidence are not deleted or relabeled.
+The next step also waits for the previous worker process to exit, avoiding a ready-looking Run that the
+host still rejects as busy.
 
 For Fuseki, use an existing **dataset URL** such as `http://localhost:3030/ekg`, not just `http://localhost:3030`.
 If the intended dataset is absent, your operator must create or mount it separately; the extension does not.

@@ -659,6 +659,50 @@ describe('graph workbench boundaries and keyboard access', () => {
         expect(connection).not.toBeDisabled();
         expect(mocks.approve).not.toHaveBeenCalled();
     });
+    it('shows adopted inventory as current and directs continuation to the enabled connection recheck', async () => {
+        const configured = bootstrapProject();
+        configured.source!.identityManifestHash = '1'.repeat(64);
+        const hash = inputHash(configured);
+        const receipt = `artifacts/adopted-inventory-${configured.runId}.json`;
+        configured.phases = {
+            preflight: {
+                status: 'stale',
+                inputHash: '0'.repeat(64),
+                evidence: ['artifacts/old-preflight.json'],
+                blockers: [],
+            },
+            'source-enumerate': {
+                status: 'succeeded',
+                inputHash: hash,
+                evidence: [receipt, 'artifacts/original-enumeration.json'],
+                blockers: [],
+            },
+        };
+        configured.artifacts = [
+            { relativePath: receipt, ownerRunId: configured.runId, sha256: '2'.repeat(64), sensitive: true },
+        ];
+        mocks.load.mockResolvedValue({ project: configured, trusted: true, currentInputHash: hash });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        const next = await screen.findByRole('button', { name: 'Go to next unfinished step' });
+        const connections = screen.getByRole('button', { name: 'Run for Check read-only connections' });
+        expect(connections).not.toBeDisabled();
+        expect(
+            screen.getByText(
+                'Your verified inventory is saved. Recheck connections for the new run; do not repeat enumeration.',
+            ),
+        ).toBeVisible();
+        const enumeration = screen.getByRole('button', { name: 'Run for Enumerate read-only source identities' });
+        expect(enumeration).toBeDisabled();
+        expect(enumeration.closest('details')?.querySelector('summary')).toHaveTextContent('Succeeded');
+        expect(screen.getByText(/Verified inventory adopted for this run/)).toBeVisible();
+        connections.scrollIntoView = vi.fn();
+        await userEvent.setup().click(next);
+        expect(connections.scrollIntoView).toHaveBeenCalled();
+        expect(connections).toHaveFocus();
+        expect(mocks.run).not.toHaveBeenCalled();
+        await userEvent.setup().click(connections);
+        expect(mocks.run).toHaveBeenCalledWith(expect.objectContaining({ operation: 'preflight' }));
+    });
     it('routes the next enumeration step to guided review and preserved resume, never the default raw plan', async () => {
         const current = bootstrapProject();
         mocks.load.mockResolvedValue({ project: current, trusted: true, currentInputHash: inputHash(current) });

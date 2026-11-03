@@ -29,6 +29,10 @@ export class WorkerBridge implements vscode.Disposable {
     get active(): boolean {
         return this.process !== undefined;
     }
+    async waitForExit(): Promise<void> {
+        const owned = this.process;
+        if (owned) await new Promise<void>((resolve) => owned.once('close', () => resolve()));
+    }
     constructor(
         private readonly resourceDirectory: string,
         private readonly secrets: vscode.SecretStorage,

@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "scope": "Private loopback fixtures in an isolated real VS Code profile; not an operational Cosmos graph or production cutover",
+  "version": "0.39.17",
+  "baselineCommit": "c2a31fb09b54a7785cd85f072ba150eba74b2353",
+  "package": {
+    "file": "vscode-cosmosdb-0.39.17.vsix",
+    "bytes": 112997682,
+    "sha256": "b2a21db952bb44a043a2316496b2fcb0dbc59f114d4911594efcc0f02f50dde2",
+    "zipAndNestedJarCrcVerified": true,
+    "workerManifestChecksumsVerified": true
+  },
+  "execution": {
+    "command": "npm run graph:test:vsix",
+    "exitCode": 0,
+    "coreMigration": "succeeded",
+    "productionReadiness": "blocked",
+    "pageErrors": 0,
+    "source": {
+      "transport": "Verified TLS GraphSON v2 WebSocket with negotiated compression",
+      "driver": "3.4.13",
+      "vertices": 3,
+      "edges": 3,
+      "requests": 211,
+      "requestCharge": 211,
+      "compressedConnections": 8,
+      "rejectedTemplates": 0
+    },
+    "target": "Real Jena 6.2.0 transactional in-memory loopback Fuseki dataset",
+    "verifiedControls": [
+      "Actual read-only preflight, deliberately exhausted preparation, edited-limit retry and scoped target-write approval",
+      "Successful adoption records its current owned receipt as succeeded Step 2 without rewriting producer evidence",
+      "Reproduced older persisted stale-adoption state, then restored it through Reload persisted state",
+      "Local adoption recovery submits zero source requests and preserves the existing run and artifacts",
+      "Continue migration identifies the required connection recheck and focuses its enabled Run control",
+      "Configured settings stay collapsed instead of obscuring the next phase",
+      "Adoption evidence opens through the actual editor",
+      "Continued immediately through all core phases, including validation and golden queries"
+    ],
+    "passedOperations": [
+      "preflight",
+      "source-enumerate and verified inventory adoption",
+      "assess",
+      "source-compatibility",
+      "mapping",
+      "extract",
+      "load",
+      "validate",
+      "functional"
+    ],
+    "readiness": {
+      "passed": ["structural", "queries", "sourceCompatibility"],
+      "blockedMissingEvidence": ["application", "applicationInputs", "crud", "load", "soak", "dependencies"],
+      "publicationAuthorized": false,
+      "explanation": "The isolated transfer does not prove application equivalence, CRUD failure-injection, large-load, soak, dependency-audit or live Cosmos compatibility."
+    },
+    "preservation": "Recorded artifact bytes match their saved SHA-256; stopped evidence, producer report, adoption receipt and enumeration checkpoint/journal remain preserved."
+  },
+  "validation": {
+    "localizationKeys": 2428,
+    "formatExitCode": 0,
+    "fullLintExitCode": 0,
+    "typeScriptBuildTargets": 3,
+    "typeScriptBuildExitCode": 0,
+    "vitest": { "filesPassed": 256, "testsPassed": 6037, "testsSkipped": 5, "exitCode": 0 },
+    "relationalSkill": { "testsPassed": 434, "testsSkipped": 2, "exitCode": 0 },
+    "java": { "testsPassed": 149, "testsSkipped": 0, "exitCode": 0 },
+    "packagedOfflineSmokeExitCode": 0,
+    "independentAgeOfflineSmoke": { "checksPassed": 27, "exitCode": 0 },
+    "ageUiAndRepositoryTemplateUnchanged": true,
+    "agePublishedExecutableSha256": "65b379b0742cef3d4f65ca2aa82e82e560873b1b72eca21418e39ac07f46bd2d",
+    "regressions": [
+      "Receipt, identity and reconciled-manifest ownership/checksum verification",
+      "Changed inputs cannot reuse the previous adoption receipt",
+      "Corrupt identity bytes explicitly block continuation without contacting the source",
+      "Persisted reload shows the adoption explanation without requiring transient progress logs",
+      "Terminal messages do not publish finished controls until the owned worker closes",
+      "A subsequent worker shutdown failure cannot certify an earlier terminal success"
+    ]
+  },
+  "diagnosedDefects": [
+    "Inventory adoption created a new input-bound run but left Step 2 displaying only stale producer evidence",
+    "Stale connection evidence caused configured settings to expand over the required continuation",
+    "The host could publish completion before releasing the owned Java process, so the next enabled Run raced a busy-worker rejection"
+  ],
+  "limits": [
+    "The reported operational enumeration is not rerun or deleted by this correction.",
+    "No user identity records are included in this receipt or the repository.",
+    "The GraphSON fixture accepts only recognized bounded templates and does not prove Cosmos service compatibility.",
+    "No operational source, user credentials, production target, deployed TDB2 files, source mutations or publication were accessed.",
+    "No live, large-load, soak, application or release evidence is manufactured."
+  ]
+}

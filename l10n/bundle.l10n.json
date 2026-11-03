@@ -510,6 +510,7 @@
   "Containers needing attention: {count}. These warnings do not escalate account health.": "Containers needing attention: {count}. These warnings do not escalate account health.",
   "Content Management": "Content Management",
   "Continue": "Continue",
+  "Continue migration": "Continue migration",
   "Continue your data model?": "Continue your data model?",
   "Continuing will clear completion of the following steps and discard the existing recommendation. Your entered model data will be kept. Do you want to continue?": "Continuing will clear completion of the following steps and discard the existing recommendation. Your entered model data will be kept. Do you want to continue?",
   "Coolest partition p99:": "Coolest partition p99:",
@@ -1009,6 +1010,7 @@
   "Go to first page": "Go to first page",
   "Go to next page": "Go to next page",
   "Go to next page (Load more)": "Go to next page (Load more)",
+  "Go to next unfinished step": "Go to next unfinished step",
   "Go to output": "Go to output",
   "Go to previous page": "Go to previous page",
   "Graph project JSON": "Graph project JSON",
@@ -2121,6 +2123,7 @@
   "The sampling context is no longer available. Read the Query Editor context again, then retry sampling.": "The sampling context is no longer available. Read the Query Editor context again, then retry sampling.",
   "The saved data modeler project has an invalid format or unsupported version. The file was not changed.": "The saved data modeler project has an invalid format or unsupported version. The file was not changed.",
   "The saved data modeler project is not valid JSON. Fix the file before retrying.": "The saved data modeler project is not valid JSON. Fix the file before retrying.",
+  "The saved inventory adoption could not be verified. Preserve its receipt, manifest and identity file; review their integrity before continuing. No source requests were submitted.": "The saved inventory adoption could not be verified. Preserve its receipt, manifest and identity file; review their integrity before continuing. No source requests were submitted.",
   "The selected connection has been removed from your workspace.": "The selected connection has been removed from your workspace.",
   "The selected database no longer exists. Select a database again.": "The selected database no longer exists. Select a database again.",
   "The selected folder is outside the workspace. Would you like to copy its contents to the migration project?": "The selected folder is outside the workspace. Would you like to copy its contents to the migration project?",
@@ -2348,6 +2351,7 @@
   "Value": "Value",
   "Value must be between {0} and {1} in increments of {2}": "Value must be between {0} and {1} in increments of {2}",
   "Vector search within a source or category": "Vector search within a source or category",
+  "Verified inventory adopted for this run. The original enumeration and its evidence are preserved; you do not need to enumerate again. Selecting the inventory created a new input-bound run, so recheck read-only connections before continuing.": "Verified inventory adopted for this run. The original enumeration and its evidence are preserved; you do not need to enumerate again. Selecting the inventory created a new input-bound run, so recheck read-only connections before continuing.",
   "Verified resource group with name \"{0}\" already exists.  Using existing resource group.": "Verified resource group with name \"{0}\" already exists.  Using existing resource group.",
   "Verified resource group with name \"{0}\" is available for creation.": "Verified resource group with name \"{0}\" is available for creation.",
   "Verify": "Verify",
@@ -2421,5 +2425,6 @@
   "Your custom code has been kept. Regenerate it to match the current database and container selection. Regeneration replaces your edits.": "Your custom code has been kept. Regenerate it to match the current database and container selection. Regeneration replaces your edits.",
   "Your item has unsaved changes. If you continue, these changes will be lost.": "Your item has unsaved changes. If you continue, these changes will be lost.",
   "Your operator installs AGE and creates an empty dedicated graph. TLS certificate verification stays enabled; this extension provisions nothing.": "Your operator installs AGE and creates an empty dedicated graph. TLS certificate verification stays enabled; this extension provisions nothing.",
+  "Your verified inventory is saved. Recheck connections for the new run; do not repeat enumeration.": "Your verified inventory is saved. Recheck connections for the new run; do not repeat enumeration.",
   "Your VS Code window must be reloaded to perform this action.": "Your VS Code window must be reloaded to perform this action."
 }

@@ -38,6 +38,7 @@ import { type GraphProject } from '../../../services/graphMigration/contracts';
 import {
     formatDiagnostic,
     hasCurrentSourceCompatibility,
+    hasCurrentAdoptedInventory,
     hasCurrentEnumerationRequestLimit,
     hasFidelityInventory,
     safeDiagnostics,
@@ -515,6 +516,8 @@ export function GraphMigrationWorkbench() {
         corePhases.find(([operation]) => !phaseComplete(operation));
     const nextOperation = nextPhase?.[0];
     const nextLabel = nextPhase?.[1];
+    const nextRunRef = useRef<HTMLButtonElement>(null);
+    const inventoryAdopted = Boolean(project && hasCurrentAdoptedInventory(project, currentInputHash));
     const enumerationStopped = Boolean(
         project && ['blocked', 'failed', 'paused', 'cancelled'].includes(project.phases['source-enumerate']?.status),
     );
@@ -602,6 +605,13 @@ export function GraphMigrationWorkbench() {
                         )}
                     </div>
                 )}
+                {operation === 'source-enumerate' && inventoryAdopted && (
+                    <p>
+                        {l10n.t(
+                            'Verified inventory adopted for this run. The original enumeration and its evidence are preserved; you do not need to enumerate again. Selecting the inventory created a new input-bound run, so recheck read-only connections before continuing.',
+                        )}
+                    </p>
+                )}
                 {Boolean(project?.phases[operation]?.blockers.length) && (
                     <div className={styles.operationDiagnostics}>
                         {status === 'stale' ? (
@@ -638,6 +648,7 @@ export function GraphMigrationWorkbench() {
                                 </Button>
                             )}
                             <Button
+                                ref={operation === nextOperation ? nextRunRef : undefined}
                                 disabled={
                                     phaseDisabled ||
                                     (operation === 'extract' &&
@@ -831,7 +842,28 @@ export function GraphMigrationWorkbench() {
                 </Button>
             ) : (
                 <>
-                    <details className={styles.section} open={!phaseComplete('preflight')}>
+                    {nextLabel && (
+                        <section aria-label={l10n.t('Continue migration')} className={styles.section}>
+                            <p>{l10n.t('Next unfinished step: {phase}', { phase: nextLabel })}</p>
+                            {inventoryAdopted && nextOperation === 'preflight' && (
+                                <p>
+                                    {l10n.t(
+                                        'Your verified inventory is saved. Recheck connections for the new run; do not repeat enumeration.',
+                                    )}
+                                </p>
+                            )}
+                            <Button
+                                disabled={disabled}
+                                onClick={() => {
+                                    nextRunRef.current?.scrollIntoView({ block: 'center' });
+                                    nextRunRef.current?.focus();
+                                }}
+                            >
+                                {l10n.t('Go to next unfinished step')}
+                            </Button>
+                        </section>
+                    )}
+                    <details className={styles.section} open={!project.source || !project.target}>
                         <summary>{l10n.t('Configuration and mapping')}</summary>
                         <section aria-labelledby="graph-configuration">
                             <div className={styles.sectionHeader}>

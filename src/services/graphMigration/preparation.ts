@@ -315,6 +315,7 @@ export async function adoptEnumeration(p: GraphProject, root: string, directory:
             planHash: z.string(),
             vertices: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
             edges: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+            sourceCountsReconciled: z.literal(true),
             identityTypes: z.literal('string-only'),
             edgeScope: z.literal('sourceVertex'),
         })
@@ -333,8 +334,7 @@ export async function adoptEnumeration(p: GraphProject, root: string, directory:
         manifest.runId !== p.runId ||
         manifest.inputHash !== oldHash ||
         manifest.sha256 !== checksum ||
-        manifest.planHash !== planHash ||
-        (manifest.vertices + manifest.edges === 0 && manifest.sourceCountsReconciled !== true)
+        manifest.planHash !== planHash
     )
         throw new Error('Unconfirmed or wrong-run enumeration cannot be adopted');
     const archive = `artifacts/enumerated-run-${p.runId}.json`;
@@ -381,5 +381,72 @@ export async function adoptEnumeration(p: GraphProject, root: string, directory:
         ownerRunId: runId,
         sensitive: true,
     });
+    await restoreAdoptedInventoryPhase(next, root);
     return next;
+}
+
+/** Revalidates local adoption, never reruns enumeration or rebinds its producer's result to a new input hash. */
+export async function restoreAdoptedInventoryPhase(project: GraphProject, root: string): Promise<boolean> {
+    const phase = project.phases['source-enumerate'];
+    const hash = inputHash(project);
+    const receiptPath = `artifacts/adopted-inventory-${project.runId}.json`;
+    const artifact = project.artifacts.find(
+        (entry) => entry.ownerRunId === project.runId && entry.relativePath === receiptPath,
+    );
+    if (!artifact || !project.source || phase?.status === 'running') return false;
+    const readVerified = async (relative: string, checksum: string) => {
+        const selected = await ownedPath(root, relative);
+        if ((await fileHash(selected)) !== checksum) throw new Error('Adopted inventory integrity verification failed');
+        return selected;
+    };
+    const receipt = z
+        .object({
+            schemaVersion: z.literal(1),
+            runId: z.string(),
+            inputHash: z.string(),
+            producerRunId: z.string(),
+            producerInputHash: z.string(),
+            identityManifest: z.string(),
+            sha256: z.string().regex(/^[a-f0-9]{64}$/u),
+            manifestSha256: z.string().regex(/^[a-f0-9]{64}$/u),
+            vertices: z.number().int().nonnegative(),
+            edges: z.number().int().nonnegative(),
+            coverage: z.literal('live-global-and-partition-counts-reconciled'),
+        })
+        .parse(
+            JSON.parse((await readBounded(await readVerified(receiptPath, artifact.sha256), 1048576)).toString('utf8')),
+        );
+    if (
+        receipt.runId !== project.runId ||
+        receipt.inputHash !== hash ||
+        receipt.identityManifest !== project.source.identityManifest ||
+        receipt.sha256 !== project.source.identityManifestHash
+    )
+        return false;
+    await readVerified(receipt.identityManifest, receipt.sha256);
+    const manifestPath = path.posix.join(path.posix.dirname(receipt.identityManifest), 'manifest.json');
+    const manifest: unknown = JSON.parse(
+        (await readBounded(await readVerified(manifestPath, receipt.manifestSha256), 1048576)).toString('utf8'),
+    );
+    const expected = z.object({
+        schemaVersion: z.literal(1),
+        status: z.literal('succeeded'),
+        runId: z.literal(receipt.producerRunId),
+        inputHash: z.literal(receipt.producerInputHash),
+        sha256: z.literal(receipt.sha256),
+        vertices: z.literal(receipt.vertices),
+        edges: z.literal(receipt.edges),
+        sourceCountsReconciled: z.literal(true),
+        identityTypes: z.literal('string-only'),
+        edgeScope: z.literal('sourceVertex'),
+    });
+    expected.parse(manifest);
+    if (phase?.status === 'succeeded' && phase.inputHash === hash && phase.evidence[0] === receiptPath) return false;
+    project.phases['source-enumerate'] = {
+        status: 'succeeded',
+        inputHash: hash,
+        blockers: [],
+        evidence: [receiptPath, ...(phase?.evidence ?? []).filter((entry) => entry !== receiptPath)],
+    };
+    return true;
 }
