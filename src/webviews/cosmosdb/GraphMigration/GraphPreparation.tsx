@@ -25,6 +25,7 @@ export function GraphPreparation({
     executionDisabled = false,
     reviewVersion = 0,
     checkConnections,
+    onStarted,
 }: {
     project: GraphProject;
     currentInputHash?: string;
@@ -35,6 +36,7 @@ export function GraphPreparation({
     executionDisabled?: boolean;
     reviewVersion?: number;
     checkConnections?: () => Promise<void>;
+    onStarted?: () => void;
 }) {
     const client = useTrpcClient<GraphAppRouter>();
     const documents = project.source?.sourceMode === 'cosmos-documents';
@@ -183,7 +185,12 @@ export function GraphPreparation({
                         <>
                             <Button
                                 disabled={disabled || executionDisabled || starting}
-                                onClick={() => void action(() => client.resumePreparation.mutate())}
+                                onClick={() =>
+                                    void action(async () => {
+                                        await client.resumePreparation.mutate();
+                                        onStarted?.();
+                                    })
+                                }
                             >
                                 {l10n.t('Resume preserved read-only preparation')}
                             </Button>
@@ -338,6 +345,7 @@ export function GraphPreparation({
                                         ruPerSecond: rate,
                                         confirmStableSource: true,
                                     });
+                                    onStarted?.();
                                 } finally {
                                     setStarting(false);
                                 }

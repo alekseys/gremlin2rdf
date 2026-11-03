@@ -479,6 +479,7 @@ try {
     console.log(JSON.stringify({ fixtureStage: 'retry-start-clicked' }));
     await page.getByRole('button', { name: 'Start bounded read-only preparation', exact: true }).click();
     await changedRun(stopped.runId);
+    await webview.getByRole('button', { name: 'Stop automatic progression', exact: true }).click();
     for (let i = 0; i < 240; i++) {
         const current = await state();
         if (current.runId !== project.runId && current.source.identityManifest !== initialInventory) break;
@@ -563,11 +564,15 @@ try {
         ['functional', 'Compare golden queries'],
         ['report', 'Evaluate readiness'],
     ];
+    if (!documents)
+        await writeFile(path.join(root, 'source-fault.json'), JSON.stringify({ missingSystemKey: '_attachments' }));
     for (const [operation, label] of phases) {
+        if (operation === 'assess') {
+            await settled(operation);
+            continue;
+        }
         if (operation === 'source-compatibility' && !documents) {
             const beforeFault = await state();
-            await writeFile(path.join(root, 'source-fault.json'), JSON.stringify({ missingSystemKey: '_attachments' }));
-            await webview.getByRole('button', { name: `Run for ${label}`, exact: true }).click();
             await settled(operation, 'blocked');
             const failed = await state();
             assert.equal(failed.phases[operation].status, 'blocked');
@@ -588,7 +593,6 @@ try {
         }
         if (operation === 'source-compatibility' && documents) {
             const strictBefore = await state();
-            await webview.getByRole('button', { name: `Run for ${label}`, exact: true }).click();
             const strict = await settled(operation, 'blocked');
             assert.ok(
                 strict.phases[operation].blockers.some((value) => value.includes('DOCUMENT_FIDELITY_UNOBSERVABLE')),
@@ -618,10 +622,26 @@ try {
             await page.waitForTimeout(1000);
             await webview.getByRole('button', { name: 'Run for Check read-only connections', exact: true }).click();
             await settled('preflight', 'succeeded', strict.phases.preflight?.evidence[0]);
-            await webview.getByRole('button', { name: 'Run for Assess application', exact: true }).click();
             await settled('assess', 'succeeded', strict.phases.assess?.evidence[0]);
             await webview.getByRole('button', { name: 'Authorize reduced document fidelity', exact: true }).click();
             await page.getByRole('button', { name: 'Authorize', exact: true }).click();
+            await settled('source-compatibility', 'succeeded', strict.phases[operation].evidence[0]);
+            continue;
+        }
+        if (['mapping', 'extract', 'validate', 'functional'].includes(operation)) {
+            await settled(operation);
+            continue;
+        }
+        if (operation === 'report') {
+            await webview
+                .getByText('Data migration completed and validated.', { exact: false })
+                .waitFor({ state: 'visible' });
+            const beforeReport = await state();
+            assert.equal(beforeReport.phases.report, undefined, 'Optional readiness must not run automatically');
+            await webview
+                .locator('summary')
+                .filter({ hasText: /^Step 10 \(optional\): Evaluate readiness/ })
+                .click();
         }
         const current = await state();
         if (
@@ -642,6 +662,20 @@ try {
         );
     }
     const current = await state();
+    const readinessSection = webview
+        .locator('details')
+        .filter({
+            has: webview.locator('summary').filter({ hasText: /^Step 10 \(optional\): Evaluate readiness/ }),
+        })
+        .last();
+    const readinessSummary = readinessSection.locator(':scope > summary');
+    await readinessSummary.filter({ hasText: /Warning/ }).waitFor({ state: 'visible' });
+    assert.equal((await readinessSummary.textContent()).includes('Blocked'), false);
+    assert.equal(await readinessSection.getByRole('heading', { name: 'Evaluate readiness', exact: true }).count(), 0);
+    assert.equal(
+        await webview.getByLabel('Required migration steps').getByText('Evaluate readiness', { exact: true }).count(),
+        0,
+    );
     const report = JSON.parse(await readFile(path.join(runRoot, current.phases.report.evidence[0]), 'utf8'));
     for (const name of ['structural', 'queries', documents ? 'documentFidelity' : 'sourceCompatibility'])
         assert.equal(report.result.gates[name].status, 'succeeded', name);

@@ -18,6 +18,9 @@ best-effort settings and a fresh restart with an unavailable old inventory.
 The [0.39.21 receipt](evidence/installed-vsix-0.39.21.json) covers bare document-host normalization, above-field
 examples/ranges, highlighted next-step navigation and completed-section collapse while preserving stopped-run recovery.
 Strict document-policy blocks now provide observed reason codes and a direct, non-approving policy review action.
+The [0.39.22 receipt](evidence/installed-vsix-0.39.22.json) covers automatic input-free checks after an explicit start,
+single phase labels/status tags, red execution blocks and optional readiness shown as a yellow warning when only cutover
+evidence is missing. Budgets, approvals and target writes remain explicit; publication still requires passing readiness.
 This is an experimental offline-verified preview, not live-account or production-release certification.
 
 ## Prerequisites and entry points

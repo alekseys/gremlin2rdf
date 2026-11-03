@@ -127,6 +127,7 @@ function bootstrapProject() {
 }
 beforeEach(() => {
     vi.clearAllMocks();
+    mocks.run.mockReset();
     mocks.load.mockResolvedValue({ project, trusted: true });
     mocks.saveSetup.mockResolvedValue({ status: 'saved', runId: 'fixture' });
     mocks.subscribe.mockImplementation((_: unknown, options: { onData: typeof listener }) => {
@@ -154,6 +155,189 @@ function renderWorkbench() {
     return rendered;
 }
 describe('graph workbench boundaries and keyboard access', () => {
+    it('shows missing optional readiness evidence as a yellow warning without changing persisted readiness', async () => {
+        const configured = bootstrapProject();
+        const hash = inputHash(configured);
+        configured.phases.report = {
+            status: 'blocked',
+            inputHash: hash,
+            evidence: ['artifacts/readiness.json'],
+            blockers: ['readiness-application (READINESS_EVIDENCE_REQUIRED): Missing application evidence.'],
+        };
+        mocks.load.mockResolvedValue({ project: configured, trusted: true, currentInputHash: hash });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        const summary = await screen.findByText(/^Step 10 \(optional\): Evaluate readiness/);
+        expect(summary).toHaveTextContent('Warning');
+        expect(summary).not.toHaveTextContent('Blocked');
+        expect(screen.queryByRole('heading', { name: 'Evaluate readiness' })).not.toBeInTheDocument();
+        expect(
+            within(screen.getByLabelText('Required migration steps')).queryByText(/Evaluate readiness/),
+        ).not.toBeInTheDocument();
+        expect(configured.phases.report.status).toBe('blocked');
+        expect(screen.getByText(/Publication remains prohibited/)).toBeVisible();
+        const warning = within(summary).getByText('Warning');
+        const blocked = screen.getAllByText('Blocked').find((element) => element.className.includes('fui') === false);
+        expect(warning.className).toBeTruthy();
+        expect(warning.className).not.toBe(blocked?.className);
+        expect(mocks.run).not.toHaveBeenCalled();
+    });
+    it('keeps readiness execution errors red and blocked rather than downgrading them to warnings', async () => {
+        const configured = bootstrapProject();
+        const hash = inputHash(configured);
+        configured.phases.report = {
+            status: 'blocked',
+            inputHash: hash,
+            evidence: ['artifacts/error.json'],
+            blockers: ['report (ARTIFACT_ACCESS): Preserve evidence.'],
+        };
+        mocks.load.mockResolvedValue({ project: configured, trusted: true, currentInputHash: hash });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        const summary = await screen.findByText(/^Step 10 \(optional\): Evaluate readiness/);
+        expect(summary).toHaveTextContent('Blocked');
+        expect(summary).not.toHaveTextContent('Warning');
+    });
+    it('automatically advances successful input-free checks once, stops for target approval, and never starts on open', async () => {
+        const configured = bootstrapProject();
+        configured.source!.identityManifestHash = '1'.repeat(64);
+        const hash = inputHash(configured);
+        const passed = { status: 'succeeded' as const, inputHash: hash, evidence: [], blockers: [] };
+        configured.phases = { preflight: passed, assess: passed, 'source-enumerate': passed };
+        const evidence = 'artifacts/fidelity.json';
+        configured.phases['source-compatibility'] = { ...passed, evidence: [evidence] };
+        configured.artifacts = [
+            { relativePath: evidence, ownerRunId: configured.runId, sha256: '2'.repeat(64), sensitive: true },
+        ];
+        let current = configured;
+        mocks.load.mockImplementation(async () => ({ project: current, trusted: true, currentInputHash: hash }));
+        mocks.run.mockImplementation(async ({ operation }: { operation: string }) => {
+            current = graphProjectSchema.parse({
+                ...current,
+                phases: { ...current.phases, [operation]: passed },
+            });
+        });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        const mapping = await screen.findByRole('button', { name: 'Run for Validate mapping' });
+        expect(mocks.run).not.toHaveBeenCalled();
+        expect(mapping.closest('details')!.querySelector('h4')).toBeNull();
+        await userEvent.setup().click(mapping);
+        await waitFor(() =>
+            expect(mocks.run.mock.calls.map(([value]) => value.operation)).toEqual(['mapping', 'extract']),
+        );
+        expect(screen.getByRole('button', { name: 'Authorize for Load approved target graphs' })).toBeVisible();
+        expect(mocks.approve).not.toHaveBeenCalled();
+        act(() => listener({ type: 'project', project: current, currentInputHash: hash }));
+        expect(mocks.run).toHaveBeenCalledTimes(2);
+    });
+    it('stops automatic progression on failure without retrying or running optional readiness', async () => {
+        const configured = bootstrapProject();
+        const hash = inputHash(configured);
+        configured.phases = {};
+        let current = configured;
+        mocks.load.mockImplementation(async () => ({ project: current, trusted: true, currentInputHash: hash }));
+        mocks.run.mockImplementation(async () => {
+            current = graphProjectSchema.parse({
+                ...current,
+                phases: {
+                    preflight: {
+                        status: 'blocked',
+                        inputHash: hash,
+                        evidence: [],
+                        blockers: ['source (READ_DENIED): Stop.'],
+                    },
+                },
+            });
+        });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        await userEvent
+            .setup()
+            .click(await screen.findByRole('button', { name: 'Run for Check read-only connections' }));
+        await waitFor(() =>
+            expect(screen.queryByRole('button', { name: 'Stop automatic progression' })).not.toBeInTheDocument(),
+        );
+        expect(mocks.run).toHaveBeenCalledTimes(1);
+        expect(mocks.run).not.toHaveBeenCalledWith(expect.objectContaining({ operation: 'report' }));
+    });
+    it('waits for a current reduced-fidelity approval before automatically starting a source probe', async () => {
+        const configured = bootstrapProject();
+        configured.mapping.fidelity = 'reduced';
+        configured.source!.sourceMode = 'cosmos-documents';
+        configured.source!.documentEndpoint = 'https://fixture.documents.azure.com/';
+        configured.source!.documentProfile = 'auto-v1';
+        configured.source!.identityManifestHash = '1'.repeat(64);
+        const hash = inputHash(configured);
+        const passed = { status: 'succeeded' as const, inputHash: hash, evidence: [], blockers: [] };
+        configured.phases = { preflight: passed, 'source-enumerate': passed };
+        let current = configured;
+        mocks.load.mockImplementation(async () => ({ project: current, trusted: true, currentInputHash: hash }));
+        mocks.run.mockImplementation(async ({ operation }: { operation: string }) => {
+            current = graphProjectSchema.parse({
+                ...current,
+                phases: {
+                    ...current.phases,
+                    [operation]:
+                        operation === 'assess'
+                            ? passed
+                            : { status: 'running', inputHash: hash, evidence: [], blockers: [] },
+                },
+            });
+        });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        await userEvent.setup().click(await screen.findByRole('button', { name: 'Run for Assess application' }));
+        const approvalButtons = await screen.findAllByRole('button', { name: 'Authorize reduced document fidelity' });
+        expect(approvalButtons.filter((button) => !button.hasAttribute('disabled'))).toHaveLength(1);
+        expect(mocks.run.mock.calls.map(([value]) => value.operation)).toEqual(['assess']);
+        const grant = {
+            schemaVersion: 1 as const,
+            runId: current.runId,
+            operation: 'reduced-fidelity',
+            resources: ['2'.repeat(64)],
+            inputHash: hash,
+            expiresAt: '2099-01-01T00:00:00.000Z',
+            keyRef: 'env:GRAPH_APPROVAL_KEY',
+            signature: '3'.repeat(64),
+        };
+        act(() =>
+            listener({
+                type: 'project',
+                project: { ...current, approvals: [{ ...grant, inputHash: '0'.repeat(64) }] },
+                currentInputHash: hash,
+            }),
+        );
+        expect(mocks.run).toHaveBeenCalledTimes(1);
+        current = { ...current, approvals: [grant] };
+        act(() => listener({ type: 'project', project: current, currentInputHash: hash }));
+        await waitFor(() =>
+            expect(mocks.run.mock.calls.map(([value]) => value.operation)).toEqual(['assess', 'source-compatibility']),
+        );
+        expect(mocks.approve).not.toHaveBeenCalled();
+    });
+    it('allows automatic progression to be stopped while waiting for input, without cancelling or approving anything', async () => {
+        const configured = bootstrapProject();
+        const hash = inputHash(configured);
+        configured.phases = {};
+        let current = configured;
+        mocks.load.mockImplementation(async () => ({ project: current, trusted: true, currentInputHash: hash }));
+        mocks.run.mockImplementation(async () => {
+            current = graphProjectSchema.parse({
+                ...current,
+                phases: { preflight: { status: 'running', inputHash: hash, blockers: [], evidence: [] } },
+            });
+        });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        const user = userEvent.setup();
+        await user.click(await screen.findByRole('button', { name: 'Run for Check read-only connections' }));
+        const stop = await screen.findByRole('button', { name: 'Stop automatic progression' });
+        expect(stop).toHaveAccessibleName('Stop automatic progression');
+        await user.click(stop);
+        current = graphProjectSchema.parse({
+            ...current,
+            phases: { preflight: { status: 'succeeded', inputHash: hash, blockers: [], evidence: [] } },
+        });
+        act(() => listener({ type: 'project', project: current, currentInputHash: hash }));
+        expect(mocks.run).toHaveBeenCalledTimes(1);
+        expect(mocks.cancel).not.toHaveBeenCalled();
+        expect(mocks.approve).not.toHaveBeenCalled();
+    });
     it('reopens editable Step 2 settings after an active run hits its request ceiling without renewing the old run', async () => {
         const configured = bootstrapProject();
         configured.source!.ruPerSecond = '400';

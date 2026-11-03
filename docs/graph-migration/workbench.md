@@ -28,6 +28,25 @@ Hash changes return to the earliest invalidated step; old evidence
 stays available as historical, never forcibly current. Configuration remains editable under its collapsed
 section; saving changed inputs still invalidates dependent evidence and approvals.
 
+Starting a required step explicitly enables session-local automatic progression for subsequent input-free operations:
+connection checks, assessment, source compatibility, mapping, extraction, structural validation and golden-query checks.
+Opening/reloading the panel alone never starts a worker. Enumeration still requires reviewed budgets and source-stability
+confirmation; target load still requires explicit approval and execution. Missing current reduced-fidelity/best-effort
+approvals stop at the review boundary; after an explicit grant, input-free source checks can continue. Approval signatures
+and exact scopes remain enforced by the host/worker, not inferred from the UI.
+Failures, pause, cancellation, changed run ownership and **Stop automatic progression** prevent blind continuation.
+Blocked/paused/cancelled phases are not automatically retried, budgets are not renewed and target mutations are never
+part of the automatic allowlist. Settings with unsaved edits suspend progression. No optional benchmarks or write probes
+are launched automatically.
+
+Step 10, **Evaluate readiness**, is optional and not part of required data-migration completion. A current report whose
+only blockers are `READINESS_EVIDENCE_REQUIRED` evaluations displays a yellow **Warning** tag. Actual execution,
+authorization, integrity or state failures retain a red **Blocked** tag. Phase titles and status tags appear once in their
+section summary, not again inside the phase. The original checksummed readiness report and persisted blocked
+cutover state are not rewritten into success: publication still requires a current passing report and separate approval.
+After the required steps pass, the page says that data migration is completed and validated, without certifying production.
+Optional readiness never runs merely because data migration finished.
+
 The active enumeration **Run** opens inline guided Prepare and discovers local candidates, instead of submitting
 the advanced default `enumeration-plan.json` (which guided Prepare does not create). Review candidates, then
 **Resume preserved read-only preparation** if offered. Otherwise explicitly review the listed ceilings and

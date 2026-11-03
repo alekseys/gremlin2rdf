@@ -140,6 +140,32 @@ async function complete(payload: WorkerMessage['payload']) {
 }
 
 describe('persisted graph editor workflow', () => {
+    it('refuses publication approval when optional readiness is displayed as a warning', async () => {
+        await context.create();
+        await context.saveSetup({
+            host: 'account.gremlin.cosmos.azure.com',
+            database: 'db',
+            container: 'graph',
+            partitionKeyPath: '/pk',
+            datasetUrl: 'http://localhost:3030/test',
+            consistency: 'immutable',
+        });
+        const project = await service.load();
+        project.phases.report = {
+            status: 'blocked',
+            inputHash: inputHash(project),
+            blockers: ['readiness-application (READINESS_EVIDENCE_REQUIRED): Missing evidence.'],
+            evidence: ['artifacts/readiness.json'],
+        };
+        await service.save(project);
+        mocks.confirm.mockClear();
+        await expect(context.approve('publish', '')).rejects.toThrow(
+            'A current passing readiness report is required before publication approval.',
+        );
+        expect(mocks.confirm).not.toHaveBeenCalled();
+        expect((await service.load()).approvals).toEqual([]);
+        expect(mocks.start).not.toHaveBeenCalled();
+    });
     it('restarts a best-effort run whose old inventory is unavailable, without reading or adopting old continuation state', async () => {
         await context.create();
         const form = {

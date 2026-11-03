@@ -85,6 +85,14 @@ an operation. Unsaved edits disable continuation, and ordinary progress/reload e
 The current required step has a theme-aware colored background/border and an accessible current-step marker.
 As it finishes, its section collapses and the next required step opens, receives focus and scrolls into view.
 Completed sections can still be reopened to inspect evidence; ordinary updates do not repeatedly steal focus.
+After an explicitly started step succeeds, input-free phases continue automatically within the same open session.
+Source budget review, fidelity/consistency grants and target writes remain separate input/approval boundaries.
+Failures or an operator stop do not cause blind retries, and opening the page never starts source operations.
+
+**Evaluate readiness** is optional. Missing production-cutover evaluations display a yellow **Warning**, not a failed
+data transfer; genuine execution/safety blocks remain red. The original readiness report stays blocked for publication
+purposes, including unestablished Gremlin semantics and strict equivalence. Successful observed-document migration is not
+reclassified as strict source equivalence, and publication still requires passing evidence and its own authorization.
 
 A restart is acknowledged next to its button with the new run ID and moves focus to Step 1. A rejected save instead
 shows a focused inline diagnostic, retains the edited settings and leaves the previous run displayed; it does not claim

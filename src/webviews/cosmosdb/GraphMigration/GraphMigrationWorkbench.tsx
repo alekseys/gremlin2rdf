@@ -294,6 +294,10 @@ const useStyles = makeStyles({
         color: tokens.colorPaletteGreenForeground1,
     },
     statusBlocked: {
+        backgroundColor: tokens.colorPaletteRedBackground1,
+        color: tokens.colorPaletteRedForeground1,
+    },
+    statusWarning: {
         backgroundColor: tokens.colorPaletteYellowBackground1,
         color: tokens.colorPaletteYellowForeground1,
     },
@@ -337,11 +341,25 @@ const phaseLabels = (): Record<string, string> => ({
     running: l10n.t('Running'),
     paused: l10n.t('Paused'),
     blocked: l10n.t('Blocked'),
+    warning: l10n.t('Warning'),
     failed: l10n.t('Failed'),
     succeeded: l10n.t('Succeeded'),
     cancelled: l10n.t('Cancelled'),
     stale: l10n.t('Stale: inputs changed'),
 });
+
+function isReadinessWarning(project: GraphProject | null, hash?: string): boolean {
+    const phase = project?.phases.report;
+    return Boolean(
+        phase &&
+        phase.status === 'blocked' &&
+        hash &&
+        phase.inputHash === hash &&
+        phase.evidence.length > 0 &&
+        phase.blockers.length > 0 &&
+        phase.blockers.every((blocker) => /^readiness-[a-z]+ \(READINESS_EVIDENCE_REQUIRED\):/u.test(blocker)),
+    );
+}
 
 export function GraphMigrationWorkbench() {
     const styles = useStyles();
@@ -351,6 +369,8 @@ export function GraphMigrationWorkbench() {
     const [currentInputHash, setCurrentInputHash] = useState<string>();
     const [enumerationReview, setEnumerationReview] = useState(0);
     const [restartFocusRunId, setRestartFocusRunId] = useState<string>();
+    const [continuation, setContinuation] = useState<{ operation: GraphOperation; runId?: string }>();
+    const dispatchedAutomatically = useRef(new Set<string>());
     const firstStepRef = useRef<HTMLDetailsElement>(null);
     const connectionSettingsRef = useRef<HTMLDetailsElement>(null);
     const [suggestions, setSuggestions] = useState<SetupSuggestions>();
@@ -388,7 +408,7 @@ export function GraphMigrationWorkbench() {
         { title: l10n.t('Prepare'), phases: ['preflight', 'source-enumerate', 'assess'] },
         { title: l10n.t('Check live source and mapping'), phases: ['source-compatibility', 'mapping'] },
         { title: l10n.t('Transfer graph'), phases: ['extract', 'load'] },
-        { title: l10n.t('Verify migration'), phases: ['validate', 'functional', 'report'] },
+        { title: l10n.t('Verify migration'), phases: ['validate', 'functional'] },
     ];
     const coreOperations = new Set(workflowGroups.flatMap((group) => group.phases));
     const action = useCallback(async (work: () => Promise<unknown>) => {
@@ -476,7 +496,18 @@ export function GraphMigrationWorkbench() {
                 } else if (event.message.type === 'result' || event.message.type === 'error') {
                     setProgress(l10n.t('Worker operation finished. Review the phase status and evidence.'));
                     const details = safeDiagnostics(event.message.payload);
-                    if (details.length) setDiagnostic(details.map(formatDiagnostic).join('\n'));
+                    if (
+                        details.length &&
+                        !(
+                            event.message.phase === 'report' &&
+                            details.every(
+                                (detail) =>
+                                    detail.code === 'READINESS_EVIDENCE_REQUIRED' &&
+                                    detail.stage.startsWith('readiness-'),
+                            )
+                        )
+                    )
+                        setDiagnostic(details.map(formatDiagnostic).join('\n'));
                 }
             },
             onError: () => {
@@ -500,14 +531,20 @@ export function GraphMigrationWorkbench() {
             );
             return;
         }
+        setContinuation({ operation, runId: project?.runId });
         setBusy(true);
-        await client.run.mutate({
-            operation,
-            query,
-            sourcePath,
-            outputPath: operation === 'target-probe' ? probeGraph : outputPath,
-        });
-        await reload();
+        try {
+            await client.run.mutate({
+                operation,
+                query,
+                sourcePath,
+                outputPath: operation === 'target-probe' ? probeGraph : outputPath,
+            });
+            await reload();
+        } catch (error) {
+            setContinuation(undefined);
+            throw error;
+        }
     };
     const operationLabels = new Map(operations());
     const corePhases = workflowGroups
@@ -521,17 +558,20 @@ export function GraphMigrationWorkbench() {
                     !hasFidelityInventory(project) ||
                     Boolean(project.phases['source-enumerate'])),
         );
-    const phaseComplete = (operation: GraphOperation) =>
-        Boolean(
-            project &&
-            (operation === 'source-enumerate'
-                ? hasFidelityInventory(project)
-                : operation === 'source-compatibility'
-                  ? hasCurrentSourceCompatibility(project, currentInputHash)
-                  : project.phases[operation]?.status === 'succeeded' &&
-                    currentInputHash !== undefined &&
-                    project.phases[operation].inputHash === currentInputHash),
-        );
+    const phaseComplete = useCallback(
+        (operation: GraphOperation) =>
+            Boolean(
+                project &&
+                (operation === 'source-enumerate'
+                    ? hasFidelityInventory(project)
+                    : operation === 'source-compatibility'
+                      ? hasCurrentSourceCompatibility(project, currentInputHash)
+                      : project.phases[operation]?.status === 'succeeded' &&
+                        currentInputHash !== undefined &&
+                        project.phases[operation].inputHash === currentInputHash),
+            ),
+        [project, currentInputHash],
+    );
     const nextPhase =
         corePhases.find(([operation]) => project?.phases[operation]?.status === 'running') ??
         corePhases.find(([operation]) => !phaseComplete(operation));
@@ -570,15 +610,100 @@ export function GraphMigrationWorkbench() {
     const enumerationRequestLimited = Boolean(project && hasCurrentEnumerationRequestLimit(project, currentInputHash));
     const phaseStatus = (operation: GraphOperation) => {
         const phase = project?.phases[operation];
+        if (operation === 'report' && isReadinessWarning(project, currentInputHash)) return 'warning';
         return phase && phase.status !== 'running' && currentInputHash && phase.inputHash !== currentInputHash
             ? 'stale'
             : (phase?.status ?? 'not-started');
     };
     useEffect(() => {
+        if (!continuation || !project || !trusted || busy || setupDirty || configurationDirty || !currentInputHash)
+            return;
+        if (
+            continuation.runId &&
+            continuation.runId !== project.runId &&
+            !(continuation.operation === 'source-enumerate' && hasCurrentAdoptedInventory(project, currentInputHash))
+        ) {
+            setContinuation(undefined);
+            return;
+        }
+        const previous = project.phases[continuation.operation];
+        if (previous && ['blocked', 'failed', 'paused', 'cancelled'].includes(previous.status)) {
+            setContinuation(undefined);
+            return;
+        }
+        if (!phaseComplete(continuation.operation)) return;
+        const automatic = new Set<GraphOperation>([
+            'preflight',
+            'assess',
+            'source-compatibility',
+            'mapping',
+            'extract',
+            'validate',
+            'functional',
+        ]);
+        if (!nextOperation || !automatic.has(nextOperation)) {
+            setContinuation(undefined);
+            return;
+        }
+        const next = project.phases[nextOperation];
+        if (next && ['blocked', 'failed', 'paused', 'cancelled'].includes(next.status)) {
+            setContinuation(undefined);
+            return;
+        }
+        const approved = (operation: string) =>
+            project.approvals.some(
+                (approval) =>
+                    approval.operation === operation &&
+                    approval.runId === project.runId &&
+                    approval.inputHash === currentInputHash &&
+                    Date.parse(approval.expiresAt) > Date.now(),
+            );
+        if (
+            ['source-compatibility', 'extract'].includes(nextOperation) &&
+            ((project.mapping.fidelity === 'reduced' && !approved('reduced-fidelity')) ||
+                (project.consistency === 'best-effort' && !approved('best-effort-source')))
+        ) {
+            return;
+        }
+        const key = `${project.runId}:${currentInputHash}:${nextOperation}`;
+        if (dispatchedAutomatically.current.has(key)) return;
+        dispatchedAutomatically.current.add(key);
+        setContinuation({ operation: nextOperation, runId: project.runId });
+        setBusy(true);
+        void action(async () => {
+            try {
+                await client.run.mutate({ operation: nextOperation, query: '', sourcePath: '', outputPath: '' });
+                await reload();
+            } catch (error) {
+                setContinuation(undefined);
+                throw error;
+            }
+        });
+    }, [
+        continuation,
+        project,
+        trusted,
+        busy,
+        setupDirty,
+        configurationDirty,
+        currentInputHash,
+        nextOperation,
+        phaseComplete,
+        action,
+        client,
+        reload,
+    ]);
+    useEffect(() => {
         if (nextOperation !== 'preflight' && nextOperation !== 'source-enumerate') setEnumerationReview(0);
         if (nextLabel) announce(l10n.t('Current step: {phase}', { phase: nextLabel }));
     }, [nextOperation, nextLabel, announce]);
-    const renderOperation = ([operation, label]: [GraphOperation, string], showActions = true) => {
+    const statusStyles: Partial<Record<string, string>> = {
+        succeeded: styles.statusSucceeded,
+        blocked: styles.statusBlocked,
+        warning: styles.statusWarning,
+        failed: styles.statusFailed,
+    };
+    const renderOperation = ([operation, label]: [GraphOperation, string], showActions = true, showTitle = true) => {
         const operationActionLabel = runLabel;
         const phaseDisabled =
             disabled ||
@@ -593,27 +718,21 @@ export function GraphMigrationWorkbench() {
                 : undefined;
         const status = phaseStatus(operation);
         const lines = activity[operation] ?? [];
-        const statusClass =
-            status === 'succeeded'
-                ? styles.statusSucceeded
-                : status === 'blocked'
-                  ? styles.statusBlocked
-                  : status === 'failed'
-                    ? styles.statusFailed
-                    : undefined;
         const StatusIcon =
             status === 'succeeded'
                 ? CheckmarkCircleRegular
-                : status === 'blocked' || status === 'failed'
+                : status === 'blocked' || status === 'failed' || status === 'warning'
                   ? WarningRegular
                   : CircleRegular;
         return (
             <article className={styles.operationCard} key={operation} aria-label={label}>
-                <h4>{label}</h4>
-                <span className={mergeClasses(styles.status, statusClass)}>
-                    <StatusIcon aria-hidden={true} />
-                    {phaseLabels()[status]}
-                </span>
+                {showTitle && <h4>{label}</h4>}
+                {showTitle && (
+                    <span className={mergeClasses(styles.status, statusStyles[status])}>
+                        <StatusIcon aria-hidden={true} />
+                        {phaseLabels()[status]}
+                    </span>
+                )}
                 {(status === 'running' || lines.length > 0 || workerElapsed[operation] !== undefined) && (
                     <div className={styles.operationDiagnostics}>
                         {status === 'running' && (
@@ -857,6 +976,23 @@ export function GraphMigrationWorkbench() {
                                     }
                                     action={action}
                                     run={run}
+                                    onStarted={() => {
+                                        void action(async () => {
+                                            const current = await client.load.query();
+                                            applyProject(current.project);
+                                            setCurrentInputHash(current.currentInputHash);
+                                            if (
+                                                current.project &&
+                                                (current.project.phases['source-enumerate']?.status === 'running' ||
+                                                    (current.project.runId !== project.runId &&
+                                                        hasFidelityInventory(current.project)))
+                                            )
+                                                setContinuation({
+                                                    operation: 'source-enumerate',
+                                                    runId: current.project.runId,
+                                                });
+                                        });
+                                    }}
                                     enumerationOnly
                                 />
                             )}
@@ -1010,6 +1146,7 @@ export function GraphMigrationWorkbench() {
                                         await reload();
                                         setSetupDirty(false);
                                         if (value.restart) {
+                                            setContinuation({ operation: 'preflight', runId: result.runId });
                                             setEnumerationReview(0);
                                             setRestartFocusRunId(result.runId);
                                             setBusy(true);
@@ -1202,20 +1339,36 @@ export function GraphMigrationWorkbench() {
                             <h2 id="graph-phases">{l10n.t('Phases, approvals and evidence')}</h2>
                         </div>
                         <div className={styles.actionButtons}>
+                            {continuation && (
+                                <Button onClick={() => setContinuation(undefined)}>
+                                    {l10n.t('Stop automatic progression')}
+                                </Button>
+                            )}
                             <Button
                                 disabled={!trusted || !busy}
-                                onClick={() => void action(() => client.pause.mutate())}
+                                onClick={() => {
+                                    setContinuation(undefined);
+                                    void action(() => client.pause.mutate());
+                                }}
                             >
                                 {l10n.t('Pause after current batch')}
                             </Button>
                             <Button
                                 disabled={!trusted || !busy}
-                                onClick={() => void action(() => client.cancel.mutate())}
+                                onClick={() => {
+                                    setContinuation(undefined);
+                                    void action(() => client.cancel.mutate());
+                                }}
                             >
                                 {l10n.t('Cancel safely')}
                             </Button>
                             <Button onClick={() => void action(reload)}>{l10n.t('Reload persisted state')}</Button>
                         </div>
+                        <p>
+                            {l10n.t(
+                                'After you start a step, input-free checks continue automatically. Preparation budgets, scoped approvals and target writes still require your review. Failures, pause and cancellation stop automatic progression; reopening the panel does not start operations.',
+                            )}
+                        </p>
                         <div ref={requiredStepsRef} aria-label={l10n.t('Required migration steps')}>
                             {corePhases.map((phase, index) => {
                                 const active = phase[0] === nextPhase?.[0];
@@ -1236,18 +1389,47 @@ export function GraphMigrationWorkbench() {
                                         <summary aria-current={active ? 'step' : undefined}>
                                             {l10n.t('Step {number}: {phase}', { number: index + 1, phase: phase[1] })}
                                             {' — '}
-                                            {phaseLabels()[phaseStatus(phase[0])]}
+                                            <span
+                                                className={mergeClasses(
+                                                    styles.status,
+                                                    statusStyles[phaseStatus(phase[0])],
+                                                )}
+                                            >
+                                                {phaseLabels()[phaseStatus(phase[0])]}
+                                            </span>
                                         </summary>
-                                        {renderOperation(phase)}
+                                        {renderOperation(phase, true, false)}
                                     </details>
                                 );
                             })}
                         </div>
                         {!nextPhase && (
                             <p>
-                                <output>{l10n.t('Core steps succeeded. Review evidence before cutover.')}</output>
+                                <output>
+                                    {l10n.t(
+                                        'Data migration completed and validated. Production cutover is not certified by data transfer alone.',
+                                    )}
+                                </output>
                             </p>
                         )}
+                        <details
+                            className={styles.optionalDetails}
+                            open={phaseStatus('report') === 'warning' || phaseStatus('report') === 'blocked'}
+                        >
+                            <summary>
+                                {l10n.t('Step 10 (optional): Evaluate readiness')}
+                                {' — '}
+                                <span className={mergeClasses(styles.status, statusStyles[phaseStatus('report')])}>
+                                    {phaseLabels()[phaseStatus('report')]}
+                                </span>
+                            </summary>
+                            <p>
+                                {l10n.t(
+                                    'Optional production-cutover evaluation. Missing evaluation evidence is a warning, not a failed data migration. Publication remains prohibited without a current passing readiness report; execution and safety errors remain blocked.',
+                                )}
+                            </p>
+                            {renderOperation(['report', operationLabels.get('report')!], true, false)}
+                        </details>
                         <details className={styles.optionalDetails}>
                             <summary>{l10n.t('Optional reviewed evidence import')}</summary>
                             <div className={styles.detailsBody}>
@@ -1305,7 +1487,7 @@ export function GraphMigrationWorkbench() {
                                 </p>
                                 <h3>{l10n.t('Optional tools and advanced operations')}</h3>
                                 {operations()
-                                    .filter(([operation]) => !coreOperations.has(operation))
+                                    .filter(([operation]) => !coreOperations.has(operation) && operation !== 'report')
                                     .map((phase) => renderOperation(phase))}
                             </div>
                         </details>
