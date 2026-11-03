@@ -8,6 +8,12 @@ import { CheckmarkCircleRegular, DatabaseRegular } from '@fluentui/react-icons';
 import * as l10n from '@vscode/l10n';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { type GraphProject } from '../../../services/graphMigration/contracts';
+import {
+    formatDiagnostic,
+    hostDiagnostic,
+    GraphDiagnosticError,
+    type SafeDiagnostic,
+} from '../../../services/graphMigration/diagnostics';
 import { type ConnectionSetup, type SetupSuggestions } from '../../../services/graphMigration/setup';
 
 const useStyles = makeStyles({
@@ -74,7 +80,7 @@ export function GraphConnectionSetup({
     project: GraphProject;
     suggestions?: SetupSuggestions;
     disabled: boolean;
-    save(value: ConnectionSetup): Promise<void>;
+    save(value: ConnectionSetup): Promise<void | string | SafeDiagnostic>;
     onDirtyChange?(dirty: boolean): void;
 }) {
     const styles = useStyles();
@@ -85,7 +91,7 @@ export function GraphConnectionSetup({
             container: project.source?.container ?? suggestions?.values.container ?? '',
             partitionKeyPath: project.source?.partitionKeyPath ?? suggestions?.values.partitionKeyPath ?? '/pk',
             datasetUrl: project.target?.datasetUrl ?? suggestions?.values.datasetUrl ?? '',
-            consistency: project.source && project.consistency !== 'best-effort' ? project.consistency : '',
+            consistency: project.source ? project.consistency : '',
             sourceMode: project.source ? (project.source.sourceMode ?? 'gremlin') : 'cosmos-documents',
             documentEndpoint: project.source?.documentEndpoint ?? suggestions?.values.documentEndpoint ?? '',
             documentProfile: project.source?.documentProfile ?? 'auto-v1',
@@ -96,6 +102,29 @@ export function GraphConnectionSetup({
         [project.source, project.target, project.consistency, project.mapping.fidelity, suggestions],
     );
     const [values, setValues] = useState<ConnectionSetup>(savedConnection);
+    const [feedback, setFeedback] = useState<{ failed: boolean; text: string }>();
+    const feedbackRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        if (feedback?.failed) {
+            feedbackRef.current?.scrollIntoView?.({ block: 'center' });
+            feedbackRef.current?.focus();
+        }
+    }, [feedback]);
+    const submit = async (restart: boolean) => {
+        setFeedback(undefined);
+        try {
+            const result = await save(restart ? { ...values, restart: true } : values);
+            if (result && typeof result !== 'string') setFeedback({ failed: true, text: formatDiagnostic(result) });
+            else if (typeof result === 'string') setFeedback({ failed: false, text: result });
+        } catch {
+            setFeedback({
+                failed: true,
+                text: formatDiagnostic(
+                    hostDiagnostic(new GraphDiagnosticError('SETUP_SAVE_FAILED', 'connection-settings')),
+                ),
+            });
+        }
+    };
     const savedValues = JSON.stringify(savedConnection);
     const previousSavedValues = useRef(savedValues);
     useEffect(() => {
@@ -323,6 +352,9 @@ export function GraphConnectionSetup({
                             <option value="">{l10n.t('Choose before using a live source')}</option>
                             <option value="quiesced">{l10n.t('I will pause source writes during extraction')}</option>
                             <option value="immutable">{l10n.t('This source is an immutable snapshot')}</option>
+                            <option value="best-effort">
+                                {l10n.t('Source may change (best-effort; separate approval required)')}
+                            </option>
                         </Select>
                     </Field>
                 </section>
@@ -376,13 +408,18 @@ export function GraphConnectionSetup({
                 )}
             </p>
             <div className={styles.saveRow}>
-                <Button disabled={disabled} onClick={() => void save(values)}>
+                <Button disabled={disabled} onClick={() => void submit(false)}>
                     {l10n.t('Save connection settings')}
                 </Button>
-                <Button disabled={disabled} onClick={() => void save({ ...values, restart: true })}>
+                <Button disabled={disabled} onClick={() => void submit(true)}>
                     {l10n.t('Save settings and restart migration')}
                 </Button>
             </div>
+            {feedback && (
+                <div ref={feedbackRef} tabIndex={-1} role={feedback.failed ? 'alert' : undefined}>
+                    {feedback.failed ? feedback.text : <output>{feedback.text}</output>}
+                </div>
+            )}
             <p className={styles.intro}>
                 {l10n.t(
                     'Restart uses the settings shown above, archives the previous run and begins read-only connection checks at Step 1. Its inventory, journals and target data are not deleted. The new run gets a fresh inventory and requires new approvals; no old continuation is resumed.',

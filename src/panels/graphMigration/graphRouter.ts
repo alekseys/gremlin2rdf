@@ -6,6 +6,7 @@
 import { initWebviewTrpc, type BaseRouterContext, type TypedEventSink } from '@microsoft/vscode-ext-webview';
 import { z } from 'zod';
 import { type GraphProject, type WorkerMessage } from '../../services/graphMigration/contracts';
+import { type SafeDiagnostic } from '../../services/graphMigration/diagnostics';
 import { graphEvidencePhases } from '../../services/graphMigration/evidence';
 import {
     prepareSourceSchema,
@@ -81,7 +82,9 @@ export interface GraphRouterContext extends BaseRouterContext {
     }>;
     create(): Promise<GraphProject>;
     save(json: string): Promise<void>;
-    saveSetup(value: ConnectionSetup): Promise<void>;
+    saveSetup(
+        value: ConnectionSetup,
+    ): Promise<{ status: 'saved'; runId: string } | { status: 'blocked'; diagnostic: SafeDiagnostic }>;
     run(operation: GraphOperation, query: string, sourcePath: string, outputPath: string): Promise<void>;
     approve(operation: GraphApprovalOperation, outputPath: string): Promise<void>;
     openArtifact(relativePath: string): Promise<void>;

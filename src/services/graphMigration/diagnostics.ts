@@ -97,6 +97,51 @@ export function hasCurrentEnumerationRequestLimit(project: GraphProject, current
 }
 export function hostDiagnostic(error: unknown, stage = 'preparation'): SafeDiagnostic {
     const code = error instanceof GraphDiagnosticError ? error.code : 'HOST_PREPARATION_UNKNOWN';
+    const setupRemediation: Record<string, string> = {
+        SETUP_DOCUMENT_ENDPOINT_REQUIRED: l10n.t(
+            'Restart was not saved. Enter the explicit Cosmos DB .NET SDK HTTPS account endpoint without credentials or resource paths.',
+        ),
+        SETUP_SOURCE_FIELDS_REQUIRED: l10n.t(
+            'Restart was not saved. Complete the source endpoint, database and graph container fields.',
+        ),
+        SETUP_CONSISTENCY_REQUIRED: l10n.t(
+            'Restart was not saved. Choose Source consistency: pause source writes, use an immutable snapshot, or explicitly select best-effort with its separate approval.',
+        ),
+        SETUP_SOURCE_HOST_INVALID: l10n.t(
+            'Restart was not saved. Enter a Gremlin hostname or a credential-free HTTPS/WSS endpoint on port 443.',
+        ),
+        SETUP_TARGET_URL_INVALID: l10n.t(
+            'Restart was not saved. Enter an HTTPS Fuseki dataset URL without credentials or query parameters; HTTP is allowed for localhost.',
+        ),
+        SETUP_INVALID_FIELDS: l10n.t(
+            'Restart was not saved. One or more connection fields have an invalid format. Review the endpoint, partition key path, layout, numeric RU allowances and source consistency. The previous run has not been restarted.',
+        ),
+        PROJECT_PENDING_EXISTS: l10n.t(
+            'Restart was not saved because project.pending already exists. Preserve it together with project.json and the run artifacts for explicit recovery; the pending file has not been adopted or deleted.',
+        ),
+        PROJECT_LOCK_EXISTS: l10n.t(
+            'Restart was not saved because project.lock already exists. Another save may be active or a prior save was interrupted. Preserve the project files and verify lock ownership before recovery; no lock was removed.',
+        ),
+        SETUP_SAVE_FAILED: l10n.t(
+            'Restart could not be saved. Preserve the project files and check local file access, inventory paths and pending-state recovery. The previous run remains displayed; no restart is claimed.',
+        ),
+        SETUP_RESTART_START_FAILED: l10n.t(
+            'The new run was saved, but its connection checks could not start or refresh. Reload persisted state and review Step 1. Do not restart again just to repeat the connection check.',
+        ),
+        SETUP_WORKER_ACTIVE: l10n.t(
+            'Restart was not saved. Pause or cancel the active worker and wait for its stop acknowledgement before restarting.',
+        ),
+        SETUP_TRUST_REQUIRED: l10n.t(
+            'Restart was not saved. Trust this workspace through VS Code before changing migration settings.',
+        ),
+    };
+    if (setupRemediation[code])
+        return {
+            status: 'blocked',
+            code,
+            stage: error instanceof GraphDiagnosticError ? error.stage : stage,
+            remediation: setupRemediation[code],
+        };
     const remediation =
         code === 'PROJECT_STATE_REPLACE_BUSY'
             ? l10n.t(

@@ -29,10 +29,18 @@ export class GraphProjectService {
         const project = graphProjectSchema.parse(value);
         const root = await this.root();
         const lockPath = path.join(root, 'project.lock');
-        const lock = await open(lockPath, 'wx');
+        const lock = await open(lockPath, 'wx').catch((error: unknown) => {
+            if (error instanceof Error && 'code' in error && error.code === 'EEXIST')
+                throw new GraphDiagnosticError('PROJECT_LOCK_EXISTS', 'project-save');
+            throw error;
+        });
         try {
             const pending = path.join(root, 'project.pending');
-            const file = await open(pending, 'wx');
+            const file = await open(pending, 'wx').catch((error: unknown) => {
+                if (error instanceof Error && 'code' in error && error.code === 'EEXIST')
+                    throw new GraphDiagnosticError('PROJECT_PENDING_EXISTS', 'project-save');
+                throw error;
+            });
             try {
                 await file.writeFile(JSON.stringify(project, null, 2));
                 await file.sync();

@@ -137,3 +137,20 @@ it('preserves unsaved settings across phase snapshots and restarts with the disp
         }),
     );
 });
+it('retains existing best-effort consistency instead of replacing it with an unsavable blank value', async () => {
+    const save = vi.fn(async () => {});
+    const current = {
+        ...project,
+        consistency: 'best-effort',
+        source: {
+            host: 'account.gremlin.cosmos.azure.com',
+            database: 'db',
+            container: 'graph',
+            partitionKeyPath: '/pk',
+        },
+    } as GraphProject;
+    render(<GraphConnectionSetup project={current} disabled={false} save={save} />);
+    expect(screen.getByRole('combobox', { name: 'Source consistency' })).toHaveValue('best-effort');
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Save settings and restart migration' }));
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ restart: true, consistency: 'best-effort' }));
+});

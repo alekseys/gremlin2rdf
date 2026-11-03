@@ -149,11 +149,27 @@ export class GraphMigrationTab extends BaseTab {
                 await this.service.save(graphProjectSchema.parse(JSON.parse(json)));
             },
             saveSetup: async (value) => {
-                if (!vscode.workspace.isTrusted) throw new Error(l10n.t('Workspace trust is required.'));
-                if (this.activeOperation || this.bridge.active || this.reviewingPreparation)
-                    throw new Error(l10n.t('Pause or cancel the worker before changing inputs.'));
-                const project = await applySetup(await this.service.load(), value, await this.service.root());
-                await this.service.save(project);
+                try {
+                    if (!vscode.workspace.isTrusted)
+                        throw new GraphDiagnosticError('SETUP_TRUST_REQUIRED', 'connection-settings');
+                    if (this.activeOperation || this.bridge.active || this.reviewingPreparation)
+                        throw new GraphDiagnosticError('SETUP_WORKER_ACTIVE', 'connection-settings');
+                    const project = await applySetup(await this.service.load(), value, await this.service.root());
+                    await this.service.save(project);
+                    return { status: 'saved' as const, runId: project.runId };
+                } catch (error) {
+                    const diagnostic = hostDiagnostic(
+                        error instanceof GraphDiagnosticError
+                            ? error
+                            : new GraphDiagnosticError(
+                                  error instanceof Error && error.name === 'ZodError'
+                                      ? 'SETUP_INVALID_FIELDS'
+                                      : 'SETUP_SAVE_FAILED',
+                                  'connection-settings',
+                              ),
+                    );
+                    return { status: 'blocked' as const, diagnostic };
+                }
             },
             run: (operation: GraphOperation, query: string, sourcePath: string, outputPath: string) =>
                 this.run(operation, query, sourcePath, outputPath),

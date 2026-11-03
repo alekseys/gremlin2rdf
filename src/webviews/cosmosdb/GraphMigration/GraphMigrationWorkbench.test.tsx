@@ -12,6 +12,7 @@ import { type PropsWithChildren } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type GraphEvent } from '../../../panels/graphMigration/graphRouter';
 import { graphProjectSchema, inputHash } from '../../../services/graphMigration/contracts';
+import { GraphDiagnosticError, hostDiagnostic } from '../../../services/graphMigration/diagnostics';
 import { GraphMigrationWorkbench } from './GraphMigrationWorkbench';
 
 const mocks = vi.hoisted(() => ({
@@ -127,6 +128,7 @@ function bootstrapProject() {
 beforeEach(() => {
     vi.clearAllMocks();
     mocks.load.mockResolvedValue({ project, trusted: true });
+    mocks.saveSetup.mockResolvedValue({ status: 'saved', runId: 'fixture' });
     mocks.subscribe.mockImplementation((_: unknown, options: { onData: typeof listener }) => {
         listener = options.onData;
         return { unsubscribe: vi.fn() };
@@ -1050,7 +1052,8 @@ describe('graph workbench boundaries and keyboard access', () => {
         render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
         await screen.findByRole('combobox', { name: 'Source read mode' });
         const user = userEvent.setup();
-        await user.click(screen.getByText('Configuration and mapping', { selector: 'summary' }));
+        const configurationSummary = screen.getByText('Configuration and mapping', { selector: 'summary' });
+        if (!configurationSummary.closest('details')?.open) await user.click(configurationSummary);
         await user.selectOptions(screen.getByRole('combobox', { name: 'Source read mode' }), 'cosmos-documents');
         await user.type(
             screen.getByRole('textbox', { name: 'Cosmos .NET SDK document endpoint' }),
@@ -1082,6 +1085,7 @@ describe('graph workbench boundaries and keyboard access', () => {
                 trusted: true,
                 currentInputHash: inputHash(restarted),
             });
+            return { status: 'saved', runId: restarted.runId };
         });
         await user.click(screen.getByRole('button', { name: 'Save settings and restart migration' }));
         await waitFor(() =>
@@ -1102,6 +1106,32 @@ describe('graph workbench boundaries and keyboard access', () => {
         );
         expect(mocks.saveSetup.mock.invocationCallOrder[0]).toBeLessThan(mocks.run.mock.invocationCallOrder[0]);
         expect(screen.getByRole('combobox', { name: 'Source read mode' })).toHaveValue('cosmos-documents');
+    });
+    it('shows a rejected restart beside its button without clearing edits or starting the old run', async () => {
+        const previous = bootstrapProject();
+        mocks.load.mockResolvedValue({ project: previous, trusted: true, currentInputHash: inputHash(previous) });
+        mocks.saveSetup.mockResolvedValue({
+            status: 'blocked',
+            diagnostic: hostDiagnostic(new GraphDiagnosticError('PROJECT_PENDING_EXISTS', 'project-save')),
+        });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        await screen.findByRole('combobox', { name: 'Source read mode' });
+        const user = userEvent.setup();
+        const configurationSummary = screen.getByText('Configuration and mapping', { selector: 'summary' });
+        if (!configurationSummary.closest('details')?.open) await user.click(configurationSummary);
+        await user.type(screen.getByRole('textbox', { name: 'Cosmos DB database' }), '-edited');
+        await user.click(screen.getByRole('button', { name: 'Save settings and restart migration' }));
+        const inlineAlert = await screen.findByText(/project-save \(PROJECT_PENDING_EXISTS\)/, {
+            selector: 'div[role="alert"]',
+        });
+        expect(inlineAlert).toHaveFocus();
+        expect(inlineAlert).toHaveTextContent('Restart was not saved');
+        expect(screen.getByRole('textbox', { name: 'Cosmos DB database' })).toHaveValue('db-edited');
+        expect(
+            screen.getByText('These edits are not saved. Save them or restart before continuing migration steps.'),
+        ).toBeVisible();
+        expect(mocks.run).not.toHaveBeenCalled();
+        expect(mocks.load).toHaveBeenCalledTimes(1);
     });
     it('preserves advanced mapping edits on project events and requires saving before restarting', async () => {
         renderWorkbench();

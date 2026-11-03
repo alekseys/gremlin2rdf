@@ -2,7 +2,7 @@ import { _electron as electron } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, writeFile, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { graphProjectSchema, inputHash } from '../src/services/graphMigration/contracts.ts';
@@ -156,7 +156,11 @@ const project = graphProjectSchema.parse({
     applicationHashes: {},
     artifacts: [],
 });
-if (documents) project.source.sourceMode = 'gremlin';
+if (documents) {
+    project.source.sourceMode = 'gremlin';
+    project.source.identityManifest = 'artifacts/unavailable-old-inventory.ndjson';
+    project.consistency = 'best-effort';
+}
 const hash = inputHash(project);
 project.phases.preflight = { status: 'stale', inputHash: hash, evidence: [], blockers: [] };
 project.phases['source-enumerate'] = {
@@ -318,6 +322,22 @@ try {
         );
         const restart = webview.getByRole('button', { name: 'Save settings and restart migration', exact: true });
         assert.equal(await restart.textContent(), 'Save settings and restart migration');
+        assert.equal(await webview.getByRole('combobox', { name: 'Source consistency' }).inputValue(), 'best-effort');
+        const fixturePending = path.join(runRoot, 'project.pending');
+        await writeFile(fixturePending, 'Owned offline fixture pending-state sentinel');
+        await restart.click();
+        const inlineFailure = webview.locator('div[role="alert"]').filter({ hasText: 'PROJECT_PENDING_EXISTS' });
+        await inlineFailure.waitFor({ state: 'visible' });
+        assert.equal(await inlineFailure.evaluate((element) => element === element.ownerDocument.activeElement), true);
+        assert.equal((await state()).runId, project.runId, 'Rejected restart must not replace the old run');
+        assert.equal(await readFile(fixturePending, 'utf8'), 'Owned offline fixture pending-state sentinel');
+        assert.equal(
+            await webview.getByRole('combobox', { name: 'Source read mode' }).inputValue(),
+            'cosmos-documents',
+        );
+        console.log(JSON.stringify({ fixtureStage: 'rejected-restart-explained-inline-old-run-preserved' }));
+        await unlink(fixturePending);
+        await webview.getByRole('combobox', { name: 'Source consistency' }).selectOption('immutable');
         await restart.click();
         await changedRun(project.runId);
         await settled('preflight');
@@ -326,6 +346,7 @@ try {
         assert.equal(restarted.source.documentProfile, 'auto-v1');
         assert.notEqual(restarted.source.identityManifest, project.source.identityManifest);
         assert.equal(restarted.phases['source-enumerate'], undefined);
+        await webview.getByText('Restart saved. New run:', { exact: false }).waitFor({ state: 'visible' });
         assert.equal(await readFile(path.join(runRoot, 'identities.ndjson'), 'utf8'), '');
         assert.equal(
             JSON.parse(await readFile(path.join(runRoot, 'artifacts', 'stopped.json'), 'utf8')).offlineFixture,

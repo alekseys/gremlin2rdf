@@ -9,6 +9,7 @@ import { lstat } from 'node:fs/promises';
 import { z } from 'zod';
 import { fileHash, ownedPath, readBounded, writeNewArtifact } from './artifacts';
 import { graphProjectSchema, invalidateEvidence, type GraphProject } from './contracts';
+import { GraphDiagnosticError } from './diagnostics';
 
 export const connectionSetupSchema = z
     .object({
@@ -17,7 +18,7 @@ export const connectionSetupSchema = z
         container: z.string().max(255),
         partitionKeyPath: z.string().max(256),
         datasetUrl: z.string().max(2000),
-        consistency: z.enum(['quiesced', 'immutable', '']).default(''),
+        consistency: z.enum(['quiesced', 'immutable', 'best-effort', '']).default(''),
         sourceMode: z.enum(['cosmos-documents', 'gremlin']).optional(),
         documentEndpoint: z.string().max(2000).optional(),
         documentProfile: z.enum(['auto-v1', 'property-bags-v1', 'flat-v1']).optional(),
@@ -271,29 +272,33 @@ export async function applySetup(project: GraphProject, value: ConnectionSetup, 
         project = { ...project, mapping: { ...project.mapping, fidelity: input.documentFidelity } };
     const documentEndpoint = input.documentEndpoint?.trim() || project.source?.documentEndpoint;
     if (mode === 'cosmos-documents' && (!documentEndpoint || !safeSuggestion('documentEndpoint', documentEndpoint)))
-        throw new Error(
-            l10n.t('Enter the explicit Cosmos DB .NET SDK account endpoint without credentials or resource paths.'),
-        );
+        throw new GraphDiagnosticError('SETUP_DOCUMENT_ENDPOINT_REQUIRED', 'connection-settings');
     const sourceFields = [
         input.host || (mode === 'cosmos-documents' && documentEndpoint ? new URL(documentEndpoint).hostname : ''),
         input.database,
         input.container,
     ].map((text) => text.trim());
     if (sourceFields.some(Boolean)) {
-        if (!sourceFields.every(Boolean) || !input.consistency)
-            throw new Error(l10n.t('Enter the Gremlin host, database, graph and source consistency before saving.'));
+        if (!sourceFields.every(Boolean))
+            throw new GraphDiagnosticError('SETUP_SOURCE_FIELDS_REQUIRED', 'connection-settings');
+        if (!input.consistency) throw new GraphDiagnosticError('SETUP_CONSISTENCY_REQUIRED', 'connection-settings');
         const host = safeSuggestion('host', sourceFields[0]);
-        if (!host)
-            throw new Error(l10n.t('Enter a Gremlin hostname or a credential-free HTTPS/WSS endpoint on port 443.'));
-        const identityManifest = project.source?.identityManifest ?? 'identities.ndjson';
+        if (!host) throw new GraphDiagnosticError('SETUP_SOURCE_HOST_INVALID', 'connection-settings');
+        const identityManifest = input.restart
+            ? `artifacts/restart-inventory-${globalThis.crypto.randomUUID()}.ndjson`
+            : (project.source?.identityManifest ?? 'identities.ndjson');
         let manifest: string;
-        try {
-            manifest = await ownedPath(root, identityManifest);
-        } catch (error) {
-            if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT') || project.source) throw error;
-            // A real empty bootstrap inventory permits discovery, not extraction/compatibility acceptance.
+        if (input.restart) {
             manifest = await writeNewArtifact(root, identityManifest, '');
-        }
+        } else
+            try {
+                manifest = await ownedPath(root, identityManifest);
+            } catch (error) {
+                if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT') || project.source)
+                    throw error;
+                // A real empty bootstrap inventory permits discovery, not extraction/compatibility acceptance.
+                manifest = await writeNewArtifact(root, identityManifest, '');
+            }
         project = {
             ...project,
             consistency: input.consistency,
@@ -337,11 +342,7 @@ export async function applySetup(project: GraphProject, value: ConnectionSetup, 
     const datasetUrl = input.datasetUrl.trim().replace(/\/+$/u, '');
     if (datasetUrl) {
         if (!safeSuggestion('datasetUrl', datasetUrl))
-            throw new Error(
-                l10n.t(
-                    'Enter an HTTPS Fuseki dataset URL without credentials or query parameters; HTTP is allowed for localhost.',
-                ),
-            );
+            throw new GraphDiagnosticError('SETUP_TARGET_URL_INVALID', 'connection-settings');
         const sameDataset = project.target?.datasetUrl.replace(/\/+$/u, '') === datasetUrl;
         project = {
             ...project,
@@ -377,15 +378,6 @@ export async function applySetup(project: GraphProject, value: ConnectionSetup, 
                 ...project.source,
                 compatibilityEvidence: `artifacts/source-compatibility-${project.runId}.json`,
             };
-            if (input.restart) {
-                const identityManifest = `artifacts/restart-inventory-${project.runId}.ndjson`;
-                const manifest = await writeNewArtifact(root, identityManifest, '');
-                project.source = {
-                    ...project.source,
-                    identityManifest,
-                    identityManifestHash: await fileHash(manifest),
-                };
-            }
         }
     }
     return invalidateEvidence(graphProjectSchema.parse(project));

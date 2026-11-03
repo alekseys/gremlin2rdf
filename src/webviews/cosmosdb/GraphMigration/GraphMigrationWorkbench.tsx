@@ -335,6 +335,8 @@ export function GraphMigrationWorkbench() {
     const [project, setProject] = useState<GraphProject | null>(null);
     const [currentInputHash, setCurrentInputHash] = useState<string>();
     const [enumerationReview, setEnumerationReview] = useState(0);
+    const [restartFocusRunId, setRestartFocusRunId] = useState<string>();
+    const firstStepRef = useRef<HTMLDetailsElement>(null);
     const [suggestions, setSuggestions] = useState<SetupSuggestions>();
     const [configuration, setConfiguration] = useState('');
     const [configurationDirty, setConfigurationDirty] = useState(false);
@@ -519,6 +521,13 @@ export function GraphMigrationWorkbench() {
         corePhases.find(([operation]) => !phaseComplete(operation));
     const nextOperation = nextPhase?.[0];
     const nextLabel = nextPhase?.[1];
+    useEffect(() => {
+        if (restartFocusRunId && project?.runId === restartFocusRunId) {
+            firstStepRef.current?.scrollIntoView?.({ block: 'center' });
+            firstStepRef.current?.focus();
+            setRestartFocusRunId(undefined);
+        }
+    }, [restartFocusRunId, project?.runId]);
     const nextRunRef = useRef<HTMLButtonElement>(null);
     const inventoryAdopted = Boolean(project && hasCurrentAdoptedInventory(project, currentInputHash));
     const enumerationStopped = Boolean(
@@ -879,7 +888,7 @@ export function GraphMigrationWorkbench() {
                             <Button
                                 disabled={disabled || setupDirty || configurationDirty}
                                 onClick={() => {
-                                    nextRunRef.current?.scrollIntoView({ block: 'center' });
+                                    nextRunRef.current?.scrollIntoView?.({ block: 'center' });
                                     nextRunRef.current?.focus();
                                 }}
                             >
@@ -911,14 +920,23 @@ export function GraphMigrationWorkbench() {
                                 suggestions={suggestions}
                                 disabled={disabled || configurationDirty}
                                 onDirtyChange={setSetupDirty}
-                                save={(value) =>
-                                    action(async () => {
+                                save={async (value) => {
+                                    setDiagnostic('');
+                                    let saved = false;
+                                    try {
                                         setBusy(true);
-                                        await client.saveSetup.mutate(value);
+                                        const result = await client.saveSetup.mutate(value);
+                                        if (result.status === 'blocked') {
+                                            setBusy(false);
+                                            setDiagnostic(formatDiagnostic(result.diagnostic));
+                                            return result.diagnostic;
+                                        }
+                                        saved = true;
                                         await reload();
                                         setSetupDirty(false);
                                         if (value.restart) {
                                             setEnumerationReview(0);
+                                            setRestartFocusRunId(result.runId);
                                             setBusy(true);
                                             await client.run.mutate({
                                                 operation: 'preflight',
@@ -928,8 +946,24 @@ export function GraphMigrationWorkbench() {
                                             });
                                             await reload();
                                         }
-                                    })
-                                }
+                                        return value.restart
+                                            ? l10n.t(
+                                                  'Restart saved. New run: {runId}. Step 1 connection checks have started; the previous run is archived.',
+                                                  { runId: result.runId },
+                                              )
+                                            : l10n.t('Connection settings saved.');
+                                    } catch {
+                                        setBusy(false);
+                                        const diagnostic = hostDiagnostic(
+                                            new GraphDiagnosticError(
+                                                saved ? 'SETUP_RESTART_START_FAILED' : 'SETUP_SAVE_FAILED',
+                                                'connection-settings',
+                                            ),
+                                        );
+                                        setDiagnostic(formatDiagnostic(diagnostic));
+                                        return diagnostic;
+                                    }
+                                }}
                             />
                             <div className={styles.actionButtons}>
                                 <Button
@@ -1117,6 +1151,8 @@ export function GraphMigrationWorkbench() {
                                 return (
                                     <details
                                         key={phase[0]}
+                                        ref={index === 0 ? firstStepRef : undefined}
+                                        tabIndex={index === 0 ? -1 : undefined}
                                         open={
                                             active ||
                                             completed ||

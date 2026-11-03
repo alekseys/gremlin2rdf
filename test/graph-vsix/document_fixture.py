@@ -2,10 +2,11 @@
 import datetime
 import ipaddress
 import json
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 import ssl
 import sys
+import threading
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -28,8 +29,10 @@ context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
 context.load_cert_chain(cert_path, key_path)
 summary = {"requests": 0, "requestCharge": 0, "rejectedTemplates": 0, "documentPages": 0, "mutations": 0}
 summary["routes"] = {}
+summary_lock = threading.RLock()
 def save():
-    (root / "source-summary.json").write_text(json.dumps(summary))
+    with summary_lock:
+        (root / "source-summary.json").write_text(json.dumps(summary))
 def metadata(identity):
     return {"_rid": identity, "_self": "fixture/" + identity, "_etag": identity,
             "_attachments": "attachments/", "_ts": 123}
@@ -50,9 +53,10 @@ documents += [{"id": identity, "pk": "p0", "label": "knows", "_isEdge": True,
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_): pass
     def do_GET(self):
-        summary["requests"] += 1
         path = self.path.rstrip("/")
-        summary["routes"][path] = summary["routes"].get(path, 0) + 1
+        with summary_lock:
+            summary["requests"] += 1
+            summary["routes"][path] = summary["routes"].get(path, 0) + 1
         charge, continuation = None, None
         status = 200
         if not path:
@@ -78,11 +82,13 @@ class Handler(BaseHTTPRequestHandler):
             page = documents[start:start + maximum]
             continuation = str(start + len(page)) if start + len(page) < len(documents) else None
             charge = 1
-            summary["documentPages"] += 1
-            summary["requestCharge"] += charge
+            with summary_lock:
+                summary["documentPages"] += 1
+                summary["requestCharge"] += charge
             body = {"_rid": "IXYFAOHEBPM=", "Documents": page, "_count": len(page)}
         else:
-            summary["rejectedTemplates"] += 1
+            with summary_lock:
+                summary["rejectedTemplates"] += 1
             status, body = 404, {"code": "NotFound", "message": "fixture route"}
         save()
         raw = json.dumps(body).encode() if body is not None else b""
@@ -98,12 +104,13 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
     def do_POST(self):
-        summary["mutations"] += 1
+        with summary_lock:
+            summary["mutations"] += 1
         save()
         self.send_error(405)
     do_PUT = do_DELETE = do_PATCH = do_POST
 
-server = HTTPServer(("127.0.0.1", 0), Handler)
+server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
 server.socket = context.wrap_socket(server.socket, server_side=True)
 save()
 (root / "source-ready.json").write_text(json.dumps({"port": server.server_port}))

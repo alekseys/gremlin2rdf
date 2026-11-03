@@ -68,6 +68,15 @@ inventories, journals, checkpoints or target graphs, nor resume any old continua
 their own approvals. **Save connection settings** instead updates the current settings without automatically running
 an operation. Unsaved edits disable continuation, and ordinary progress/reload events do not reset the form.
 
+A restart is acknowledged next to its button with the new run ID and moves focus to Step 1. A rejected save instead
+shows a focused inline diagnostic, retains the edited settings and leaves the previous run displayed; it does not claim
+to have restarted. Existing best-effort consistency remains selected rather than becoming a blank required field, and
+still requires its separate scoped approval before applicable extraction operations. An explicit fresh restart does not
+need to open or hash the old identity inventory; a missing old inventory therefore does not prevent making a new one.
+Existing `project.pending` or `project.lock` files still block replacement with a specific preservation/recovery message.
+They are never deleted or adopted automatically. A saved new run whose connection check could not start is distinguished
+from a restart that could not be saved.
+
 Feed preparation does not require Gremlin queries, Gremlin keyset paging or partition candidate scripts. Review page,
 request, duration, disk, total RU and RU/s limits before starting. Source operations are read-only: no resources,
 documents or source indexes are created, updated or deleted. Target writes retain their existing separate approvals.

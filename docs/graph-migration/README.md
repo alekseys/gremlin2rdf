@@ -13,6 +13,8 @@ The [sanitized receipt](evidence/installed-vsix-0.39.18.json) separates observed
 equivalence and records the unchanged AccountOverview focus failure in the latest broad unit run.
 The [0.39.19 receipt](evidence/installed-vsix-0.39.19.json) verifies the installed legacy-run restart, automatic JSON
 layout detection and document migration without asking the user to test individual steps.
+The [0.39.20 receipt](evidence/installed-vsix-0.39.20.json) additionally covers rejected restart feedback, retained
+best-effort settings and a fresh restart with an unavailable old inventory.
 This is an experimental offline-verified preview, not live-account or production-release certification.
 
 ## Prerequisites and entry points

@@ -140,6 +140,59 @@ async function complete(payload: WorkerMessage['payload']) {
 }
 
 describe('persisted graph editor workflow', () => {
+    it('restarts a best-effort run whose old inventory is unavailable, without reading or adopting old continuation state', async () => {
+        await context.create();
+        const form = {
+            host: 'account.gremlin.cosmos.azure.com',
+            database: 'db',
+            container: 'graph',
+            partitionKeyPath: '/pk',
+            datasetUrl: 'http://localhost:3030/test',
+            consistency: 'best-effort' as const,
+        };
+        expect(await context.saveSetup(form)).toMatchObject({ status: 'saved' });
+        const previous = await service.load();
+        previous.source!.identityManifest = 'artifacts/unavailable-old-inventory.ndjson';
+        previous.phases.report = {
+            status: 'blocked',
+            inputHash: inputHash(previous),
+            blockers: ['old failure'],
+            evidence: [],
+        };
+        await service.save(previous);
+        const result = await context.saveSetup({ ...form, restart: true });
+        expect(result).toMatchObject({ status: 'saved' });
+        const current = await service.load();
+        expect(current.runId).not.toBe(previous.runId);
+        expect(current.phases).toEqual({});
+        expect(current.consistency).toBe('best-effort');
+        expect(current.approvals).toEqual([]);
+        expect(current.source?.identityManifest).not.toBe(previous.source?.identityManifest);
+        expect(await readFile(path.join(await service.root(), current.source!.identityManifest), 'utf8')).toBe('');
+        expect(mocks.start).not.toHaveBeenCalled();
+    });
+    it('returns a precise safe restart failure when a prior pending save exists and leaves the old run intact', async () => {
+        await context.create();
+        const previous = await service.load();
+        const root = await service.root();
+        await writeFile(path.join(root, 'project.pending'), 'owned prior pending state');
+        const result = await context.saveSetup({
+            host: 'account.gremlin.cosmos.azure.com',
+            database: 'db',
+            container: 'graph',
+            partitionKeyPath: '/pk',
+            datasetUrl: 'http://localhost:3030/test',
+            consistency: 'immutable',
+            restart: true,
+        });
+        expect(result).toMatchObject({
+            status: 'blocked',
+            diagnostic: { code: 'PROJECT_PENDING_EXISTS', stage: 'project-save' },
+        });
+        expect(await service.load()).toEqual(previous);
+        expect(await readFile(path.join(root, 'project.pending'), 'utf8')).toBe('owned prior pending state');
+        expect(mocks.start).not.toHaveBeenCalled();
+    });
     it('dispatches an explicitly selected document source to its packaged SDK without a Gremlin fallback on failure', async () => {
         await context.create();
         await context.saveSetup({

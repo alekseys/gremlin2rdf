@@ -88,7 +88,7 @@ it('preserves the live and flushed pending state after five busy replacements', 
 it('does not retry other errors or overwrite an earlier pending write', async () => {
     const { service, project, root } = await fixture();
     await writeFile(path.join(root, 'project.pending'), 'owned prior draft');
-    await expect(service.save(project)).rejects.toMatchObject({ code: 'EEXIST' });
+    await expect(service.save(project)).rejects.toMatchObject({ code: 'PROJECT_PENDING_EXISTS' });
     expect(vi.mocked(rename)).not.toHaveBeenCalled();
     expect(await readFile(path.join(root, 'project.pending'), 'utf8')).toBe('owned prior draft');
 });

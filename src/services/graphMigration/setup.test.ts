@@ -147,7 +147,7 @@ it('requires an explicit credential-free document endpoint and profile instead o
         sourceMode: 'cosmos-documents' as const,
         documentProfile: 'flat-v1' as const,
     };
-    await expect(applySetup(project(), form, run)).rejects.toThrow('explicit Cosmos DB');
+    await expect(applySetup(project(), form, run)).rejects.toThrow('SETUP_DOCUMENT_ENDPOINT_REQUIRED');
     for (const endpoint of [
         'https://account.documents.azure.com/?key=private',
         'https://user:private@account.documents.azure.com/',
@@ -690,7 +690,7 @@ it('requires explicit source consistency and never replaces an existing inventor
         datasetUrl: '',
         consistency: '' as const,
     };
-    await expect(applySetup(project(), input, run)).rejects.toThrow('consistency');
+    await expect(applySetup(project(), input, run)).rejects.toThrow('SETUP_CONSISTENCY_REQUIRED');
     await applySetup(project(), { ...input, consistency: 'immutable' }, run);
     expect(await readFile(path.join(run, 'identities.ndjson'), 'utf8')).toBe('reviewed-inventory\n');
 });
