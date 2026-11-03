@@ -14,6 +14,8 @@ internal sealed record SignedCompletion(Completion Result, string Integrity);
 
 internal sealed class Worker(Config config, Func<IReadFeed> feedFactory)
 {
+    private sealed record FidelityObservation(long Vertices, long Edges, string[] Unobservable, string[] Profiles);
+    private FidelityObservation? fidelityObservation;
     public Action<string, int, int>? Activity { get; init; }
     public Action<string, long, long, long, long>? Progress { get; init; }
     private Journal Open(string suffix, string mode) => new(config, config.CacheRelative + "/" + suffix, mode)
@@ -39,6 +41,7 @@ internal sealed class Worker(Config config, Func<IReadFeed> feedFactory)
 
     public async Task<object> Probe(string reportRelative)
     {
+        fidelityObservation = null;
         var report = SafeFiles.Resolve(config.Root, reportRelative);
         if (File.Exists(report)) throw new Blocked("ARTIFACT_ALREADY_EXISTS", "report-write");
         Journal? journal = null;
@@ -76,8 +79,10 @@ internal sealed class Worker(Config config, Func<IReadFeed> feedFactory)
                     {
                         status = "blocked", adapter = "cosmos-dotnet-documents", sdkVersion = "3.58.0",
                         storageProfile = config.Profile, sourceManifestHash = config.ManifestHash,
-                        code = blocked.Code, stage = blocked.Stage, sourceCountsReconciled = false,
-                        gremlinSemanticCompatibility = "not-established", partialRawSnapshot = true,
+                        code = blocked.Code, stage = blocked.Stage, sourceCountsReconciled = fidelityObservation != null,
+                        observedVertices = fidelityObservation?.Vertices, observedEdges = fidelityObservation?.Edges,
+                        unobservable = fidelityObservation?.Unobservable, detectedProfiles = fidelityObservation?.Profiles,
+                        gremlinSemanticCompatibility = "not-established", partialRawSnapshot = fidelityObservation == null,
                         requestCharge = journal == null ? null : Json.DecimalText(journal.State.RequestCharge),
                         spendUnknown = journal?.State.InFlight == true || blocked.Code == "SOURCE_SPEND_UNKNOWN"
                     }
@@ -166,6 +171,7 @@ internal sealed class Worker(Config config, Func<IReadFeed> feedFactory)
             reduced |= record.Provenance.Fidelity == "reduced";
         }
         if (observed != expected) throw new Blocked("MISSING_DOCUMENT_IDENTITIES", "source-reconciliation");
+        fidelityObservation = new(vertices, edges, codec.Unobservable.ToArray(), codec.DetectedProfiles.ToArray());
         if (reduced && config.Fidelity == "strict")
             throw new Blocked("DOCUMENT_FIDELITY_UNOBSERVABLE", "source-fidelity");
         var canonicalRelative = attemptRelative + "/canonical.ndjson";

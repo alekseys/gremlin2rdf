@@ -15,6 +15,9 @@ The [0.39.19 receipt](evidence/installed-vsix-0.39.19.json) verifies the install
 layout detection and document migration without asking the user to test individual steps.
 The [0.39.20 receipt](evidence/installed-vsix-0.39.20.json) additionally covers rejected restart feedback, retained
 best-effort settings and a fresh restart with an unavailable old inventory.
+The [0.39.21 receipt](evidence/installed-vsix-0.39.21.json) covers bare document-host normalization, above-field
+examples/ranges, highlighted next-step navigation and completed-section collapse while preserving stopped-run recovery.
+Strict document-policy blocks now provide observed reason codes and a direct, non-approving policy review action.
 This is an experimental offline-verified preview, not live-account or production-release certification.
 
 ## Prerequisites and entry points

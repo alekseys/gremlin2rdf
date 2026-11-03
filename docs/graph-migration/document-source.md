@@ -5,6 +5,12 @@ The connection form defaults to `sourceMode: "cosmos-documents"` for new configu
 database and graph container. It uses the same `authenticationRef` / SecretStorage source key as the legacy adapter.
 Never put an account key in an endpoint, project, report or chat.
 
+The connection form accepts `my-account.documents.azure.com` as well as a full account URI. On leaving the field
+or saving, an unambiguous bare hostname becomes `https://my-account.documents.azure.com:443/`. An explicitly supplied
+port is preserved. Full URLs still undergo the same HTTPS/no-credentials/no-query/no-fragment/no-resource-path checks;
+normalization never changes a Gremlin host into a document endpoint or falls back to another source mode.
+Each connection and preparation field shows accepted examples, formats or numeric ranges above its control.
+
 Microsoft Learn documents SQL SDK/bulk access for graph accounts at
 [Gremlin bulk executor](https://learn.microsoft.com/en-us/azure/cosmos-db/gremlin/bulk-executor-dotnet), including
 `https://<account-name>.documents.azure.com:443/`. The
@@ -52,6 +58,15 @@ or migrate only observed values after a separate approval. A JSON number alone c
 numeric type; a direct `name: "Alice"` field cannot reveal its property-occurrence ID. Automatic detection can identify
 what is present, but cannot reconstruct missing information or choose the user's tolerance for that limitation.
 
+`DOCUMENT_FIDELITY_UNOBSERVABLE` in Step 4 means strict policy blocked conversion, not that the account URI is invalid
+or more RU is needed. The blocked evidence now lists the observed `unobservable` reason codes and supported layouts,
+and reports reconciled counts only after all identities and endpoints match the inventory. It remains blocked and
+does not create an approved canonical completion. This is separate from connectivity and enumeration success.
+**Review source-detail policy** opens and focuses the setting without changing or approving it. To accept the
+limitation, explicitly choose **Migrate observed values only (approval required)** and **Save connection settings**,
+not restart. The existing inventory is preserved; changed evidence needs rechecking and the separate scoped approval.
+Keeping strict mode continues to block when required details are unobservable. Neither option fabricates source data.
+
 For explicitly approved document conversion, target validation checks the exact owned canonical bytes against RDF,
 endpoint resolution, derived triples and SHACL. Its scope is `observed-document-canonical-only`, with
 `strictInputFidelity: false`: success means the target matches the observed conversion, not that unobservable source
@@ -67,6 +82,9 @@ phase evidence and approvals for the new run, and starts read-only connection ch
 inventories, journals, checkpoints or target graphs, nor resume any old continuation. New target writes still require
 their own approvals. **Save connection settings** instead updates the current settings without automatically running
 an operation. Unsaved edits disable continuation, and ordinary progress/reload events do not reset the form.
+The current required step has a theme-aware colored background/border and an accessible current-step marker.
+As it finishes, its section collapses and the next required step opens, receives focus and scrolls into view.
+Completed sections can still be reopened to inspect evidence; ordinary updates do not repeatedly steal focus.
 
 A restart is acknowledged next to its button with the new run ID and moves focus to Step 1. A rejected save instead
 shows a focused inline diagnostic, retains the edited settings and leaves the previous run displayed; it does not claim

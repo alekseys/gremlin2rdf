@@ -14,10 +14,17 @@ import {
     GraphDiagnosticError,
     type SafeDiagnostic,
 } from '../../../services/graphMigration/diagnostics';
+import { normalizeDocumentEndpoint } from '../../../services/graphMigration/documentEndpoint';
 import { type ConnectionSetup, type SetupSuggestions } from '../../../services/graphMigration/setup';
 
 const useStyles = makeStyles({
-    root: { display: 'grid', gap: tokens.spacingVerticalM },
+    root: {
+        display: 'grid',
+        gap: tokens.spacingVerticalM,
+        '& .fui-Field': { display: 'flex', flexDirection: 'column' },
+        '& .fui-Field__label': { order: -2 },
+        '& .fui-Field__hint': { order: -1 },
+    },
     intro: { maxWidth: '72ch', margin: 0, color: tokens.colorNeutralForeground2 },
     connectionGrid: {
         display: 'grid',
@@ -113,7 +120,12 @@ export function GraphConnectionSetup({
     const submit = async (restart: boolean) => {
         setFeedback(undefined);
         try {
-            const result = await save(restart ? { ...values, restart: true } : values);
+            const submitted = {
+                ...values,
+                documentEndpoint: normalizeDocumentEndpoint(values.documentEndpoint ?? ''),
+                ...(restart ? { restart: true } : {}),
+            };
+            const result = await save(submitted);
             if (result && typeof result !== 'string') setFeedback({ failed: true, text: formatDiagnostic(result) });
             else if (typeof result === 'string') setFeedback({ failed: false, text: result });
         } catch {
@@ -140,18 +152,36 @@ export function GraphConnectionSetup({
         onDirtyChange?.(dirty);
     }, [dirty, onDirtyChange]);
     const fields: ['host' | 'database' | 'container' | 'partitionKeyPath' | 'datasetUrl', string, string][] = [
-        ['host', l10n.t('Gremlin endpoint'), l10n.t('For example, my-account.gremlin.cosmos.azure.com')],
-        ['database', l10n.t('Cosmos DB database'), ''],
-        ['container', l10n.t('Gremlin graph (container)'), ''],
+        [
+            'host',
+            l10n.t('Gremlin endpoint'),
+            l10n.t(
+                'Example: my-account.gremlin.cosmos.azure.com. A bare hostname or HTTPS/WSS URI on port 443; up to 500 characters.',
+            ),
+        ],
+        [
+            'database',
+            l10n.t('Cosmos DB database'),
+            l10n.t('Example: graph-db. Exact existing database name; 1-255 characters.'),
+        ],
+        [
+            'container',
+            l10n.t('Gremlin graph (container)'),
+            l10n.t('Example: graph. Exact existing container name; 1-255 characters.'),
+        ],
         [
             'partitionKeyPath',
             l10n.t('Partition key path'),
-            l10n.t('Default: /pk. Confirm the path used by your graph.'),
+            l10n.t(
+                'Example: /pk or /tenant. One leading slash and 1-255 characters, with no further slash. Confirm the path used by your graph.',
+            ),
         ],
         [
             'datasetUrl',
             l10n.t('Fuseki dataset URL'),
-            l10n.t('For example, http://localhost:3030/my-dataset. Query, update and data URLs are filled in for you.'),
+            l10n.t(
+                'Example: http://localhost:3030/my-dataset. HTTP/HTTPS dataset URL without credentials or fragment; up to 2000 characters. Query, update and data URLs are filled in for you.',
+            ),
         ],
     ];
     return (
@@ -179,7 +209,13 @@ export function GraphConnectionSetup({
                         <CheckmarkCircleRegular aria-hidden={true} />
                         {l10n.t('Required')}
                     </span>
-                    <Field label={l10n.t('Source read mode')} required>
+                    <Field
+                        label={l10n.t('Source read mode')}
+                        required
+                        hint={l10n.t(
+                            'Choose the Cosmos .NET SDK document feed, or explicitly select Gremlin traversal. No automatic fallback.',
+                        )}
+                    >
                         <Select
                             value={values.sourceMode}
                             disabled={disabled}
@@ -207,12 +243,18 @@ export function GraphConnectionSetup({
                                 required
                                 label={l10n.t('Cosmos .NET SDK document endpoint')}
                                 hint={l10n.t(
-                                    'Copy the account .NET SDK URI, for example https://my-account.documents.azure.com:443/. The same stored source key is used; do not enter a key here.',
+                                    'Example: my-account.documents.azure.com or https://my-account.documents.azure.com:443/. A bare hostname gets https:// and :443/ automatically. Up to 2000 characters; no credentials, query, fragment or resource path. The stored source key is used; do not enter a key here.',
                                 )}
                             >
                                 <Input
                                     value={values.documentEndpoint ?? ''}
                                     disabled={disabled}
+                                    onBlur={() =>
+                                        setValues((current) => ({
+                                            ...current,
+                                            documentEndpoint: normalizeDocumentEndpoint(current.documentEndpoint ?? ''),
+                                        }))
+                                    }
                                     onChange={(_, data) =>
                                         setValues((current) => ({ ...current, documentEndpoint: data.value }))
                                     }
@@ -257,6 +299,7 @@ export function GraphConnectionSetup({
                                 )}
                             >
                                 <Select
+                                    id="graph-document-fidelity"
                                     value={values.documentFidelity}
                                     disabled={disabled}
                                     onChange={(_, data) =>
@@ -277,7 +320,7 @@ export function GraphConnectionSetup({
                             <Field
                                 label={l10n.t('Document-source total-run RU allowance')}
                                 hint={l10n.t(
-                                    'Set an explicit positive total allowance before document-feed operations. This is not provisioned throughput; changing it invalidates evidence and does not reset an existing journal.',
+                                    'Example: 120000. Positive decimal total RU allowance, up to 40 characters; no commas or exponent notation. Required before document-feed operations. This is not provisioned throughput; changing it invalidates evidence and does not reset an existing journal.',
                                 )}
                             >
                                 <Input
@@ -291,7 +334,7 @@ export function GraphConnectionSetup({
                             <Field
                                 label={l10n.t('Document-source pacing (RU/s)')}
                                 hint={l10n.t(
-                                    'Set a separate positive pacing rate. A single request may cost more than one second of this rate. No source throughput or resources are changed.',
+                                    'Example: 1000. Decimal pacing rate from 1 to 1000000000 RU/s, with up to 9 decimal places; no commas or exponent notation. Required before document-feed operations. A request may exceed one second of this rate. No source throughput or resources are changed.',
                                 )}
                             >
                                 <Input
@@ -336,7 +379,7 @@ export function GraphConnectionSetup({
                         required
                         label={l10n.t('Source consistency')}
                         hint={l10n.t(
-                            'Choose how you will keep the graph stable during extraction. This cannot be detected automatically.',
+                            'Choose paused writes, an immutable snapshot, or best-effort while the source may change (separate approval required). This cannot be detected automatically.',
                         )}
                     >
                         <Select

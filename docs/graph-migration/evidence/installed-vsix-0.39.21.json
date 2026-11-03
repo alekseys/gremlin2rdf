@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "version": "0.39.21",
+  "baselineCommit": "4b6ea4e712ba13a8a378019b52b99e6a211d3d19",
+  "scope": "Installed VS Code extension, real Cosmos .NET SDK and local in-memory Fuseki against an owned loopback TLS fixture; not the user's account",
+  "package": {
+    "file": "vscode-cosmosdb-0.39.21.vsix",
+    "bytes": 155726800,
+    "sha256": "52518fc5c53c60158430412d6a88b17d1dc03bc9d967d99192d6891dcdd8df03",
+    "zipCrcVerified": true,
+    "nestedJarsVerified": 3,
+    "documentRuntimeFilesVerified": 212,
+    "runtimePlatform": "win-x64"
+  },
+  "reportedFailure": {
+    "observed": "User supplied configuration explicitly selects strict document fidelity; Step 4 reports DOCUMENT_FIDELITY_UNOBSERVABLE after document-feed decoding",
+    "classification": "Strict source-detail policy block, not endpoint normalization or RU exhaustion",
+    "exactMissingDetails": "Not identified by the original supplied report; no source documents or live endpoints accessed. New blocked evidence lists actual observed reason codes.",
+    "policy": "No automatic reduced conversion, approval, fabricated metadata or Gremlin fallback"
+  },
+  "installedAcceptance": {
+    "command": "$env:GRAPH_E2E_SOURCE_MODE='cosmos-documents'; npm run graph:test:vsix",
+    "exitCode": 0,
+    "verifiedControls": [
+      "Bare loopback hostname with explicit fixture port expands to a valid HTTPS account URI on blur and persists on restart",
+      "Accepted endpoint examples appear above the control without changing its accessible name",
+      "Rejected pending save remains focused and preserves the old run and edits",
+      "Successful restart creates a fresh run and inventory and starts Step 1",
+      "Step 1 collapses after success; Step 2 has a colored border, opens, scrolls into view and receives focus",
+      "The redundant Next unfinished step heading is absent",
+      "Stopped unfinished Step 2 remains reviewable when a prerequisite connection check is stale",
+      "Reviewed budget stop, separately reviewed retry, inventory reconciliation and adoption",
+      "Strict Step 4 evidence lists missing property-occurrence-ID observations and reconciled counts but remains blocked",
+      "Review source-detail policy focuses the unchanged strict selection without saving, approving or switching it",
+      "Explicit observed-values selection and save preserve the inventory without restart; scoped approval remains separate",
+      "Extraction, approved local target load, canonical comparison, endpoint resolution, SHACL and golden queries",
+      "Readiness and Gremlin semantic equivalence remain blocked",
+      "Registered artifact checksums verified"
+    ],
+    "vertices": 3,
+    "edges": 3,
+    "httpGetAttempts": 52,
+    "documentPages": 16,
+    "syntheticRequestCharge": 16,
+    "sourceMutations": 0,
+    "unrecognizedRoutes": 0,
+    "pageErrors": 0,
+    "coreMigration": "succeeded",
+    "productionReadiness": "blocked",
+    "validationScope": "observed-document-canonical-only",
+    "strictInputFidelity": false
+  },
+  "otherChecks": {
+    "targetedEndpointSetupAndWorkbench": { "exitCode": 0, "passed": 75, "skipped": 1 },
+    "stoppedReviewCollapseAndPolicyRecheck": { "exitCode": 0, "passed": 3, "notSelected": 32 },
+    "documentWorkerOfflineAssertions": { "exitCode": 0, "assertions": 86 },
+    "localization": "succeeded",
+    "scopedFormatting": "succeeded",
+    "lint": "succeeded",
+    "allThreeTypeScriptBuilds": "succeeded",
+    "packaging": "succeeded",
+    "firstInstalledAttempt": "Bare endpoint, above-field guidance and active-step navigation passed; stopped Step 2 review was hidden after prerequisite invalidation",
+    "correction": "Collapse only finished sections; retain open stopped-enumeration recovery controls",
+    "finalInstalledAttempt": "Complete installed local SDK migration passed",
+    "broadUnitSuite": "Not rerun as directed; earlier unchanged AccountOverview focus failure remains reported, not waived or fixed"
+  },
+  "limitations": [
+    "Strict document fidelity remains blocked when required occurrence IDs, metadata or native numeric provenance cannot be observed",
+    "Reduced document conversion does not establish exact Gremlin semantics or application equivalence",
+    "No live source requests, account permissions, service layouts or actual request charges verified by this fixture",
+    "No speed or cost improvement is established by synthetic charges",
+    "Existing pending or locked project files are preserved for explicit recovery",
+    "Original production dependency, application, CRUD, performance and strict-equivalence gates remain blocked",
+    "Experimental offline-verified preview, not production certification"
+  ],
+  "noLiveSourceRequests": true,
+  "noProductionWrites": true,
+  "noPublishingOrPush": true
+}

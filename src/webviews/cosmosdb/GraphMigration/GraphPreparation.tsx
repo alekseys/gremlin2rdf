@@ -197,7 +197,13 @@ export function GraphPreparation({
                     {!documents && (
                         <details>
                             <summary>{l10n.t('Review or add partition values')}</summary>
-                            <Field label={l10n.t('String partition values, one per line')} required>
+                            <Field
+                                label={l10n.t('String partition values, one per line')}
+                                hint={l10n.t(
+                                    'Example: tenant-a on one line, tenant-b on the next. Enter 1-1000 distinct exact string partition values.',
+                                )}
+                                required
+                            >
                                 <Textarea
                                     aria-required={true}
                                     value={text}
@@ -219,7 +225,7 @@ export function GraphPreparation({
                                 : undefined
                         }
                         hint={l10n.t(
-                            'Reserved attempts include retry capacity, not just completed source requests. Identity pages and all count reconciliation share this ceiling. Changing these fields applies only when you start a newly reviewed preparation; old checkpoints and journals are retained.',
+                            'Example: 20000. Whole number from 4 to 100000. Reserved attempts include retry capacity, not just completed requests. Identity pages and count reconciliation share this ceiling. Applies only to newly reviewed preparation; old checkpoints and journals are retained.',
                         )}
                     >
                         <Input
@@ -245,7 +251,7 @@ export function GraphPreparation({
                         }
                         validationState={expired && !seconds ? 'error' : 'none'}
                         hint={l10n.t(
-                            'Review 10-86400 seconds for a new run, including identity pages and all global/partition count reconciliation. The worker stops at this duration, even if identities have already been read. Existing runs keep their original deadline; increasing duration does not increase total RU or request allowances.',
+                            'Example: 1800. Whole number from 10 to 86400 seconds, including identity pages and all count reconciliation. The worker stops at this duration even if identities have been read. Existing runs keep their deadline; increasing duration does not increase RU or request allowances.',
                         )}
                     >
                         <Input
@@ -274,7 +280,7 @@ export function GraphPreparation({
                         label={l10n.t('Total source RU allowance per run')}
                         required
                         hint={l10n.t(
-                            'Cumulative RU, not RU/s. For example, 1000 RU/s for 120 seconds can consume 120000 RU. Preparation and extraction have separate totals. Waiting does not replenish this allowance; existing saved values keep their total-run meaning.',
+                            'Example: 120000. Positive decimal up to 1000000000 RU; no commas or exponent notation. Cumulative RU, not RU/s: 1000 RU/s for 120 seconds can consume 120000 RU. Preparation and extraction have separate totals. Waiting does not replenish this allowance.',
                         )}
                     >
                         <Input
@@ -288,7 +294,7 @@ export function GraphPreparation({
                         label={l10n.t('Migration source pacing (RU/s)')}
                         required
                         hint={l10n.t(
-                            'Separate from provisioned database throughput. Observed request charges pace subsequent requests; a single request can exceed one second of this rate because its cost is known only after completion. Missing charge observations block execution.',
+                            'Example: 1000. Decimal from 1 to 1000000000 RU/s, up to 9 decimal places; no commas or exponent notation. Separate from provisioned throughput. Observed charges pace subsequent requests; one request can exceed one second of this rate. Missing charge observations block execution.',
                         )}
                     >
                         <Input

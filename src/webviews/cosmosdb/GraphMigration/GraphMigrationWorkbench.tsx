@@ -61,6 +61,9 @@ const useStyles = makeStyles({
         '& h1': { margin: 0, fontSize: tokens.fontSizeBase600, lineHeight: tokens.lineHeightBase600 },
         '& h2': { margin: 0, fontSize: tokens.fontSizeBase500, lineHeight: tokens.lineHeightBase500 },
         '& p': { marginBlock: tokens.spacingVerticalS },
+        '& .fui-Field': { display: 'flex', flexDirection: 'column' },
+        '& .fui-Field__label': { order: -2 },
+        '& .fui-Field__hint': { order: -1 },
         '@media (max-width: 640px)': {
             padding: `${tokens.spacingVerticalM} ${tokens.spacingHorizontalM}`,
             '& h1': { fontSize: tokens.fontSizeBase500, lineHeight: tokens.lineHeightBase500 },
@@ -197,6 +200,18 @@ const useStyles = makeStyles({
         gap: tokens.spacingVerticalM,
         padding: tokens.spacingVerticalM,
         color: tokens.colorNeutralForeground2,
+    },
+    activeStep: {
+        border: `2px solid ${tokens.colorBrandStroke1}`,
+        borderLeftWidth: '5px',
+        backgroundColor: tokens.colorBrandBackground2,
+        '& > summary': { color: tokens.colorBrandForeground2 },
+        '@media (forced-colors: active)': {
+            borderTopColor: 'Highlight',
+            borderRightColor: 'Highlight',
+            borderBottomColor: 'Highlight',
+            borderLeftColor: 'Highlight',
+        },
     },
     notice: {
         minWidth: 0,
@@ -337,6 +352,7 @@ export function GraphMigrationWorkbench() {
     const [enumerationReview, setEnumerationReview] = useState(0);
     const [restartFocusRunId, setRestartFocusRunId] = useState<string>();
     const firstStepRef = useRef<HTMLDetailsElement>(null);
+    const connectionSettingsRef = useRef<HTMLDetailsElement>(null);
     const [suggestions, setSuggestions] = useState<SetupSuggestions>();
     const [configuration, setConfiguration] = useState('');
     const [configurationDirty, setConfigurationDirty] = useState(false);
@@ -521,6 +537,24 @@ export function GraphMigrationWorkbench() {
         corePhases.find(([operation]) => !phaseComplete(operation));
     const nextOperation = nextPhase?.[0];
     const nextLabel = nextPhase?.[1];
+    const requiredStepsRef = useRef<HTMLDivElement>(null);
+    const previousStep = useRef<string | undefined>(undefined);
+    const stepKey = project ? `${project.runId}:${nextOperation ?? 'complete'}` : undefined;
+    useEffect(() => {
+        const previous = previousStep.current;
+        previousStep.current = stepKey;
+        if (!previous || previous === stepKey) return;
+        const steps = requiredStepsRef.current;
+        for (const card of steps?.querySelectorAll<HTMLDetailsElement>('details[data-completed="true"]') ?? []) {
+            card.open = false;
+        }
+        const next = steps?.querySelector<HTMLDetailsElement>('details[data-active="true"]');
+        if (next) {
+            next.open = true;
+            next.scrollIntoView?.({ block: 'start', behavior: 'instant' });
+            next.focus({ preventScroll: true });
+        }
+    }, [stepKey]);
     useEffect(() => {
         if (restartFocusRunId && project?.runId === restartFocusRunId) {
             firstStepRef.current?.scrollIntoView?.({ block: 'center' });
@@ -542,7 +576,7 @@ export function GraphMigrationWorkbench() {
     };
     useEffect(() => {
         if (nextOperation !== 'preflight' && nextOperation !== 'source-enumerate') setEnumerationReview(0);
-        if (nextLabel) announce(l10n.t('Next unfinished step: {phase}', { phase: nextLabel }));
+        if (nextLabel) announce(l10n.t('Current step: {phase}', { phase: nextLabel }));
     }, [nextOperation, nextLabel, announce]);
     const renderOperation = ([operation, label]: [GraphOperation, string], showActions = true) => {
         const operationActionLabel = runLabel;
@@ -649,6 +683,40 @@ export function GraphMigrationWorkbench() {
                         )}
                     </div>
                 )}
+                {operation === 'source-compatibility' &&
+                    status === 'blocked' &&
+                    project?.source?.sourceMode === 'cosmos-documents' &&
+                    project.phases[operation]?.blockers.some((blocker) =>
+                        blocker.includes('(DOCUMENT_FIDELITY_UNOBSERVABLE)'),
+                    ) && (
+                        <div className={styles.notice}>
+                            <p>
+                                {l10n.t(
+                                    'The document read reached the source-detail policy check; this is not an endpoint or RU-limit error. Strict mode cannot verify all required source details. Review the saved evidence for the observed missing details. Raising budgets or retrying unchanged settings will not resolve this block.',
+                                )}
+                            </p>
+                            <p>
+                                {l10n.t(
+                                    'Keep strict mode to require exact preservation, or explicitly choose observed-values conversion under "When source details cannot be verified" and save connection settings. Your inventory is retained; no restart is needed. Changed evidence must be rechecked, and reduced conversion requires a separate scoped approval. Nothing is approved or switched automatically.',
+                                )}
+                            </p>
+                            <Button
+                                disabled={disabled || configurationDirty}
+                                onClick={() => {
+                                    const settings = connectionSettingsRef.current;
+                                    if (settings) {
+                                        settings.open = true;
+                                        const policy =
+                                            settings.querySelector<HTMLSelectElement>('#graph-document-fidelity');
+                                        policy?.scrollIntoView?.({ block: 'center' });
+                                        policy?.focus({ preventScroll: true });
+                                    }
+                                }}
+                            >
+                                {l10n.t('Review source-detail policy')}
+                            </Button>
+                        </div>
+                    )}
                 {showActions && (
                     <div className={styles.operationActions}>
                         <div className={styles.actionButtons}>
@@ -876,8 +944,11 @@ export function GraphMigrationWorkbench() {
             ) : (
                 <>
                     {nextLabel && (
-                        <section aria-label={l10n.t('Continue migration')} className={styles.section}>
-                            <p>{l10n.t('Next unfinished step: {phase}', { phase: nextLabel })}</p>
+                        <section
+                            aria-label={l10n.t('Continue migration')}
+                            className={mergeClasses(styles.section, styles.activeStep)}
+                        >
+                            <h2>{nextLabel}</h2>
                             {inventoryAdopted && nextOperation === 'preflight' && (
                                 <p>
                                     {l10n.t(
@@ -908,7 +979,11 @@ export function GraphMigrationWorkbench() {
                             )}
                         </section>
                     )}
-                    <details className={styles.section} open={!project.source || !project.target}>
+                    <details
+                        ref={connectionSettingsRef}
+                        className={styles.section}
+                        open={!project.source || !project.target}
+                    >
                         <summary>{l10n.t('Configuration and mapping')}</summary>
                         <section aria-labelledby="graph-configuration">
                             <div className={styles.sectionHeader}>
@@ -1141,32 +1216,28 @@ export function GraphMigrationWorkbench() {
                             </Button>
                             <Button onClick={() => void action(reload)}>{l10n.t('Reload persisted state')}</Button>
                         </div>
-                        <div aria-label={l10n.t('Required migration steps')}>
+                        <div ref={requiredStepsRef} aria-label={l10n.t('Required migration steps')}>
                             {corePhases.map((phase, index) => {
                                 const active = phase[0] === nextPhase?.[0];
                                 const completed = phaseComplete(phase[0]);
-                                const priorEvidence =
-                                    Boolean(project.phases[phase[0]]?.evidence.length) &&
-                                    index < corePhases.findIndex(([operation]) => operation === nextPhase?.[0]);
                                 return (
                                     <details
-                                        key={phase[0]}
+                                        key={`${project.runId}:${phase[0]}`}
                                         ref={index === 0 ? firstStepRef : undefined}
-                                        tabIndex={index === 0 ? -1 : undefined}
+                                        tabIndex={-1}
                                         open={
                                             active ||
-                                            completed ||
-                                            priorEvidence ||
-                                            (phase[0] === 'source-enumerate' && enumerationStopped)
+                                            (!completed && phase[0] === 'source-enumerate' && enumerationStopped)
                                         }
-                                        className={styles.optionalDetails}
+                                        data-active={active}
+                                        data-completed={completed}
+                                        className={mergeClasses(styles.optionalDetails, active && styles.activeStep)}
                                     >
                                         <summary aria-current={active ? 'step' : undefined}>
                                             {l10n.t('Step {number}: {phase}', { number: index + 1, phase: phase[1] })}
                                             {' — '}
                                             {phaseLabels()[phaseStatus(phase[0])]}
                                         </summary>
-                                        {active && <h3>{l10n.t('Next unfinished step')}</h3>}
                                         {renderOperation(phase)}
                                     </details>
                                 );

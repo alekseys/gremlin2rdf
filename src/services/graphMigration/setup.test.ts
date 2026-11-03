@@ -11,6 +11,7 @@ import * as path from 'node:path';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { canonicalJson, graphProjectSchema, inputHash, type GraphProject } from './contracts';
 import { hasCurrentSourceCompatibility as hasCompatibilityForHash, hasFidelityInventory } from './diagnostics';
+import { normalizeDocumentEndpoint } from './documentEndpoint';
 import { GraphProjectService } from './GraphProjectService';
 import { adoptEnumeration, freshPreparation, discoverPreparation, prepareSourceSchema } from './preparation';
 import { applySetup, discoverSetup } from './setup';
@@ -64,6 +65,67 @@ function project() {
         artifacts: [],
     });
 }
+it.each([
+    ['my-account.documents.azure.com', 'https://my-account.documents.azure.com:443/'],
+    [' my-account.documents.azure.com:443/ ', 'https://my-account.documents.azure.com:443/'],
+    ['https://my-account.documents.azure.com:443/', 'https://my-account.documents.azure.com:443/'],
+    ['https://localhost:10443/', 'https://localhost:10443/'],
+    ['http://my-account.documents.azure.com', 'http://my-account.documents.azure.com'],
+    ['my-account.documents.azure.com/dbs/db', 'my-account.documents.azure.com/dbs/db'],
+    ['user:secret@my-account.documents.azure.com', 'user:secret@my-account.documents.azure.com'],
+    ['my-account.documents.azure.com?key=value', 'my-account.documents.azure.com?key=value'],
+    ['my-account.documents.azure.com#fragment', 'my-account.documents.azure.com#fragment'],
+    ['my account.documents.azure.com', 'my account.documents.azure.com'],
+])('normalizes only unambiguous bare document endpoints: %s', (value, expected) => {
+    expect(normalizeDocumentEndpoint(value)).toBe(expected);
+});
+it('saves and discovers a bare document hostname without a Gremlin fallback or network call', async () => {
+    const runRoot = await new GraphProjectService(root).root();
+    const saved = await applySetup(
+        project(),
+        {
+            host: '',
+            database: 'db',
+            container: 'graph',
+            partitionKeyPath: '/pk',
+            datasetUrl: 'http://localhost:3030/graph',
+            consistency: 'immutable',
+            sourceMode: 'cosmos-documents',
+            documentEndpoint: 'account.documents.azure.com',
+        },
+        runRoot,
+    );
+    expect(saved.source?.documentEndpoint).toBe('https://account.documents.azure.com:443/');
+    expect(saved.source?.host).toBe('account.documents.azure.com');
+    expect(saved.source?.sourceMode).toBe('cosmos-documents');
+    const discovered = await discoverSetup(runRoot, { COSMOS_DOCUMENT_ENDPOINT: 'account.documents.azure.com' });
+    expect(discovered.values.documentEndpoint).toBe('https://account.documents.azure.com:443');
+});
+it.each([
+    'http://account.documents.azure.com/',
+    'account.documents.azure.com/dbs/db',
+    'https://user:secret@account.documents.azure.com/',
+    'account.documents.azure.com?key=value',
+    'account.documents.azure.com#fragment',
+    'account.documents.azure.com:99999',
+])('rejects unsafe document endpoints after normalization: %s', async (documentEndpoint) => {
+    await expect(
+        applySetup(
+            project(),
+            {
+                host: '',
+                database: 'db',
+                container: 'graph',
+                partitionKeyPath: '/pk',
+                datasetUrl: '',
+                consistency: 'immutable',
+                sourceMode: 'cosmos-documents',
+                documentEndpoint,
+            },
+            root,
+        ),
+    ).rejects.toMatchObject({ code: 'SETUP_DOCUMENT_ENDPOINT_REQUIRED' });
+});
 it('switches modes only explicitly and archives the prior run without touching its complete inventory or journals', async () => {
     const run = await new GraphProjectService(root).root();
     const form = {

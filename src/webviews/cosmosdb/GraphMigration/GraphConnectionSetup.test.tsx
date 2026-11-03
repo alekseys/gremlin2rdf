@@ -95,6 +95,39 @@ it('retains a saved legacy Gremlin mode until an explicit selection, without net
         }),
     );
 });
+it('expands a bare document host on blur and restart, with field guidance above the inputs', async () => {
+    const save = vi.fn(async () => {});
+    render(
+        <FluentProvider theme={webLightTheme}>
+            <GraphConnectionSetup project={project} disabled={false} save={save} />
+        </FluentProvider>,
+    );
+    const user = userEvent.setup();
+    const endpoint = screen.getByRole('textbox', { name: 'Cosmos .NET SDK document endpoint' });
+    expect(endpoint).toHaveAccessibleName('Cosmos .NET SDK document endpoint');
+    expect(endpoint).toHaveAccessibleDescription(expect.stringContaining('https:// and :443/ automatically'));
+    await user.type(endpoint, 'my-account.documents.azure.com');
+    await user.tab();
+    expect(endpoint).toHaveValue('https://my-account.documents.azure.com:443/');
+    await user.clear(endpoint);
+    await user.type(endpoint, 'my-account.documents.azure.com:443');
+    await user.click(screen.getByRole('button', { name: 'Save settings and restart migration' }));
+    expect(save).toHaveBeenCalledWith(
+        expect.objectContaining({
+            restart: true,
+            documentEndpoint: 'https://my-account.documents.azure.com:443/',
+        }),
+    );
+    const hint = document.getElementById(endpoint.getAttribute('aria-describedby')!);
+    expect(hint).toHaveStyle({ order: '-1' });
+    expect(endpoint.closest('.fui-Field')).toHaveStyle({ display: 'flex', flexDirection: 'column' });
+    expect(screen.getByRole('textbox', { name: 'Cosmos DB database' })).toHaveAccessibleDescription(
+        expect.stringContaining('1-255 characters'),
+    );
+    expect(screen.getByRole('textbox', { name: 'Document-source pacing (RU/s)' })).toHaveAccessibleDescription(
+        expect.stringContaining('1 to 1000000000'),
+    );
+});
 it('preserves unsaved settings across phase snapshots and restarts with the displayed draft', async () => {
     const save = vi.fn(async () => {});
     const onDirtyChange = vi.fn();

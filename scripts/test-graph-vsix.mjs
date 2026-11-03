@@ -315,6 +315,18 @@ try {
             .click();
         await webview.getByRole('combobox', { name: 'Source read mode' }).selectOption('cosmos-documents');
         await webview.getByRole('combobox', { name: 'JSON property layout' }).selectOption('auto-v1');
+        const documentEndpoint = webview.getByRole('textbox', { name: 'Cosmos .NET SDK document endpoint' });
+        await documentEndpoint.fill(`localhost:${sourcePort}`);
+        await documentEndpoint.blur();
+        assert.equal(await documentEndpoint.inputValue(), `https://localhost:${sourcePort}/`);
+        assert.equal(
+            await documentEndpoint.evaluate((input) => {
+                const hint = input.ownerDocument.getElementById(input.getAttribute('aria-describedby'));
+                return hint && hint.getBoundingClientRect().bottom <= input.getBoundingClientRect().top;
+            }),
+            true,
+            'Accepted endpoint examples must appear above the control',
+        );
         assert.equal(
             await webview.getByRole('button', { name: 'Go to next unfinished step', exact: true }).isEnabled(),
             false,
@@ -344,6 +356,7 @@ try {
         const restarted = await state();
         assert.equal(restarted.source.sourceMode, 'cosmos-documents');
         assert.equal(restarted.source.documentProfile, 'auto-v1');
+        assert.equal(restarted.source.documentEndpoint, `https://localhost:${sourcePort}/`);
         assert.notEqual(restarted.source.identityManifest, project.source.identityManifest);
         assert.equal(restarted.phases['source-enumerate'], undefined);
         await webview.getByText('Restart saved. New run:', { exact: false }).waitFor({ state: 'visible' });
@@ -353,6 +366,29 @@ try {
             true,
         );
         console.log(JSON.stringify({ fixtureStage: 'legacy-restarted-with-document-draft' }));
+        const activeStep = webview.locator('details[data-active="true"]');
+        await activeStep
+            .locator('summary')
+            .filter({ hasText: /^Step 2:/ })
+            .waitFor({ state: 'visible' });
+        assert.equal(
+            await activeStep.evaluate((step) => {
+                const style = getComputedStyle(step);
+                const box = step.getBoundingClientRect();
+                return (
+                    step.open &&
+                    parseFloat(style.borderLeftWidth) >= 5 &&
+                    box.top >= 0 &&
+                    box.top < step.ownerDocument.defaultView.innerHeight &&
+                    step === step.ownerDocument.activeElement
+                );
+            }),
+            true,
+            'The next step must be highlighted, focused and scrolled into view',
+        );
+        assert.equal(await webview.locator('details[data-completed="true"][open]').count(), 0);
+        assert.equal(await webview.getByRole('heading', { name: 'Next unfinished step', exact: true }).count(), 0);
+        await page.screenshot({ path: path.join(root, 'endpoint-normalized-next-step.png') });
         await webview
             .locator('summary')
             .filter({ hasText: /^Configuration and mapping$/ })
@@ -508,6 +544,10 @@ try {
     assert.equal(identities.filter((row) => row.kind === 'vertex').length, 3);
     assert.equal(identities.filter((row) => row.kind === 'edge').length, 3);
     await webview
+        .locator('details[data-completed="true"] > summary')
+        .filter({ hasText: /Enumerate read-only source identities/ })
+        .click();
+    await webview
         .getByRole('button', { name: 'Evidence 1 for Enumerate read-only source identities', exact: true })
         .click();
     await page.getByRole('tab', { name: /adopted-inventory/ }).waitFor();
@@ -554,10 +594,23 @@ try {
                 strict.phases[operation].blockers.some((value) => value.includes('DOCUMENT_FIDELITY_UNOBSERVABLE')),
             );
             assert.equal(strict.source.identityManifestHash, strictBefore.source.identityManifestHash);
-            await webview
-                .locator('summary')
-                .filter({ hasText: /^Configuration and mapping$/ })
-                .click();
+            const strictEvidence = JSON.parse(
+                await readFile(path.join(runRoot, strict.phases[operation].evidence[0]), 'utf8'),
+            );
+            assert.equal(strictEvidence.result.sourceCountsReconciled, true);
+            assert.equal(strictEvidence.result.observedVertices, 3);
+            assert.equal(strictEvidence.result.observedEdges, 3);
+            assert.ok(strictEvidence.result.unobservable.includes('property-occurrence-id-unobservable'));
+            assert.equal(strictEvidence.status, 'blocked');
+            await webview.getByRole('button', { name: 'Review source-detail policy', exact: true }).click();
+            assert.equal(
+                await webview
+                    .getByRole('combobox', { name: 'When source details cannot be verified' })
+                    .evaluate((select) => select === select.ownerDocument.activeElement),
+                true,
+            );
+            assert.equal((await state()).mapping.fidelity, 'strict');
+            assert.equal((await state()).approvals.length, 0);
             await webview
                 .getByRole('combobox', { name: 'When source details cannot be verified' })
                 .selectOption('reduced');

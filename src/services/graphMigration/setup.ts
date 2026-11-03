@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { fileHash, ownedPath, readBounded, writeNewArtifact } from './artifacts';
 import { graphProjectSchema, invalidateEvidence, type GraphProject } from './contracts';
 import { GraphDiagnosticError } from './diagnostics';
+import { normalizeDocumentEndpoint } from './documentEndpoint';
 
 export const connectionSetupSchema = z
     .object({
@@ -135,6 +136,7 @@ function safeSuggestion(field: ConnectionField, value: string): string | undefin
         }
     }
     if (field === 'datasetUrl' || field === 'documentEndpoint') {
+        if (field === 'documentEndpoint') value = normalizeDocumentEndpoint(value);
         const target = graphProjectSchema.shape.target.unwrap().shape.datasetUrl.safeParse(value);
         if (!target.success) return undefined;
         const url = new URL(value);
@@ -270,7 +272,9 @@ export async function applySetup(project: GraphProject, value: ConnectionSetup, 
     const mode = input.sourceMode ?? project.source?.sourceMode ?? 'gremlin';
     if (mode === 'cosmos-documents' && input.documentFidelity)
         project = { ...project, mapping: { ...project.mapping, fidelity: input.documentFidelity } };
-    const documentEndpoint = input.documentEndpoint?.trim() || project.source?.documentEndpoint;
+    const documentEndpoint = normalizeDocumentEndpoint(
+        input.documentEndpoint?.trim() || project.source?.documentEndpoint || '',
+    );
     if (mode === 'cosmos-documents' && (!documentEndpoint || !safeSuggestion('documentEndpoint', documentEndpoint)))
         throw new GraphDiagnosticError('SETUP_DOCUMENT_ENDPOINT_REQUIRED', 'connection-settings');
     const sourceFields = [

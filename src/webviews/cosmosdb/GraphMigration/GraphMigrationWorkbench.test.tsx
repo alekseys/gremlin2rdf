@@ -233,6 +233,7 @@ describe('graph workbench boundaries and keyboard access', () => {
         });
         render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
         const review = await screen.findByRole('button', { name: 'Review run settings' });
+        expect(review.closest('details')).toHaveAttribute('open');
         expect(review).not.toBeDisabled();
         expect(screen.getByRole('button', { name: 'Run for Enumerate read-only source identities' })).toBeDisabled();
         await userEvent.setup().click(review);
@@ -584,7 +585,7 @@ describe('graph workbench boundaries and keyboard access', () => {
         expect(alert).not.toHaveTextContent('consumed 0 RU');
         expect(mocks.run).not.toHaveBeenCalled();
     });
-    it('preserves expanded completed evidence and enables only the next unfinished required step across reloads', async () => {
+    it('collapses finished steps, highlights and scrolls to the next, and retains manually reopened evidence', async () => {
         const configured = graphProjectSchema.parse({ ...bootstrapProject(), phases: {} });
         const hash = inputHash(configured);
         mocks.load.mockResolvedValue({ project: configured, trusted: true, currentInputHash: hash });
@@ -596,6 +597,9 @@ describe('graph workbench boundaries and keyboard access', () => {
         );
         expect(cards[0]).toHaveAttribute('open');
         expect(cards.slice(1).every((card) => !card.open)).toBe(true);
+        expect(screen.queryByText('Next unfinished step')).not.toBeInTheDocument();
+        const scroll = vi.fn();
+        cards[1].scrollIntoView = scroll;
         expect(connection).not.toBeDisabled();
         expect(
             within(required)
@@ -611,10 +615,17 @@ describe('graph workbench boundaries and keyboard access', () => {
         const connected = graphProjectSchema.parse({ ...configured, phases: { preflight: passed } });
         act(() => listener({ type: 'project', project: connected, currentInputHash: hash }));
         expect(connection).toBeDisabled();
-        expect(cards[0]).toHaveAttribute('open');
+        expect(cards[0]).not.toHaveAttribute('open');
         expect(cards[1]).toHaveAttribute('open');
         expect(cards[1].querySelector('summary')).toHaveAttribute('aria-current', 'step');
+        expect(cards[1]).toHaveAttribute('data-active', 'true');
+        expect(cards[1]).toHaveFocus();
+        expect(scroll).toHaveBeenCalledWith({ block: 'start', behavior: 'instant' });
+        expect(cards[1].className).not.toBe(cards[0].className);
+        await userEvent.setup().click(cards[0].querySelector('summary')!);
         expect(screen.getByRole('button', { name: 'Evidence 1 for Check read-only connections' })).not.toBeDisabled();
+        act(() => listener({ type: 'project', project: connected, currentInputHash: hash }));
+        expect(cards[0]).toHaveAttribute('open');
         expect(
             screen.getByRole('button', { name: 'Run for Enumerate read-only source identities' }),
         ).not.toBeDisabled();
@@ -631,7 +642,9 @@ describe('graph workbench boundaries and keyboard access', () => {
         act(() => listener({ type: 'project', project: adopted, currentInputHash: hash }));
         const fidelity = screen.getByRole('button', { name: 'Run for Probe read-only source compatibility' });
         expect(fidelity).not.toBeDisabled();
-        expect(screen.getByRole('button', { name: 'Run for Enumerate read-only source identities' })).toBeDisabled();
+        expect(
+            screen.getByRole('button', { name: 'Run for Enumerate read-only source identities', hidden: true }),
+        ).toBeDisabled();
         const checked = graphProjectSchema.parse({
             ...adopted,
             phases: {
@@ -693,9 +706,14 @@ describe('graph workbench boundaries and keyboard access', () => {
                 'Your verified inventory is saved. Recheck connections for the new run; do not repeat enumeration.',
             ),
         ).toBeVisible();
-        const enumeration = screen.getByRole('button', { name: 'Run for Enumerate read-only source identities' });
+        const enumeration = screen.getByRole('button', {
+            name: 'Run for Enumerate read-only source identities',
+            hidden: true,
+        });
         expect(enumeration).toBeDisabled();
         expect(enumeration.closest('details')?.querySelector('summary')).toHaveTextContent('Succeeded');
+        expect(screen.getByText(/Verified inventory adopted for this run/)).not.toBeVisible();
+        await userEvent.setup().click(enumeration.closest('details')!.querySelector('summary')!);
         expect(screen.getByText(/Verified inventory adopted for this run/)).toBeVisible();
         connections.scrollIntoView = vi.fn();
         expect(next).toBeEnabled();
@@ -708,6 +726,56 @@ describe('graph workbench boundaries and keyboard access', () => {
         expect(mocks.run).not.toHaveBeenCalled();
         await userEvent.setup().click(connections);
         expect(mocks.run).toHaveBeenCalledWith(expect.objectContaining({ operation: 'preflight' }));
+    });
+    it('explains a document-policy block and focuses its setting without changing policy, restarting or approving', async () => {
+        const configured = bootstrapProject();
+        configured.source = {
+            ...configured.source!,
+            sourceMode: 'cosmos-documents',
+            documentEndpoint: 'https://fixture.documents.azure.com:443/',
+            documentProfile: 'auto-v1',
+            identityManifestHash: '1'.repeat(64),
+        };
+        const hash = inputHash(configured);
+        const passed = { status: 'succeeded' as const, inputHash: hash, evidence: [], blockers: [] };
+        configured.phases = {
+            preflight: passed,
+            'source-enumerate': passed,
+            assess: passed,
+            'source-compatibility': {
+                status: 'blocked',
+                inputHash: hash,
+                evidence: ['artifacts/strict-block.json'],
+                blockers: ['source-fidelity (DOCUMENT_FIDELITY_UNOBSERVABLE): Required details are unobservable.'],
+            },
+        };
+        mocks.load.mockResolvedValue({ project: configured, trusted: true, currentInputHash: hash });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        const review = await screen.findByRole('button', { name: 'Review source-detail policy' });
+        expect(review).toHaveTextContent('Review source-detail policy');
+        expect(review).toHaveAccessibleName('Review source-detail policy');
+        const configuration = screen
+            .getAllByText('Configuration and mapping')
+            .find((element) => element.tagName === 'SUMMARY')!
+            .closest('details')!;
+        const user = userEvent.setup();
+        if (configuration.open) await user.click(configuration.querySelector('summary')!);
+        await user.click(review);
+        expect(configuration.open).toBe(true);
+        const policy = screen.getByRole('combobox', { name: 'When source details cannot be verified' });
+        expect(policy).toHaveFocus();
+        expect(policy).toHaveValue('strict');
+        expect(screen.getByText(/this is not an endpoint or RU-limit error/)).toBeVisible();
+        expect(screen.getByText(/Your inventory is retained; no restart is needed/)).toBeVisible();
+        expect(mocks.run).not.toHaveBeenCalled();
+        expect(mocks.approve).not.toHaveBeenCalled();
+        expect(mocks.saveSetup).not.toHaveBeenCalled();
+        await user.selectOptions(policy, 'reduced');
+        await user.click(screen.getByRole('button', { name: 'Save connection settings' }));
+        expect(mocks.saveSetup).toHaveBeenCalledWith(expect.objectContaining({ documentFidelity: 'reduced' }));
+        expect(mocks.saveSetup.mock.calls[0][0].restart).toBeUndefined();
+        expect(mocks.approve).not.toHaveBeenCalled();
+        expect(mocks.run).not.toHaveBeenCalled();
     });
     it('preserves opened document retry settings across the required connection recheck', async () => {
         const configured = bootstrapProject();
@@ -846,9 +914,7 @@ describe('graph workbench boundaries and keyboard access', () => {
         const duration = screen.getByRole('spinbutton', { name: 'Maximum duration (seconds)' });
         expect(duration).toHaveAttribute('max', '86400');
         await userEvent.setup().type(duration, '1800');
-        expect(
-            screen.getByText(/including identity pages and all global\/partition count reconciliation/),
-        ).toBeInTheDocument();
+        expect(screen.getByText(/including identity pages and all count reconciliation/)).toBeInTheDocument();
         await userEvent.setup().click(screen.getByRole('checkbox', { name: /I confirm source writes are paused/ }));
         const total = screen.getByRole('textbox', { name: 'Total source RU allowance per run' });
         const rate = screen.getByRole('textbox', { name: 'Migration source pacing (RU/s)' });

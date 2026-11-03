@@ -18,9 +18,13 @@ strict ordering validation and count reconciliation remain unchanged. This avoid
 has `incr`/`decr`, not `asc`. Pinned-driver offline scalar-order/cursor tests preserve string-ID ordering;
 they do not prove the exact live rejection token or successful Cosmos acceptance. Prior v1 reports still render.
 
-Only the next unfinished required step is expanded with execution enabled. Completed steps and their evidence
-stay expanded, with their Run/authorization controls disabled; future steps start collapsed and disabled.
-Current failed steps remain retryable. Hash changes return to the earliest invalidated step; old evidence
+The next unfinished required step is expanded, color-highlighted and marked as the accessible current step,
+without an extra "Next unfinished step" heading. On advancement the finished section collapses and the next step
+receives focus and scrolls into view. Completed evidence can be manually reopened; ordinary progress snapshots do not
+repeatedly move focus or close it. Future steps start collapsed and disabled.
+Current failed steps remain retryable. Stopped Step 2 settings remain expanded and reviewable even when an earlier
+connection check needs rerunning; only finished sections are automatically collapsed.
+Hash changes return to the earliest invalidated step; old evidence
 stays available as historical, never forcibly current. Configuration remains editable under its collapsed
 section; saving changed inputs still invalidates dependent evidence and approvals.
 
@@ -150,7 +154,10 @@ persisted project state and current input ownership. Open a required step to rev
 **All phases and tools** for optional operations. Identity enumeration is a discovery option when you need an inventory; an already reviewed
 inventory does not require enumeration again. Local fixtures and benchmarks remain explicit manual actions.
 
-New projects show a connection form for Gremlin host, database, graph, partition key and Fuseki dataset URL.
+New projects show a connection form for the document SDK endpoint, database, graph, partition key and Fuseki dataset URL;
+the Gremlin host appears only in the explicitly selected secondary mode. Examples, accepted formats and numeric ranges
+appear above the connection/preparation controls. A bare document hostname expands to a full HTTPS URI with port 443;
+supplied ports and valid full account URLs are retained, and unsafe URLs are still rejected.
 Source consistency is a separate explicit choice: pausing writes and immutable snapshots are operator assertions,
 not environment-derived guarantees. Full project JSON, custom mapping and lower-level controls remain under the
 collapsed **Advanced configuration and mapping** section.
@@ -179,6 +186,11 @@ switched. A mode change archives the old project and preserves its complete iden
 a new run without old approvals or compatibility. Document preparation scans the SDK feed without Gremlin queries or
 partition candidates. Errors stop, never switch modes or launch a comparison benchmark.
 See [document fidelity and mode-bound recovery](document-source.md).
+
+Step 4's `DOCUMENT_FIDELITY_UNOBSERVABLE` block is a strict-policy limitation, not an endpoint or budget error.
+**Review source-detail policy** opens and focuses the policy without switching modes, reducing fidelity or approving
+anything. An explicit observed-values selection and **Save connection settings** preserve the inventory without a
+restart; changed checks and the separate scoped reduced-fidelity approval are still required.
 
 Saving the form derives standard `/query`, `/update` and `/data` endpoints for the supplied Fuseki dataset URL.
 Use the actual existing dataset path, for example `http://localhost:3030/ekg`; the server root alone does not

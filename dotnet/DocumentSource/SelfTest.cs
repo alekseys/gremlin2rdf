@@ -230,10 +230,25 @@ internal static class SelfTest
             var strictConfig = Fixture(root, "strict", [docs[0]], fidelity: "strict");
             await RejectAsync(() => new Worker(strictConfig, () => Feed([docs[0]])).Probe("report.json"),
                 "DOCUMENT_FIDELITY_UNOBSERVABLE");
+            using (var blocked = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(strictConfig.Root, "report.json"))))
+            {
+                var result = blocked.RootElement.GetProperty("result");
+                Assert(result.GetProperty("sourceCountsReconciled").GetBoolean());
+                Assert(result.GetProperty("observedVertices").GetInt64() == 1);
+                Assert(result.GetProperty("observedEdges").GetInt64() == 0);
+                Assert(result.GetProperty("unobservable").EnumerateArray()
+                    .Any(value => value.GetString() == "property-occurrence-id-unobservable"));
+                Assert(!result.GetProperty("partialRawSnapshot").GetBoolean());
+                Assert(blocked.RootElement.GetProperty("status").GetString() == "blocked");
+            }
+            Assert(!File.Exists(Path.Combine(strictConfig.Root,
+                strictConfig.CacheRelative.Replace('/', Path.DirectorySeparatorChar), "snapshot", "complete.json")));
             Assert(File.Exists(Path.Combine(strictConfig.Root, strictConfig.CacheRelative.Replace('/', Path.DirectorySeparatorChar),
                 "snapshot", "raw", "0000000000.raw")));
             var missing = Fixture(root, "missing", docs);
             await RejectAsync(() => new Worker(missing, () => Feed(docs[..2])).Probe("report.json"), "MISSING_DOCUMENT_IDENTITIES");
+            using (var blocked = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(missing.Root, "report.json"))))
+                Assert(!blocked.RootElement.GetProperty("result").GetProperty("sourceCountsReconciled").GetBoolean());
             var duplicates = Fixture(root, "duplicates", docs[..2]);
             await RejectAsync(() => new Worker(duplicates, () => Feed([docs[0], docs[0]])).Probe("report.json"),
                 "DUPLICATE_DOCUMENT_IDENTITY");
