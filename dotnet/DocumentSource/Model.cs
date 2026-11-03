@@ -145,7 +145,7 @@ internal sealed class Config
                 "_vertexId", "_vertexLabel", "_sink", "_sinkLabel", "_sinkPartition" }.Contains(pk[1..],
                 StringComparer.Ordinal)
             || Json.Optional(s, "sourceMode") != "cosmos-documents"
-            || profile is not ("property-bags-v1" or "flat-v1")
+            || profile is not ("auto-v1" or "property-bags-v1" or "flat-v1")
             || consistency is not ("immutable" or "quiesced" or "best-effort")
             || fidelity is not ("strict" or "reduced")
             || !Regex.IsMatch(auth, "^env:GRAPH_[A-Z0-9_]{1,100}$")

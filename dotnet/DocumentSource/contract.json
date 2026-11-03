@@ -97,6 +97,7 @@
     "acknowledgement": ["status", "sourceHash"]
   },
   "profiles": {
+    "auto-v1": "Detect each vertex's supported layout during the bounded approved read. Arrays must pass property-bags-v1 validation; scalar fields use flat-v1. Mixed arrays/scalars in one vertex, null/object values, unknown fields and malformed occurrence records fail closed. Propertyless vertices need no layout choice. This is structural detection, not runtime-type inference; successful evidence lists detectedProfiles.",
     "property-bags-v1": "String physical id and label; one flat typed partition key that does not collide with id/label/system/edge storage fields; vertex occurrence arrays with exact id/_value/optional _meta fields; flat scalar edge properties. Distinct IDs preserve repeated values; duplicate occurrence IDs are rejected across the vertex.",
     "flat-v1": "Flat scalar vertex properties have null occurrence IDs and reduced fidelity; no IDs are invented.",
     "edge": "_isEdge must be true when present. Source _vertexId and target _sink/_sinkPartition are required; own partition is the source partition. _vertexLabel/_sinkLabel become sourceLabel/destinationLabel metadata. Canonical edgeScope is sourceVertex, with inVPartition/outVPartition metadata.",

@@ -215,7 +215,7 @@
             },
             "documentProfile": {
               "type": "string",
-              "enum": ["property-bags-v1", "flat-v1"]
+              "enum": ["auto-v1", "property-bags-v1", "flat-v1"]
             },
             "identityManifest": {
               "type": "string",

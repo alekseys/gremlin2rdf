@@ -8,6 +8,7 @@ internal sealed class Codec(Config config)
 {
     private bool normalizedInteger;
     public SortedSet<string> Unobservable { get; } = new(StringComparer.Ordinal);
+    public SortedSet<string> DetectedProfiles { get; } = new(StringComparer.Ordinal);
     private static readonly HashSet<string> SystemFields = ["_rid", "_self", "_etag", "_attachments", "_ts"];
     private static readonly HashSet<string> EdgeFields =
         ["_isEdge", "_vertexId", "_vertexLabel", "_sink", "_sinkLabel", "_sinkPartition"];
@@ -57,6 +58,28 @@ internal sealed class Codec(Config config)
     private static string Label(JsonElement doc, string key) =>
         doc.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String && value.GetString()!.Length > 0
             ? value.GetString()! : throw new Blocked("MISSING_DOCUMENT_LABEL", "document-decode");
+    private string Profile(JsonElement doc, bool edge)
+    {
+        if (config.Profile != "auto-v1" || edge) return config.Profile;
+        string? detected = null;
+        foreach (var field in doc.EnumerateObject())
+        {
+            if (field.Name is "id" or "label" || field.Name == config.PartitionKey
+                || SystemFields.Contains(field.Name) || EdgeFields.Contains(field.Name)) continue;
+            var candidate = field.Value.ValueKind switch
+            {
+                JsonValueKind.Array => "property-bags-v1",
+                JsonValueKind.String or JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False => "flat-v1",
+                _ => throw new Blocked("UNSUPPORTED_DOCUMENT_SHAPE", "document-decode")
+            };
+            if (detected != null && detected != candidate)
+                throw new Blocked("UNSUPPORTED_DOCUMENT_SHAPE", "document-decode");
+            detected = candidate;
+        }
+        if (detected != null) DetectedProfiles.Add(detected);
+        // A vertex with no user properties has the same decoding under either supported layout.
+        return detected ?? "property-bags-v1";
+    }
     public IdentityEntry Entry(JsonElement doc)
     {
         UniqueObject(doc);
@@ -80,6 +103,7 @@ internal sealed class Codec(Config config)
         var doc = parsed.RootElement;
         var entry = Entry(doc);
         var edge = entry.Kind == "edge";
+        var profile = Profile(doc, edge);
         var label = Label(doc, "label");
         var metadata = new SortedDictionary<string, TypedValue>(StringComparer.Ordinal);
         var properties = new List<GraphProperty>();
@@ -125,7 +149,7 @@ internal sealed class Codec(Config config)
             if (field.Name.StartsWith('_') && field.Name != config.PartitionKey)
                 throw new Blocked("UNKNOWN_STORAGE_FIELD", "document-decode");
             if (field.Name.Length == 0) throw new Blocked("EMPTY_PROPERTY_KEY", "document-decode");
-            if (edge || config.Profile == "flat-v1" || field.Name == config.PartitionKey)
+            if (edge || profile == "flat-v1" || field.Name == config.PartitionKey)
             {
                 var value = Scalar(field.Value);
                 var fidelity = !edge || value.Type == "doubleValue" || field.Value.GetRawText() == "-0"

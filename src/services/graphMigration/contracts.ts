@@ -394,7 +394,7 @@ export const graphProjectSchema = z
                 extractionStrategy: z.literal('verified-identity-manifest'),
                 sourceMode: z.enum(['cosmos-documents', 'gremlin']).optional(),
                 documentEndpoint: endpoint.optional(),
-                documentProfile: z.enum(['property-bags-v1', 'flat-v1']).optional(),
+                documentProfile: z.enum(['auto-v1', 'property-bags-v1', 'flat-v1']).optional(),
                 identityManifest: relativePath,
                 identityManifestHash: hash,
                 compatibilityEvidence: relativePath.nullable(),

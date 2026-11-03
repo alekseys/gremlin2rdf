@@ -156,6 +156,7 @@ const project = graphProjectSchema.parse({
     applicationHashes: {},
     artifacts: [],
 });
+if (documents) project.source.sourceMode = 'gremlin';
 const hash = inputHash(project);
 project.phases.preflight = { status: 'stale', inputHash: hash, evidence: [], blockers: [] };
 project.phases['source-enumerate'] = {
@@ -303,7 +304,44 @@ try {
     }
     assert.ok(webview, 'Graph webview did not open');
     await page.screenshot({ path: path.join(root, 'opened.png') });
-    const review = webview.getByRole('button', { name: 'Review run settings', exact: true });
+    if (documents) {
+        await webview
+            .locator('summary')
+            .filter({ hasText: /^Configuration and mapping$/ })
+            .click();
+        await webview.getByRole('combobox', { name: 'Source read mode' }).selectOption('cosmos-documents');
+        await webview.getByRole('combobox', { name: 'JSON property layout' }).selectOption('auto-v1');
+        assert.equal(
+            await webview.getByRole('button', { name: 'Go to next unfinished step', exact: true }).isEnabled(),
+            false,
+            'Unsaved source edits must not continue the prior run',
+        );
+        const restart = webview.getByRole('button', { name: 'Save settings and restart migration', exact: true });
+        assert.equal(await restart.textContent(), 'Save settings and restart migration');
+        await restart.click();
+        await changedRun(project.runId);
+        await settled('preflight');
+        const restarted = await state();
+        assert.equal(restarted.source.sourceMode, 'cosmos-documents');
+        assert.equal(restarted.source.documentProfile, 'auto-v1');
+        assert.notEqual(restarted.source.identityManifest, project.source.identityManifest);
+        assert.equal(restarted.phases['source-enumerate'], undefined);
+        assert.equal(await readFile(path.join(runRoot, 'identities.ndjson'), 'utf8'), '');
+        assert.equal(
+            JSON.parse(await readFile(path.join(runRoot, 'artifacts', 'stopped.json'), 'utf8')).offlineFixture,
+            true,
+        );
+        console.log(JSON.stringify({ fixtureStage: 'legacy-restarted-with-document-draft' }));
+        await webview
+            .locator('summary')
+            .filter({ hasText: /^Configuration and mapping$/ })
+            .click();
+    }
+    const initialInventory = (await state()).source.identityManifest;
+    const review = webview.getByRole('button', {
+        name: documents ? 'Run for Enumerate read-only source identities' : 'Review run settings',
+        exact: true,
+    });
     await review.waitFor({ timeout: 30000 });
     await review.click();
     const requests = webview.getByRole('spinbutton', { name: 'Maximum reserved request attempts' });
@@ -316,8 +354,10 @@ try {
         .getByRole('button', { name: documents ? 'Review document-feed preparation' : 'Find partition candidates' })
         .click();
     if (!documents) await webview.getByText('2 candidates found.', { exact: false }).waitFor({ timeout: 10000 });
-    await webview.getByRole('button', { name: 'Check read-only connections', exact: true }).click();
-    await settled('preflight');
+    if (!documents) {
+        await webview.getByRole('button', { name: 'Check read-only connections', exact: true }).click();
+        await settled('preflight');
+    }
     await webview.getByRole('checkbox', { name: /I confirm source writes are paused/ }).check();
     const start = webview.getByRole('button', { name: 'Start bounded read-only preparation' });
     assert.equal(await start.isEnabled(), true);
@@ -367,7 +407,7 @@ try {
     await writeFile(path.join(root, 'request-limit-project.json'), JSON.stringify(stopped, null, 2));
     const stoppedEvidence = stopped.phases['source-enumerate'].evidence[0];
     const stoppedBytes = await readFile(path.join(runRoot, stoppedEvidence));
-    await review.click();
+    await webview.getByRole('button', { name: 'Review run settings', exact: true }).click();
     await requests.fill('200');
     const recheck = webview.getByRole('button', { name: 'Check read-only connections', exact: true });
     await recheck.click();
@@ -384,14 +424,14 @@ try {
     await changedRun(stopped.runId);
     for (let i = 0; i < 240; i++) {
         const current = await state();
-        if (current.runId !== project.runId && current.source.identityManifest !== 'identities.ndjson') break;
+        if (current.runId !== project.runId && current.source.identityManifest !== initialInventory) break;
         if (current.runId !== project.runId && current.phases['source-enumerate']?.status === 'blocked')
             throw new Error(`enumerate: ${current.phases['source-enumerate'].blockers.join(' ')}`);
         await page.waitForTimeout(500);
     }
     const enumerated = await state();
     console.log(JSON.stringify({ fixtureStage: 'enumeration-adoption-observed' }));
-    assert.notEqual(enumerated.source.identityManifest, 'identities.ndjson', 'Inventory was not adopted');
+    assert.notEqual(enumerated.source.identityManifest, initialInventory, 'Inventory was not adopted');
     assert.equal(
         enumerated.phases['source-enumerate'].status,
         'succeeded',
@@ -497,7 +537,9 @@ try {
                 .locator('summary')
                 .filter({ hasText: /^Configuration and mapping$/ })
                 .click();
-            await webview.getByRole('combobox', { name: 'Document conversion fidelity' }).selectOption('reduced');
+            await webview
+                .getByRole('combobox', { name: 'When source details cannot be verified' })
+                .selectOption('reduced');
             await webview.getByRole('button', { name: 'Save connection settings', exact: true }).click();
             await page.waitForTimeout(1000);
             await webview.getByRole('button', { name: 'Run for Check read-only connections', exact: true }).click();

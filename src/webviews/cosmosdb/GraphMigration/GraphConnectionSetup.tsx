@@ -6,7 +6,7 @@
 import { Button, Field, Input, Select, makeStyles, mergeClasses, tokens } from '@fluentui/react-components';
 import { CheckmarkCircleRegular, DatabaseRegular } from '@fluentui/react-icons';
 import * as l10n from '@vscode/l10n';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { type GraphProject } from '../../../services/graphMigration/contracts';
 import { type ConnectionSetup, type SetupSuggestions } from '../../../services/graphMigration/setup';
 
@@ -61,7 +61,7 @@ const useStyles = makeStyles({
         backgroundColor: tokens.colorPaletteYellowBackground1,
         color: tokens.colorNeutralForeground1,
     },
-    saveRow: { display: 'flex', justifyContent: 'flex-start' },
+    saveRow: { display: 'flex', flexWrap: 'wrap', gap: tokens.spacingHorizontalS, justifyContent: 'flex-start' },
 });
 
 export function GraphConnectionSetup({
@@ -69,29 +69,17 @@ export function GraphConnectionSetup({
     suggestions,
     disabled,
     save,
+    onDirtyChange,
 }: {
     project: GraphProject;
     suggestions?: SetupSuggestions;
     disabled: boolean;
     save(value: ConnectionSetup): Promise<void>;
+    onDirtyChange?(dirty: boolean): void;
 }) {
     const styles = useStyles();
-    const [values, setValues] = useState<ConnectionSetup>({
-        host: '',
-        database: '',
-        container: '',
-        partitionKeyPath: '/pk',
-        datasetUrl: '',
-        consistency: '',
-        sourceMode: 'cosmos-documents',
-        documentEndpoint: '',
-        documentProfile: 'property-bags-v1',
-        documentFidelity: 'strict',
-        documentRuBudget: '',
-        documentRuPerSecond: '',
-    });
-    useEffect(() => {
-        setValues({
+    const savedConnection = useMemo<ConnectionSetup>(
+        () => ({
             host: project.source?.host ?? suggestions?.values.host ?? '',
             database: project.source?.database ?? suggestions?.values.database ?? '',
             container: project.source?.container ?? suggestions?.values.container ?? '',
@@ -100,12 +88,28 @@ export function GraphConnectionSetup({
             consistency: project.source && project.consistency !== 'best-effort' ? project.consistency : '',
             sourceMode: project.source ? (project.source.sourceMode ?? 'gremlin') : 'cosmos-documents',
             documentEndpoint: project.source?.documentEndpoint ?? suggestions?.values.documentEndpoint ?? '',
-            documentProfile: project.source?.documentProfile ?? 'property-bags-v1',
+            documentProfile: project.source?.documentProfile ?? 'auto-v1',
             documentFidelity: project.mapping.fidelity,
             documentRuBudget: project.source?.ruBudget ?? '',
             documentRuPerSecond: project.source?.ruPerSecond ?? '',
-        });
-    }, [project, suggestions]);
+        }),
+        [project.source, project.target, project.consistency, project.mapping.fidelity, suggestions],
+    );
+    const [values, setValues] = useState<ConnectionSetup>(savedConnection);
+    const savedValues = JSON.stringify(savedConnection);
+    const previousSavedValues = useRef(savedValues);
+    useEffect(() => {
+        if (previousSavedValues.current !== savedValues) {
+            previousSavedValues.current = savedValues;
+            setValues(savedConnection);
+        }
+    }, [savedConnection, savedValues]);
+    const dirty = Object.entries(savedConnection).some(
+        ([key, value]) => values[key as keyof ConnectionSetup] !== value,
+    );
+    useEffect(() => {
+        onDirtyChange?.(dirty);
+    }, [dirty, onDirtyChange]);
     const fields: ['host' | 'database' | 'container' | 'partitionKeyPath' | 'datasetUrl', string, string][] = [
         ['host', l10n.t('Gremlin endpoint'), l10n.t('For example, my-account.gremlin.cosmos.azure.com')],
         ['database', l10n.t('Cosmos DB database'), ''],
@@ -140,7 +144,7 @@ export function GraphConnectionSetup({
                 >
                     <h3 className={styles.cardTitle} id="graph-source-title">
                         <DatabaseRegular aria-hidden={true} className={styles.sourceIcon} />
-                        {l10n.t('Gremlin source')}
+                        {l10n.t('Cosmos DB graph source')}
                     </h3>
                     <span className={styles.required}>
                         <CheckmarkCircleRegular aria-hidden={true} />
@@ -187,9 +191,9 @@ export function GraphConnectionSetup({
                             </Field>
                             <Field
                                 required
-                                label={l10n.t('Document storage profile')}
+                                label={l10n.t('JSON property layout')}
                                 hint={l10n.t(
-                                    'Select the account layout explicitly. Unknown shapes stop; document fidelity is not Gremlin runtime type equivalence. Missing occurrence IDs or numeric type provenance require separately approved reduced fidelity.',
+                                    'This means how graph properties are stored inside each JSON document, not its indentation or file format. Automatic detection checks every vertex during the approved read: either arrays of property records with IDs, or direct scalar fields. Unsupported or mixed fields in a vertex stop conversion; no source calls happen while editing.',
                                 )}
                             >
                                 <Select
@@ -198,21 +202,29 @@ export function GraphConnectionSetup({
                                     onChange={(_, data) =>
                                         setValues((current) => ({
                                             ...current,
-                                            documentProfile: data.value === 'flat-v1' ? 'flat-v1' : 'property-bags-v1',
+                                            documentProfile:
+                                                data.value === 'flat-v1'
+                                                    ? 'flat-v1'
+                                                    : data.value === 'property-bags-v1'
+                                                      ? 'property-bags-v1'
+                                                      : 'auto-v1',
                                         }))
                                     }
                                 >
+                                    <option value="auto-v1">{l10n.t('Detect supported layouts automatically')}</option>
                                     <option value="property-bags-v1">
-                                        {l10n.t('Vertex property bags with occurrence IDs')}
+                                        {l10n.t('Property records: name: [{id, _value, _meta}]')}
                                     </option>
-                                    <option value="flat-v1">{l10n.t('FlatSchema scalar vertex properties')}</option>
+                                    <option value="flat-v1">
+                                        {l10n.t('Direct values (FlatSchema): name: "Alice"')}
+                                    </option>
                                 </Select>
                             </Field>
                             <Field
                                 required
-                                label={l10n.t('Document conversion fidelity')}
+                                label={l10n.t('When source details cannot be verified')}
                                 hint={l10n.t(
-                                    'Strict blocks any required unobservable occurrence IDs, metadata or numeric runtime types. Reduced preserves observed data and raw documents but cannot establish strict equivalence; saving this selection is not approval. Authorize the current reduced-fidelity scope separately before probing or extraction.',
+                                    'Fidelity means how completely the target preserves the source graph. JSON can contain a value without revealing its original Gremlin numeric type, property ID or metadata. Detection can report missing details, but cannot recreate them or decide whether you accept that limitation. Observed-values mode preserves raw documents and available values; it requires a separate approval and does not prove exact Gremlin equivalence.',
                                 )}
                             >
                                 <Select
@@ -225,9 +237,11 @@ export function GraphConnectionSetup({
                                         }))
                                     }
                                 >
-                                    <option value="strict">{l10n.t('Strict (block unobservable fidelity)')}</option>
+                                    <option value="strict">
+                                        {l10n.t('Stop if required source details are missing')}
+                                    </option>
                                     <option value="reduced">
-                                        {l10n.t('Reduced (requires separate scoped approval)')}
+                                        {l10n.t('Migrate observed values only (approval required)')}
                                     </option>
                                 </Select>
                             </Field>
@@ -365,7 +379,20 @@ export function GraphConnectionSetup({
                 <Button disabled={disabled} onClick={() => void save(values)}>
                     {l10n.t('Save connection settings')}
                 </Button>
+                <Button disabled={disabled} onClick={() => void save({ ...values, restart: true })}>
+                    {l10n.t('Save settings and restart migration')}
+                </Button>
             </div>
+            <p className={styles.intro}>
+                {l10n.t(
+                    'Restart uses the settings shown above, archives the previous run and begins read-only connection checks at Step 1. Its inventory, journals and target data are not deleted. The new run gets a fresh inventory and requires new approvals; no old continuation is resumed.',
+                )}
+            </p>
+            {dirty && (
+                <output>
+                    {l10n.t('These edits are not saved. Save them or restart before continuing migration steps.')}
+                </output>
+            )}
         </div>
     );
 }

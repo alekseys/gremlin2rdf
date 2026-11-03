@@ -62,7 +62,7 @@ public record Project(
             if ("cosmos-documents".equals(sourceMode)) {
                 endpoint(documentEndpoint);
                 var uri=URI.create(documentEndpoint);
-                if (!List.of("property-bags-v1","flat-v1").contains(documentProfile) ||
+                if (!List.of("auto-v1","property-bags-v1","flat-v1").contains(documentProfile) ||
                     !"https".equals(uri.getScheme()) || uri.getRawQuery()!=null || !List.of("","/").contains(uri.getPath()))
                     throw new IllegalArgumentException("Explicit document account endpoint and storage profile required");
             }

@@ -14,7 +14,7 @@ The [SDK stream iterator reference](https://learn.microsoft.com/en-us/dotnet/api
 documents response streams and continuation tokens. These references do **not** make every historical raw graph-storage
 layout a stable universal contract or establish an account's current read permissions.
 
-## Explicit configuration and profiles
+## Configuration and automatic JSON layout detection
 
 Set the following additional source fields through the connection form or strict project configuration:
 
@@ -22,7 +22,7 @@ Set the following additional source fields through the connection form or strict
 {
   "sourceMode": "cosmos-documents",
   "documentEndpoint": "https://my-account.documents.azure.com:443/",
-  "documentProfile": "property-bags-v1"
+  "documentProfile": "auto-v1"
 }
 ```
 
@@ -32,7 +32,12 @@ destination vertex, labels and destination partition; the edge partition is the 
 against the observed vertex inventory. Unknown or ambiguous shapes, duplicate physical identities, missing endpoints and
 coverage mismatches stop with diagnostics; they are not silently skipped.
 
-These are explicit decoder profiles, not account-layout autodetection or universal Microsoft storage guarantees.
+New configurations default to `auto-v1`: every vertex's user properties are checked during the bounded approved read.
+Arrays must pass the property-record decoder, while direct scalar fields pass the FlatSchema decoder. Mixing those
+representations inside one vertex, malformed arrays, nulls, complex values and unknown storage fields stop conversion.
+Vertices with no user properties do not need a layout choice; edges retain their existing required endpoint checks.
+Successful source evidence lists `detectedProfiles`. Explicit profiles remain available as overrides and saved profiles
+are never silently changed. This detects supported JSON structures, not account metadata or universal storage guarantees.
 The raw document snapshot is retained with actual observed fields/types and JSON numeric lexicals. Absent occurrence
 IDs or meta-property observations and missing system metadata stay unobservable. JSON numeric tokens alone cannot prove
 Gremlin float32 versus double runtime provenance. The adapter does not invent IDs, metadata or runtime type evidence.
@@ -42,6 +47,11 @@ unobservable. Reduced conversion requires both selecting reduced mapping fidelit
 `reduced-fidelity` approval; best-effort consistency independently requires its scoped approval. A document-fidelity
 result never certifies Gremlin semantics, application equivalence, production readiness or a speed/cost improvement.
 
+In the form, **When source details cannot be verified** is the fidelity policy: stop when required details are missing,
+or migrate only observed values after a separate approval. A JSON number alone cannot reveal the original Gremlin
+numeric type; a direct `name: "Alice"` field cannot reveal its property-occurrence ID. Automatic detection can identify
+what is present, but cannot reconstruct missing information or choose the user's tolerance for that limitation.
+
 For explicitly approved document conversion, target validation checks the exact owned canonical bytes against RDF,
 endpoint resolution, derived triples and SHACL. Its scope is `observed-document-canonical-only`, with
 `strictInputFidelity: false`: success means the target matches the observed conversion, not that unobservable source
@@ -50,6 +60,13 @@ mode approvals before querying the target. Readiness still blocks Gremlin semant
 Legacy reduced-fidelity Gremlin validation retains its existing blocked strict-input behavior.
 
 ## Mode-bound operations and recovery
+
+Use **Save settings and restart migration** to start again from the values currently shown in the form, even when the
+old run is blocked or unfinished. It archives the previous project, creates a new run ID and empty inventory, clears
+phase evidence and approvals for the new run, and starts read-only connection checks at Step 1. It does not delete old
+inventories, journals, checkpoints or target graphs, nor resume any old continuation. New target writes still require
+their own approvals. **Save connection settings** instead updates the current settings without automatically running
+an operation. Unsaved edits disable continuation, and ordinary progress/reload events do not reset the form.
 
 Feed preparation does not require Gremlin queries, Gremlin keyset paging or partition candidate scripts. Review page,
 request, duration, disk, total RU and RU/s limits before starting. Source operations are read-only: no resources,

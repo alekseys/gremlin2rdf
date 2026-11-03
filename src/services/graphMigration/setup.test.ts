@@ -164,6 +164,47 @@ it('requires an explicit credential-free document endpoint and profile instead o
     expect(configured.source?.host).toBe('account.documents.azure.com');
     expect(configured.source?.documentProfile).toBe('flat-v1');
 });
+it('restarts an unchanged unfinished run with a fresh inventory while preserving its original state and journals', async () => {
+    const run = await new GraphProjectService(root).root();
+    const form = {
+        host: '',
+        database: 'db',
+        container: 'graph',
+        partitionKeyPath: '/pk',
+        datasetUrl: 'http://localhost:3030/graph',
+        consistency: 'immutable' as const,
+        sourceMode: 'cosmos-documents' as const,
+        documentEndpoint: 'https://account.documents.azure.com/',
+        documentProfile: 'auto-v1' as const,
+    };
+    const prior = await applySetup(project(), form, run);
+    await writeFile(path.join(run, prior.source!.identityManifest), 'owned old inventory\n');
+    prior.source!.identityManifestHash = createHash('sha256').update('owned old inventory\n').digest('hex');
+    prior.phases.load = {
+        status: 'blocked',
+        blockers: ['prior failure'],
+        evidence: [],
+        inputHash: inputHash(prior),
+    };
+    await writeFile(path.join(run, `source-requests-${prior.runId}.json`), 'unknown spend preserved');
+    const snapshot = structuredClone(prior);
+    const next = await applySetup(prior, { ...form, restart: true }, run);
+    expect(next.runId).not.toBe(prior.runId);
+    expect(next.phases).toEqual({});
+    expect(next.approvals).toEqual([]);
+    expect(hasFidelityInventory(next)).toBe(false);
+    expect(next.source?.identityManifest).not.toBe(prior.source?.identityManifest);
+    expect(await readFile(path.join(run, next.source!.identityManifest), 'utf8')).toBe('');
+    expect(await readFile(path.join(run, prior.source!.identityManifest), 'utf8')).toBe('owned old inventory\n');
+    expect(await readFile(path.join(run, `source-requests-${prior.runId}.json`), 'utf8')).toBe(
+        'unknown spend preserved',
+    );
+    expect(prior).toEqual(snapshot);
+    const archive = (await readdir(path.join(run, 'artifacts'))).find((file) =>
+        file.startsWith(`restarted-run-${prior.runId}-`),
+    );
+    expect(JSON.parse(await readFile(path.join(run, 'artifacts', archive!), 'utf8'))).toEqual(snapshot);
+});
 it('infers recognized nonsecret settings and keeps conflicting endpoints unresolved', async () => {
     await writeFile(
         path.join(root, '.env'),

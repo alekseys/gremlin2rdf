@@ -696,7 +696,11 @@ describe('graph workbench boundaries and keyboard access', () => {
         expect(enumeration.closest('details')?.querySelector('summary')).toHaveTextContent('Succeeded');
         expect(screen.getByText(/Verified inventory adopted for this run/)).toBeVisible();
         connections.scrollIntoView = vi.fn();
+        expect(next).toBeEnabled();
         await userEvent.setup().click(next);
+        expect(next).toBeEnabled();
+        expect(next.isConnected).toBe(true);
+        expect(connections.isConnected).toBe(true);
         expect(connections.scrollIntoView).toHaveBeenCalled();
         expect(connections).toHaveFocus();
         expect(mocks.run).not.toHaveBeenCalled();
@@ -1038,6 +1042,81 @@ describe('graph workbench boundaries and keyboard access', () => {
                 documentEndpoint: 'https://account.documents.azure.com/',
             }),
         );
+        expect(mocks.run).not.toHaveBeenCalled();
+    });
+    it('restarts a blocked legacy run with edited document settings before executing connection checks', async () => {
+        const previous = bootstrapProject();
+        mocks.load.mockResolvedValue({ project: previous, trusted: true, currentInputHash: inputHash(previous) });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        await screen.findByRole('combobox', { name: 'Source read mode' });
+        const user = userEvent.setup();
+        await user.click(screen.getByText('Configuration and mapping', { selector: 'summary' }));
+        await user.selectOptions(screen.getByRole('combobox', { name: 'Source read mode' }), 'cosmos-documents');
+        await user.type(
+            screen.getByRole('textbox', { name: 'Cosmos .NET SDK document endpoint' }),
+            'https://account.documents.azure.com/',
+        );
+        expect(screen.getByRole('button', { name: 'Go to next unfinished step' })).toBeDisabled();
+        act(() =>
+            listener({
+                type: 'project',
+                project: structuredClone(previous),
+                currentInputHash: inputHash(previous),
+            }),
+        );
+        expect(screen.getByRole('combobox', { name: 'Source read mode' })).toHaveValue('cosmos-documents');
+        const restarted = graphProjectSchema.parse({
+            ...previous,
+            runId: 'restart-test',
+            phases: {},
+            source: {
+                ...previous.source,
+                sourceMode: 'cosmos-documents',
+                documentEndpoint: 'https://account.documents.azure.com/',
+                documentProfile: 'auto-v1',
+            },
+        });
+        mocks.saveSetup.mockImplementation(async () => {
+            mocks.load.mockResolvedValue({
+                project: restarted,
+                trusted: true,
+                currentInputHash: inputHash(restarted),
+            });
+        });
+        await user.click(screen.getByRole('button', { name: 'Save settings and restart migration' }));
+        await waitFor(() =>
+            expect(mocks.run).toHaveBeenCalledWith({
+                operation: 'preflight',
+                query: '',
+                sourcePath: '',
+                outputPath: '',
+            }),
+        );
+        expect(mocks.saveSetup).toHaveBeenCalledWith(
+            expect.objectContaining({
+                restart: true,
+                sourceMode: 'cosmos-documents',
+                documentEndpoint: 'https://account.documents.azure.com/',
+                documentProfile: 'auto-v1',
+            }),
+        );
+        expect(mocks.saveSetup.mock.invocationCallOrder[0]).toBeLessThan(mocks.run.mock.invocationCallOrder[0]);
+        expect(screen.getByRole('combobox', { name: 'Source read mode' })).toHaveValue('cosmos-documents');
+    });
+    it('preserves advanced mapping edits on project events and requires saving before restarting', async () => {
+        renderWorkbench();
+        const editor = await screen.findByRole('textbox', { name: 'Graph project JSON' });
+        const user = userEvent.setup();
+        await user.click(editor);
+        await user.keyboard('{Control>}a{/Control}');
+        const edited = JSON.stringify({ ...project, mapping: { ...project.mapping, vocabulary: 'urn:edited:' } });
+        await user.paste(edited);
+        act(() => listener({ type: 'project', project: structuredClone(project) }));
+        expect(editor).toHaveValue(edited);
+        expect(screen.getByRole('button', { name: 'Save settings and restart migration' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Go to next unfinished step' })).toBeDisabled();
+        await user.click(screen.getByRole('button', { name: 'Save configuration' }));
+        expect(mocks.save).toHaveBeenCalledWith(expect.stringContaining('urn:edited:'));
         expect(mocks.run).not.toHaveBeenCalled();
     });
     it('introduces the RDF migration workflow while keeping experimental and live-compatibility boundaries clear', async () => {

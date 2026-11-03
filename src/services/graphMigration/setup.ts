@@ -20,7 +20,8 @@ export const connectionSetupSchema = z
         consistency: z.enum(['quiesced', 'immutable', '']).default(''),
         sourceMode: z.enum(['cosmos-documents', 'gremlin']).optional(),
         documentEndpoint: z.string().max(2000).optional(),
-        documentProfile: z.enum(['property-bags-v1', 'flat-v1']).optional(),
+        documentProfile: z.enum(['auto-v1', 'property-bags-v1', 'flat-v1']).optional(),
+        restart: z.boolean().optional(),
         documentFidelity: z.enum(['strict', 'reduced']).optional(),
         documentRuBudget: z
             .string()
@@ -312,8 +313,7 @@ export async function applySetup(project: GraphProject, value: ConnectionSetup, 
                 ...(mode === 'cosmos-documents'
                     ? {
                           documentEndpoint,
-                          documentProfile:
-                              input.documentProfile ?? project.source?.documentProfile ?? 'property-bags-v1',
+                          documentProfile: input.documentProfile ?? project.source?.documentProfile ?? 'auto-v1',
                       }
                     : {}),
                 identityManifest,
@@ -359,19 +359,34 @@ export async function applySetup(project: GraphProject, value: ConnectionSetup, 
         };
     } else if (project.target)
         throw new Error(l10n.t('Use advanced settings to remove an existing target configuration.'));
-    if (previous.source && (previous.source.sourceMode ?? 'gremlin') !== mode) {
+    const modeChanged = previous.source && (previous.source.sourceMode ?? 'gremlin') !== mode;
+    if (input.restart || modeChanged) {
         await writeNewArtifact(
             root,
-            `artifacts/source-mode-run-${previous.runId}-${globalThis.crypto.randomUUID()}.json`,
+            `artifacts/${input.restart ? 'restarted' : 'source-mode'}-run-${previous.runId}-${globalThis.crypto.randomUUID()}.json`,
             JSON.stringify(previous, null, 2),
         );
         project = {
             ...project,
             runId: globalThis.crypto.randomUUID(),
             approvals: [],
+            phases: {},
         };
-        if (project.source)
-            project.source.compatibilityEvidence = `artifacts/source-compatibility-${project.runId}.json`;
+        if (project.source) {
+            project.source = {
+                ...project.source,
+                compatibilityEvidence: `artifacts/source-compatibility-${project.runId}.json`,
+            };
+            if (input.restart) {
+                const identityManifest = `artifacts/restart-inventory-${project.runId}.ndjson`;
+                const manifest = await writeNewArtifact(root, identityManifest, '');
+                project.source = {
+                    ...project.source,
+                    identityManifest,
+                    identityManifestHash: await fileHash(manifest),
+                };
+            }
+        }
     }
     return invalidateEvidence(graphProjectSchema.parse(project));
 }

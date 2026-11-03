@@ -337,6 +337,8 @@ export function GraphMigrationWorkbench() {
     const [enumerationReview, setEnumerationReview] = useState(0);
     const [suggestions, setSuggestions] = useState<SetupSuggestions>();
     const [configuration, setConfiguration] = useState('');
+    const [configurationDirty, setConfigurationDirty] = useState(false);
+    const configurationDirtyRef = useRef(false);
     const [trusted, setTrusted] = useState(false);
     const [busy, setBusy] = useState(false);
     const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -360,7 +362,7 @@ export function GraphMigrationWorkbench() {
             activityAttempt.current = {};
         }
         setProject(value);
-        setConfiguration(value ? JSON.stringify(value, null, 2) : '');
+        if (!configurationDirtyRef.current) setConfiguration(value ? JSON.stringify(value, null, 2) : '');
         setBusy(Boolean(value && Object.values(value.phases).some((phase) => phase.status === 'running')));
     }, []);
 
@@ -468,6 +470,7 @@ export function GraphMigrationWorkbench() {
         });
         return () => subscription.unsubscribe();
     }, [client, action, reload, applyProject, announce]);
+    const [setupDirty, setSetupDirty] = useState(false);
     const disabled = !trusted || !project || busy;
     const runLabel = l10n.t('Run'),
         authorizationLabel = l10n.t('Authorize');
@@ -534,7 +537,11 @@ export function GraphMigrationWorkbench() {
     }, [nextOperation, nextLabel, announce]);
     const renderOperation = ([operation, label]: [GraphOperation, string], showActions = true) => {
         const operationActionLabel = runLabel;
-        const phaseDisabled = disabled || (coreOperations.has(operation) && operation !== nextPhase?.[0]);
+        const phaseDisabled =
+            disabled ||
+            setupDirty ||
+            configurationDirty ||
+            (coreOperations.has(operation) && operation !== nextPhase?.[0]);
         const extractionPrerequisite =
             operation === 'extract' && project && !hasCurrentSourceCompatibility(project, currentInputHash)
                 ? l10n.t(
@@ -870,7 +877,7 @@ export function GraphMigrationWorkbench() {
                                 </p>
                             )}
                             <Button
-                                disabled={disabled}
+                                disabled={disabled || setupDirty || configurationDirty}
                                 onClick={() => {
                                     nextRunRef.current?.scrollIntoView({ block: 'center' });
                                     nextRunRef.current?.focus();
@@ -878,6 +885,18 @@ export function GraphMigrationWorkbench() {
                             >
                                 {l10n.t('Go to next unfinished step')}
                             </Button>
+                            {setupDirty && (
+                                <p>
+                                    {l10n.t(
+                                        'Configuration has unsaved edits. Use Save settings and restart migration to begin with those settings instead of continuing the old run.',
+                                    )}
+                                </p>
+                            )}
+                            {configurationDirty && (
+                                <p>
+                                    {l10n.t('Save your advanced configuration edits before continuing or restarting.')}
+                                </p>
+                            )}
                         </section>
                     )}
                     <details className={styles.section} open={!project.source || !project.target}>
@@ -890,11 +909,25 @@ export function GraphMigrationWorkbench() {
                             <GraphConnectionSetup
                                 project={project}
                                 suggestions={suggestions}
-                                disabled={disabled}
+                                disabled={disabled || configurationDirty}
+                                onDirtyChange={setSetupDirty}
                                 save={(value) =>
                                     action(async () => {
+                                        setBusy(true);
                                         await client.saveSetup.mutate(value);
                                         await reload();
+                                        setSetupDirty(false);
+                                        if (value.restart) {
+                                            setEnumerationReview(0);
+                                            setBusy(true);
+                                            await client.run.mutate({
+                                                operation: 'preflight',
+                                                query: '',
+                                                sourcePath: '',
+                                                outputPath: '',
+                                            });
+                                            await reload();
+                                        }
                                     })
                                 }
                             />
@@ -934,15 +967,21 @@ export function GraphMigrationWorkbench() {
                                             value={configuration}
                                             rows={18}
                                             resize="vertical"
-                                            disabled={busy}
-                                            onChange={(_, data) => setConfiguration(data.value)}
+                                            disabled={busy || setupDirty}
+                                            onChange={(_, data) => {
+                                                configurationDirtyRef.current = true;
+                                                setConfigurationDirty(true);
+                                                setConfiguration(data.value);
+                                            }}
                                         />
                                     </Field>
                                     <Button
-                                        disabled={disabled}
+                                        disabled={disabled || setupDirty}
                                         onClick={() =>
                                             void action(async () => {
                                                 await client.save.mutate(configuration);
+                                                configurationDirtyRef.current = false;
+                                                setConfigurationDirty(false);
                                                 await reload();
                                             })
                                         }
@@ -959,7 +998,7 @@ export function GraphMigrationWorkbench() {
                                     <p>
                                         {project.source?.sourceMode === 'cosmos-documents'
                                             ? l10n.t(
-                                                  'The default .NET Cosmos SDK document feed is read-only and mode-bound. It preserves raw documents and decodes only the explicitly selected storage profile. Document fidelity is reported separately from unestablished Gremlin semantic equivalence. There is no automatic Gremlin fallback or live benchmark.',
+                                                  'The default .NET Cosmos SDK document feed is read-only and mode-bound. It preserves raw documents and detects supported JSON layouts unless an explicit layout override is saved. Missing source details are reported separately from Gremlin semantic equivalence. There is no automatic Gremlin fallback or live benchmark.',
                                               )
                                             : l10n.t(
                                                   'Enumeration is read-only and requires explicit partition values, string IDs, a quiesced or immutable source, and request/duration budgets. Review the generated identity manifest before configuring a new extraction run.',

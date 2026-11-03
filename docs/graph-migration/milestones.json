@@ -35,7 +35,8 @@
         "docs/graph-migration/evidence/source-offline.json",
         "dotnet/DocumentSource/contract.json",
         "docs/graph-migration/document-source.md",
-        "docs/graph-migration/evidence/installed-vsix-0.39.18.json"
+        "docs/graph-migration/evidence/installed-vsix-0.39.18.json",
+        "docs/graph-migration/evidence/installed-vsix-0.39.19.json"
       ],
       "blockers": [
         "Live endpoint configuration, compatibility evidence and authorization not supplied.",
@@ -79,7 +80,8 @@
         "docs/graph-migration/evidence/editor-offline.json",
         "docs/graph-migration/evidence/worker-smoke.json",
         "src/services/graphMigration/GraphProjectService.test.ts",
-        "docs/graph-migration/evidence/installed-vsix-0.39.18.json"
+        "docs/graph-migration/evidence/installed-vsix-0.39.18.json",
+        "docs/graph-migration/evidence/installed-vsix-0.39.19.json"
       ],
       "blockers": [
         "Existing project save lock/pending crash artifacts require explicit reviewed manual repair, not automatic adoption.",

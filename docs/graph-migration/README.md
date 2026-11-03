@@ -4,10 +4,15 @@ This experimental fork implements a distinct graph migration kind, `cosmos-greml
 It does not relabel relational project fields or replace the existing migration workflow.
 
 New source configurations default to the explicit [.NET Cosmos document-feed profile](document-source.md);
-mode-less existing projects retain Gremlin until the operator selects a different mode. Version 0.39.18's private
+mode-less existing projects retain Gremlin until the operator selects a different mode. The configuration form now has
+**Save settings and restart migration**, which preserves the old run and starts Step 1 with the displayed settings.
+New document configurations detect supported JSON property layouts automatically; missing source details still require
+an explicit stop-or-observed-values decision and separate approval. Version 0.39.18's private
 installed-VSIX document and retained-Gremlin migrations passed through target validation and golden queries.
 The [sanitized receipt](evidence/installed-vsix-0.39.18.json) separates observed document conversion from strict
 equivalence and records the unchanged AccountOverview focus failure in the latest broad unit run.
+The [0.39.19 receipt](evidence/installed-vsix-0.39.19.json) verifies the installed legacy-run restart, automatic JSON
+layout detection and document migration without asking the user to test individual steps.
 This is an experimental offline-verified preview, not live-account or production-release certification.
 
 ## Prerequisites and entry points

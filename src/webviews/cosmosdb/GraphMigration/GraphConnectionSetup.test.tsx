@@ -91,7 +91,49 @@ it('retains a saved legacy Gremlin mode until an explicit selection, without net
         expect.objectContaining({
             sourceMode: 'cosmos-documents',
             documentEndpoint: 'https://account.documents.azure.com:443/',
-            documentProfile: 'property-bags-v1',
+            documentProfile: 'auto-v1',
+        }),
+    );
+});
+it('preserves unsaved settings across phase snapshots and restarts with the displayed draft', async () => {
+    const save = vi.fn(async () => {});
+    const onDirtyChange = vi.fn();
+    const legacy = {
+        ...project,
+        source: {
+            host: 'account.gremlin.cosmos.azure.com',
+            database: 'db',
+            container: 'graph',
+            partitionKeyPath: '/pk',
+        },
+    } as GraphProject;
+    const props = { project: legacy, disabled: false, save, onDirtyChange };
+    const { rerender } = render(<GraphConnectionSetup {...props} />);
+    const user = userEvent.setup();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Source read mode' }), 'cosmos-documents');
+    await user.type(
+        screen.getByRole('textbox', { name: 'Cosmos .NET SDK document endpoint' }),
+        'https://account.documents.azure.com/',
+    );
+    rerender(<GraphConnectionSetup {...props} project={{ ...legacy, phases: {} }} />);
+    expect(screen.getByRole('combobox', { name: 'Source read mode' })).toHaveValue('cosmos-documents');
+    expect(screen.getByRole('textbox', { name: 'Cosmos .NET SDK document endpoint' })).toHaveValue(
+        'https://account.documents.azure.com/',
+    );
+    expect(screen.getByRole('combobox', { name: 'JSON property layout' })).toHaveValue('auto-v1');
+    expect(
+        screen.getByRole('combobox', { name: 'When source details cannot be verified' }),
+    ).toHaveAccessibleDescription(expect.stringContaining('cannot recreate them'));
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    const restart = screen.getByRole('button', { name: 'Save settings and restart migration' });
+    expect(restart).toHaveAccessibleName('Save settings and restart migration');
+    await user.click(restart);
+    expect(save).toHaveBeenCalledWith(
+        expect.objectContaining({
+            restart: true,
+            sourceMode: 'cosmos-documents',
+            documentEndpoint: 'https://account.documents.azure.com/',
+            documentProfile: 'auto-v1',
         }),
     );
 });

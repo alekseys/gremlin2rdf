@@ -1,13 +1,15 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace DocumentSource;
 
 internal sealed record Completion(int SchemaVersion, string RunId, string InputHash, string Binding,
     string SourceManifestHash, string CanonicalPath, string CanonicalSha256, string RawSnapshotHash,
     long ObservedVertices, long ObservedEdges, string DocumentFidelity, string[] Unobservable,
-    string Consistency, string RequestCharge, string IndexPath);
+    string Consistency, string RequestCharge, string IndexPath,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[]? DetectedProfiles = null);
 internal sealed record SignedCompletion(Completion Result, string Integrity);
 
 internal sealed class Worker(Config config, Func<IReadFeed> feedFactory)
@@ -93,6 +95,7 @@ internal sealed class Worker(Config config, Func<IReadFeed> feedFactory)
         {
             status = "succeeded", adapter = "cosmos-dotnet-documents", sdkVersion = "3.58.0",
             storageProfile = config.Profile, sourceManifestHash = config.ManifestHash,
+            detectedProfiles = result.DetectedProfiles,
             documentFidelity = result.DocumentFidelity, gremlinSemanticCompatibility = "not-established",
             sourceCountsReconciled = true, observedVertices = result.ObservedVertices, observedEdges = result.ObservedEdges,
             rawSnapshotHash = result.RawSnapshotHash, canonicalPath = result.CanonicalPath,
@@ -180,7 +183,8 @@ internal sealed class Worker(Config config, Func<IReadFeed> feedFactory)
         return new(1, config.RunId, config.InputHash, config.Binding, config.ManifestHash,
             canonicalRelative, SafeFiles.HashFile(canonicalPath), journal.RawSnapshotHash(), vertices, edges,
             reduced ? "reduced" : "complete", codec.Unobservable.ToArray(), config.Consistency,
-            Json.DecimalText(journal.State.RequestCharge), indexRelative);
+            Json.DecimalText(journal.State.RequestCharge), indexRelative,
+            config.Profile == "auto-v1" ? codec.DetectedProfiles.ToArray() : null);
     }
     private Completion VerifyComplete(Journal journal)
     {

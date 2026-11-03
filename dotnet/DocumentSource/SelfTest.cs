@@ -160,6 +160,22 @@ internal static class SelfTest
             var flat = new Codec(flatConfig).Decode(flatRaw);
             Assert(flat.Properties.All(p => p.Id == null && p.Fidelity == "reduced"));
             Assert(flat.Properties.Single(p => p.Key == "active").Value.Type == "booleanValue");
+            var autoConfig = Fixture(root, "auto", [docs[0], flatRaw], "auto-v1");
+            var autoCodec = new Codec(autoConfig);
+            Assert(Json.Bytes(autoCodec.Decode(docs[0]).Properties).SequenceEqual(Json.Bytes(vertex.Properties)));
+            Assert(Json.Bytes(autoCodec.Decode(flatRaw).Properties).SequenceEqual(Json.Bytes(flat.Properties)));
+            Assert(autoCodec.Decode(flatRaw).Properties.Single(p => p.Key == "name").Value.Lexical == "text");
+            Assert(autoCodec.DetectedProfiles.SetEquals(["property-bags-v1", "flat-v1"]));
+            Reject(() => autoCodec.Decode(Raw("""{"id":"v","label":"person","pk":"a","name":"x","age":[{"id":"p","_value":1}]}""")),
+                "UNSUPPORTED_DOCUMENT_SHAPE");
+            Reject(() => autoCodec.Decode(Raw("""{"id":"v","label":"person","pk":"a","name":{"_value":"x"}}""")),
+                "UNSUPPORTED_DOCUMENT_SHAPE");
+            Reject(() => autoCodec.Decode(Raw("""{"id":"v","label":"person","pk":"a","name":[{"id":"p"}]}""")),
+                "MISSING_PROPERTY_VALUE");
+            Assert(autoCodec.Decode(Raw("""{"id":"empty","label":"person","pk":"a"}""")).Properties.Count == 1);
+            await new Worker(autoConfig, () => Feed([docs[0], flatRaw])).Probe("auto-report.json");
+            using (var autoReport = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(autoConfig.Root, "auto-report.json"))))
+                Assert(autoReport.RootElement.GetProperty("result").GetProperty("detectedProfiles").GetArrayLength() == 2);
             var worker = new Worker(config, () => Feed(docs));
             await worker.Probe("reports/one.json");
             await worker.Probe("reports/two.json");
