@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "version": "0.39.19",
+  "baselineCommit": "cb131f0e5231072bc41dfdabe6431958465bb37a",
+  "scope": "Installed VS Code extension and actual Cosmos .NET SDK against an owned loopback TLS document fixture and local in-memory Fuseki; no live account or production writes",
+  "package": {
+    "file": "vscode-cosmosdb-0.39.19.vsix",
+    "bytes": 155720774,
+    "sha256": "902d2594ce5231cc769accc0679b5e4bd70944699cd798d1c6d342c68333dc4e",
+    "zipCrcVerified": true,
+    "nestedJarsVerified": 3,
+    "documentRuntimeFilesVerified": 212,
+    "runtimePlatform": "win-x64"
+  },
+  "installedAcceptance": {
+    "command": "$env:GRAPH_E2E_SOURCE_MODE='cosmos-documents'; npm run graph:test:vsix",
+    "exitCode": 0,
+    "startingState": "Unfinished legacy Gremlin run with a blocked enumeration",
+    "selectedSettings": {
+      "sourceMode": "cosmos-documents",
+      "documentProfile": "auto-v1"
+    },
+    "verifiedControls": [
+      "Explicit workspace trust through normal VS Code controls",
+      "Unsaved document-source edits disable continuation of the old run",
+      "Save settings and restart migration persists the displayed draft and runs Step 1",
+      "Fresh run ID, fresh inventory, cleared phase state and approvals; prior inventory and stopped evidence preserved",
+      "No automatic Gremlin fallback",
+      "Reviewed budget stop, separately reviewed retry and preserved edited settings through preflight",
+      "Reconciled adoption of three vertices and three edges, local stale-adoption repair without new requests",
+      "Strict conversion blocks unobservable details; observed-values mode requires separately signed scoped approval",
+      "Extraction, approved target load, canonical comparison, endpoint resolution, SHACL and golden queries",
+      "Production readiness, Gremlin semantic compatibility and strict equivalence remain blocked",
+      "All registered artifact checksums verified"
+    ],
+    "vertices": 3,
+    "edges": 3,
+    "httpGetAttempts": 52,
+    "documentPages": 16,
+    "syntheticRequestCharge": 16,
+    "sourceMutations": 0,
+    "unrecognizedRoutes": 0,
+    "coreMigration": "succeeded",
+    "productionReadiness": "blocked",
+    "validationScope": "observed-document-canonical-only",
+    "strictInputFidelity": false
+  },
+  "otherChecks": {
+    "documentWorkerBuild": { "exitCode": 0, "warnings": 0 },
+    "documentSelfTest": {
+      "exitCode": 0,
+      "assertions": 78,
+      "newCoverage": [
+        "Automatic property-record and FlatSchema decoding matches explicit profile conversion",
+        "Detected profiles appear in source evidence",
+        "Mixed per-vertex layouts, complex objects and malformed occurrences fail closed",
+        "Propertyless vertices need no layout inference"
+      ]
+    },
+    "targetedSetupAndWorkbench": { "exitCode": 0, "passed": 54, "skipped": 1 },
+    "localization": "succeeded",
+    "formatting": "succeeded",
+    "lint": "succeeded",
+    "allThreeTypeScriptBuilds": "succeeded",
+    "retainedGremlinInstalledFlow": "Previously passed in 0.39.18; not rerun in this brief document-restart check",
+    "broadUnitSuite": "Not rerun as directed; the prior unchanged AccountOverview focus failure remains reported, not waived or fixed"
+  },
+  "limitations": [
+    "Automatic layout detection recognizes supported JSON structures; it cannot recover absent source IDs, metadata or original numeric runtime types",
+    "Real account read permissions, storage layouts, continuation behavior and RU charges remain unverified",
+    "No intrinsic performance or cost improvement is established by synthetic fixture charges",
+    "Original production dependency, application, CRUD, performance and strict-equivalence gates remain blocked",
+    "Experimental offline-verified preview, not a fully certified production release"
+  ],
+  "noLiveSourceRequests": true,
+  "noProductionWrites": true,
+  "noPublishingOrPush": true
+}

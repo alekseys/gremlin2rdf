@@ -1,0 +1,180 @@
+package io.github.gremlin2rdf;
+
+import java.util.*;
+
+/** Fixed, source-value-free diagnostic vocabulary shared by isolated workers. */
+public final class Diagnostics {
+    private Diagnostics() {}
+    public static final class Failure extends java.io.IOException {
+        private final String code;
+        private final String stage;
+        private final Integer httpStatus;
+        private Map<String,Object> sourceStatus = Map.of();
+        public Failure(String code, String stage) { this(code,stage,null); }
+        public Failure(String code,String stage,Integer httpStatus) {
+            super(code); this.code=code; this.stage=stage; this.httpStatus=httpStatus;
+        }
+    }
+    private static final Map<String,String> REMEDIES = Map.ofEntries(
+        Map.entry("CREDENTIAL_REFERENCE_UNAVAILABLE", "Use Store credentials securely for the configured reference, then retry. Do not paste credentials into configuration or artifacts."),
+        Map.entry("SOURCE_CONFIGURATION_REQUIRED", "Save the Gremlin hostname, database, container and partition key in the connection form."),
+        Map.entry("SOURCE_DOCUMENT_READ_ONLY", "The .NET document-feed mode supports read-only preparation and extraction only. No Gremlin fallback or source mutation was attempted. Choose Gremlin explicitly in a separate reviewed mode-bound run if its authorized operations are required."),
+        Map.entry("SOURCE_MODE_MISMATCH", "This source adapter does not match the explicitly selected project source mode. Use its packaged adapter or explicitly switch modes in the connection form to create a separate reviewed run. No automatic fallback or continuation reinterpretation was attempted."),
+        Map.entry("SOURCE_ENUMERATION_PLAN_MISSING", "The selected local enumeration plan is missing. Use Find partition candidates in guided Prepare and resume preserved preparation when offered, or explicitly review budgets before starting a new bounded preparation. Do not delete checkpoints or create an empty plan."),
+        Map.entry("SOURCE_ENUMERATION_PLAN_INVALID", "The selected enumeration plan is malformed or exceeds its supported size/schema/bounds. Preserve it and checkpoints. Select the existing reviewed plan or use guided Prepare to review a separate bounded run; no source request was submitted."),
+        Map.entry("INTERNAL_ADAPTER_CONFIGURATION", "The packaged source adapter has an internal driver configuration defect. Install the corrected complete VSIX and reload VS Code; editing inventory or credentials cannot fix cluster construction."),
+        Map.entry("TARGET_ENDPOINT_NOT_FOUND", "The configured target query endpoint returned HTTP 404. Verify the existing Fuseki dataset and its query path; a running server root does not imply a dataset exists. Have the operator create or mount the intended dataset separately if absent, save its actual endpoint paths and rerun read-only checks."),
+        Map.entry("TARGET_PROVIDER_FAILURE", "The target rejected the bounded read-only query. Verify its SPARQL query path, service health and permissions; raw endpoint messages are redacted."),
+        Map.entry("SOURCE_ADAPTER_REQUIRED", "Use the pinned packaged source adapter; rebuild with npm run graph:prepare if it is missing."),
+        Map.entry("SOURCE_PROTOCOL_INVALID", "The isolated source worker did not return a valid bounded acknowledgement. Reinstall the complete VSIX or rebuild the pinned workers; missing inventory is not inferred from this failure."),
+        Map.entry("OPERATION_DEADLINE", "The configured overall operation time limit was reached. Partial artifacts and RU journals are preserved, not certified complete. Review execution duration separately from enumeration and RU limits; verify in-flight request accounting before retrying."),
+        Map.entry("OPERATOR_PAUSED", "The operator requested Pause. Partial artifacts and checkpoints are preserved, not certified complete. Resume only after owned checkpoint, budgets and request accounting pass verification; unknown in-flight spend requires a newly reviewed run."),
+        Map.entry("OPERATOR_CANCELLED", "The operator requested Cancel. Partial artifacts and request journals are preserved. Do not infer completion or zero cost; verify checkpoint and in-flight accounting before another reviewed run."),
+        Map.entry("TARGET_CONFIGURATION_REQUIRED", "Save the existing Fuseki dataset URL in the connection form."),
+        Map.entry("SOURCE_INVENTORY_REQUIRED", "Use guided Prepare to discover candidate partitions and run read-only identity enumeration. Empty bootstrap files are not extraction inventories."),
+        Map.entry("SOURCE_EMPTY_VERIFIED", "Read-only counts and owned enumeration confirm an empty source. Fidelity is not established without records; no migration load or capability pass is implied."),
+        Map.entry("SOURCE_FIDELITY_NOT_ESTABLISHED", "The bounded observations do not establish all required fidelity semantics. Review the specific observation fields; missing examples are not proof the source lacks those capabilities. Do not extract or silently reduce fidelity."),
+        Map.entry("SOURCE_FIDELITY_RECORD_LIMIT", "The current fidelity probe supports at most 2000 reviewed semantic identities. Preserve the complete extraction inventory; do not claim full coverage from a smaller sample or run an exhaustive unbounded probe. A separate bounded compatibility corpus needs explicit review."),
+        Map.entry("SOURCE_REQUEST_REJECTED", "The source rejected a bounded request or its arguments. Preserve the checkpoint and share only this safe diagnostic code, substep and numeric statuses for adapter investigation; do not change paging semantics or fabricate an inventory."),
+        Map.entry("SOURCE_SCRIPT_REJECTED", "The source returned a script-evaluation error for this adapter substep. Share the safe substep and numeric statuses to investigate supported request syntax; raw scripts/provider messages are redacted. No unsupported paging cause is inferred."),
+        Map.entry("SOURCE_SERIALIZATION_REJECTED", "The source returned a serialization error. Verify the complete pinned GraphSON v2 adapter package; share only safe substep/status evidence. Do not coerce or drop source values."),
+        Map.entry("SOURCE_PROVIDER_CAUSE_UNKNOWN", "The source returned an unclassified provider failure. Preserve the checkpoint and share only this substep, Gremlin status, source status and substatus if present. The rejected request's cause remains unknown; inventory or permission defects are not inferred."),
+        Map.entry("SOURCE_FIDELITY_EVIDENCE_REQUIRED", "Complete reconciled identity enumeration, then run the read-only source fidelity check before extracting."),
+        Map.entry("SOURCE_COMPATIBILITY_NOT_CURRENT", "Extraction requires a succeeded source fidelity check for the current run and inputs. Complete failed enumeration first, then run fidelity; mapping and connection success do not replace source evidence. Existing evidence/checkpoints are preserved."),
+        Map.entry("SOURCE_EVIDENCE_INTEGRITY", "The selected source evidence failed checksum, size or ownership checks. Preserve the file and recorded checksum; rerun the current read-only fidelity check to produce fresh owned evidence rather than editing a success flag."),
+        Map.entry("SOURCE_EVIDENCE_CONTENT", "The source evidence envelope, driver/serializer version or requested fidelity observations do not match current inputs. Review its sanitized report and rerun the supported source fidelity check; no compatibility pass is inferred."),
+        Map.entry("SOURCE_EVIDENCE_EDGE_SCOPE", "The current evidence does not establish a required edge identity scope. Preserve identities and review a supported source fidelity observation; do not silently change edge scopes."),
+        Map.entry("SOURCE_EXTRACTION_CHECKPOINT", "Extraction checkpoint ownership, input/manifest hash or integrity validation failed. Preserve checkpoint and output; restore the exact acknowledged inputs or perform reviewed reconciliation, not a blind retry/delete."),
+        Map.entry("SOURCE_EXTRACTION_PREFIX", "The acknowledged extraction output prefix is missing, truncated or changed. Preserve output and checkpoint and perform reviewed reconciliation; no progress can be advanced."),
+        Map.entry("SOURCE_EXTRACTION_OUTPUT_UNOWNED", "An extraction output exists without its owned checkpoint or completion evidence. Preserve it; use a separately reviewed run/output rather than adopting or overwriting it."),
+        Map.entry("SOURCE_EXTRACTION_BUSY", "Another process owns the extraction lock. Pause or stop the owning operation and verify it exited; do not remove locks or acknowledged state blindly."),
+        Map.entry("SOURCE_EXTRACTION_BOUND", "Extraction input, checkpoint or output exceeded the documented byte/record/partition bound. Preserve state and use a supported bounded plan; no truncated success is returned."),
+        Map.entry("SOURCE_EXTRACTION_COUNTS", "Live source counts do not reconcile with the selected inventory or acknowledged snapshot. Preserve progress, verify paused writes/immutable source and review a fresh inventory; do not accept partial coverage."),
+        Map.entry("SOURCE_EXTRACTION_DISK", "The artifact filesystem lacks the required free space. Free sufficient local space without removing acknowledged migration state, then resume the same owned inputs."),
+        Map.entry("SOURCE_EXTRACTION_RECORD", "A source record or identity/order/fidelity observation failed validation. Preserve the checkpoint and review supported source fidelity; source values are not echoed or approximated."),
+        Map.entry("SOURCE_SYSTEM_METADATA_UNOBSERVABLE", "This fixed system-property read did not return exactly one non-null value. The safe stage identifies the required property, not a local artifact defect. Preserve the successful inventory and request journal; strict fidelity remains blocked. Do not invent metadata, delete the inventory or change file permissions."),
+        Map.entry("SOURCE_SYSTEM_METADATA_INVALID", "The observed system metadata has an unsupported type or disagrees with the observed edge endpoints. The safe stage identifies the failing check; values remain private. Preserve the inventory and request accounting. Strict fidelity cannot silently omit or coerce metadata."),
+        Map.entry("SOURCE_RECORD_CHANGED", "The record ETag changed between the two read-only snapshot checks. Confirm an immutable source or paused application writes before retrying; the mixed-version record was not accepted. The successful identity inventory is preserved."),
+        Map.entry("SOURCE_RECORD_UNSUPPORTED", "The observed property count, projection or typed record cannot satisfy the declared fidelity contract. Review the safe record substep; this is not evidence of corrupt local files. Values are not dropped, stringified or echoed."),
+        Map.entry("SOURCE_RECORD_READ_FAILED", "A source-record read failed without a classified provider cause. The safe substep identifies the request; this does not establish a local artifact or permissions defect. Preserve inventory and request accounting; raw provider messages and source values remain redacted."),
+        Map.entry("SOURCE_RESPONSE_CARDINALITY", "The fixed bounded source traversal returned other than one top-level result. Review its safe request substep; no record or metadata value was accepted. This does not establish local artifact corruption. Request charge remains accounted."),
+        Map.entry("SOURCE_REQUEST_JOURNAL", "The RU request journal is unowned, incompatible or corrupt for these inputs. Preserve it and its budgets; review exact run/input ownership before continuing. Do not delete the journal to bypass an exhausted or unobservable ceiling."),
+        Map.entry("SOURCE_PARTITION_COVERAGE", "The candidate partitions do not cover live source counts. Add missing live partition values in guided Prepare and re-enumerate; seed candidates alone never prove coverage."),
+        Map.entry("SOURCE_COUNTS_CHANGED", "Source counts changed during enumeration. Confirm paused writes or an immutable source and repeat the bounded read-only run; preserve its checkpoint."),
+        Map.entry("SOURCE_ENUMERATION_REQUEST_LIMIT", "The reviewed reserved request-attempt ceiling was reached, including identity reads and count reconciliation. Preserve the checkpoint and journal. Use Review run settings in Step 2 to explicitly review a new bounded preparation; Resume does not renew the original allowance."),
+        Map.entry("SOURCE_ENUMERATION_DURATION_LIMIT", "The reviewed enumeration time ceiling was reached. Preserve the checkpoint and review the next bounded run; this is not complete coverage."),
+        Map.entry("SOURCE_RU_BUDGET_EXHAUSTED", "The total-run RU allowance is exhausted, not the database RU/s throughput. Waiting does not replenish it. Preserve journals/checkpoints. In guided Prepare, review a new total-run allowance and a separate migration RU/s pacing rate before starting a new bounded run."),
+        Map.entry("SOURCE_RU_UNOBSERVABLE", "A complete request charge could not be established. Review chargeObservation and safe statuses: missing/invalid terminal total, a partial-only charge, interrupted transport and an earlier unknown journal are distinct. Raising RU limits cannot fix this. Preserve the journal; do not infer zero cost or retry unknown spend."),
+        Map.entry("SOURCE_RU_ACCOUNTING_REVIEW", "This journal predates complete-request charge accounting and may contain partial-only spend. Preserve it and its checkpoints; do not reset or relabel its totals. Review a new bounded preparation run using the current worker."),
+        Map.entry("SOURCE_RU_RATE_DEADLINE", "The required source pacing or retry wait cannot fit within the remaining operation duration. Preserve journals/checkpoints and review rate, duration and total-run budgets separately. No additional request was submitted."),
+        Map.entry("ENDPOINT_AUTHENTICATION", "Renew the configured credential using SecretStorage and verify access to the configured database/dataset. Do not retry uncertain writes."),
+        Map.entry("ENDPOINT_AUTHORIZATION", "Grant least-privilege access to the configured source or exact target resources. Connection credentials do not authorize migration writes."),
+        Map.entry("ENDPOINT_THROTTLED", "The endpoint throttled the bounded request. Review RU/request budgets and retry policy; preserve acknowledged progress."),
+        Map.entry("ENDPOINT_TIMEOUT", "The bounded endpoint request timed out. Check network/firewall/service health from the extension host and review the request deadline."),
+        Map.entry("ENDPOINT_DNS", "The configured hostname could not be resolved from the extension host. Correct the connection hostname or DNS/network configuration."),
+        Map.entry("ENDPOINT_CONNECTIVITY", "The endpoint could not be reached. Check the configured host/port, running service, firewall and extension-host network access."),
+        Map.entry("ENDPOINT_TLS", "TLS validation failed. Correct hostname/certificate/approved CA configuration; do not disable certificate verification."),
+        Map.entry("ENDPOINT_PROVIDER_FAILURE", "The provider rejected the bounded request. Verify supported driver/serializer/query capabilities and endpoint permissions; raw provider messages are redacted."),
+        Map.entry("ARTIFACT_MISSING", "The required local artifact is missing. Use guided Prepare to create the inventory/plan, or restore the current owned checkpoint/evidence."),
+        Map.entry("ARTIFACT_ACCESS", "A local worker filesystem operation was denied. This does not establish a permissions defect: a sharing lock or another access restriction may also deny it. Preserve checkpoints and journals. Share only the safe storage stage/action and retry count, not paths or file contents; do not delete pending files or change security settings."),
+        Map.entry("ARTIFACT_ATOMIC_REPLACE_ACCESS", "Atomic replacement of a local artifact remained denied within the bounded local replacement policy. The old file and fsynced pending file are preserved; no source request was replayed. A sharing lock or permissions restriction is possible, not established. Close other applications holding the migration files and verify owned state before retrying; do not delete pending state or disable security software."),
+        Map.entry("ARTIFACT_ATOMIC_MOVE_UNSUPPORTED", "The local artifact filesystem does not support the required atomic replacement. Preserve the old and pending files. Use an operator-reviewed artifact location supporting atomic moves; no non-atomic fallback or checkpoint reset is allowed."),
+        Map.entry("ARTIFACT_PENDING_EXISTS", "A pending local artifact already exists and was not overwritten. Preserve both files. Use owned checkpoint/journal verification before retrying; do not delete or relabel pending state."),
+        Map.entry("SOURCE_ENUMERATION_PENDING_CHECKPOINT", "An unacknowledged enumeration checkpoint is present. The old checkpoint and pending state remain preserved, not certified complete. Do not delete, rename or blindly adopt pending state. Guided Prepare can start a separately reviewed new bounded run; verified recovery is required before reusing this run."),
+        Map.entry("ARTIFACT_OR_STATE_ERROR", "Preserve the owned artifacts and checkpoints. Verify their checksum, format, path and run ownership before retrying."),
+        Map.entry("CONFIGURATION_INVALID", "Review the connection form and strict project schema. Unsupported or invalid values require correction; no connection success is inferred."),
+        Map.entry("AUTHORIZATION_REQUIRED", "Provide current explicit operation/input/resource-scoped approval. Read-only preparation never enables source writes."),
+        Map.entry("PREPARE_DISK_SPACE", "Free sufficient space on the local artifact filesystem before enumeration or extraction."),
+        Map.entry("PREPARE_JAVA_VERSION", "Run the extension host with Java 21 or newer."),
+        Map.entry("READINESS_INPUT_STALE", "This readiness gate cannot verify its current input bytes. Preserve evidence and verify the selected owned extraction or application input before regenerating the affected check; do not edit success flags."),
+        Map.entry("READINESS_EVIDENCE_REQUIRED", "This readiness gate lacks current verified execution evidence or required measurements. Review this named gate in the readiness report and run/import its actual evidence. Successful data transfer alone is not production cutover readiness."),
+        Map.entry("OPERATION_CAUSE_UNKNOWN", "The cause is not classified. Review the failed substep and safe diagnostic code; do not assume a missing inventory caused an endpoint failure.")
+    );
+    public static Map<String,Object> report(String code,String stage) {
+        return Map.of("status","blocked","code", REMEDIES.containsKey(code) || DocumentDiagnostics.CODES.contains(code) ? code : "OPERATION_CAUSE_UNKNOWN",
+            "stage",stage,"remediation",REMEDIES.getOrDefault(code,DocumentDiagnostics.CODES.contains(code)
+                ? DocumentDiagnostics.remedy(code) : REMEDIES.get("OPERATION_CAUSE_UNKNOWN")));
+    }
+    public static Map<String,Object> report(String code,String stage,Integer httpStatus) {
+        var result=new TreeMap<>(report(code,stage));
+        if (httpStatus!=null && httpStatus>=100 && httpStatus<=599) result.put("httpStatus",httpStatus);
+        return result;
+    }
+    public static Map<String,Object> failure(Throwable error,String stage) {
+        Throwable current = error;
+        for (int depth=0; current!=null && depth<16; depth++,current=current.getCause()) {
+            if (current instanceof Failure f) {
+                var report=new TreeMap<>(report(f.code,f.stage,f.httpStatus));report.putAll(f.sourceStatus);return report;
+            }
+            if(current instanceof SafeFiles.ArtifactException artifact) {
+                Throwable cause=artifact.getCause();
+                String code=cause instanceof java.nio.file.AccessDeniedException ?
+                    artifact.action==SafeFiles.ArtifactAction.atomicReplace ? "ARTIFACT_ATOMIC_REPLACE_ACCESS" : "ARTIFACT_ACCESS" :
+                    cause instanceof java.nio.file.AtomicMoveNotSupportedException ? "ARTIFACT_ATOMIC_MOVE_UNSUPPORTED" :
+                    cause instanceof java.nio.file.FileAlreadyExistsException && artifact.action==SafeFiles.ArtifactAction.createPending ?
+                        "ARTIFACT_PENDING_EXISTS" : cause instanceof java.nio.file.NoSuchFileException ? "ARTIFACT_MISSING" :
+                        "ARTIFACT_OR_STATE_ERROR";
+                var report=new TreeMap<String,Object>(report(code,stage));
+                report.put("artifactAction",switch(artifact.action) {
+                    case createPending -> "create-pending";case writePending -> "write-pending";
+                    case flushPending -> "flush-pending";case atomicReplace -> "atomic-replace";
+                });
+                report.put("artifactAttempts",artifact.attempts);return report;
+            }
+            if (current instanceof Project.CredentialUnavailable) return report("CREDENTIAL_REFERENCE_UNAVAILABLE",stage);
+            if (current instanceof com.fasterxml.jackson.core.JsonProcessingException) return report("CONFIGURATION_INVALID",stage);
+            if (current instanceof java.nio.file.NoSuchFileException || current instanceof java.io.FileNotFoundException)
+                return report("ARTIFACT_MISSING",stage);
+            if (current instanceof java.nio.file.AccessDeniedException) return report("ARTIFACT_ACCESS",stage);
+            if (current instanceof javax.net.ssl.SSLException || current instanceof java.security.cert.CertificateException)
+                return report("ENDPOINT_TLS",stage);
+            if (current instanceof java.net.UnknownHostException) return report("ENDPOINT_DNS",stage);
+            if (current instanceof java.net.SocketTimeoutException || current instanceof java.net.http.HttpTimeoutException ||
+                current instanceof java.util.concurrent.TimeoutException) return report("ENDPOINT_TIMEOUT",stage);
+            if (current instanceof java.net.ConnectException || current instanceof java.net.SocketException)
+                return report("ENDPOINT_CONNECTIVITY",stage);
+        }
+        if (error instanceof SecurityException) return report("AUTHORIZATION_REQUIRED",stage);
+        if (error instanceof java.io.IOException) return report("ARTIFACT_OR_STATE_ERROR",stage);
+        if (error instanceof IllegalArgumentException) return report("CONFIGURATION_INVALID",stage);
+        return report("OPERATION_CAUSE_UNKNOWN",stage);
+    }
+    public static Failure acknowledged(String code,String stage) {
+        return new Failure(REMEDIES.containsKey(code) || DocumentDiagnostics.CODES.contains(code) ? code : "OPERATION_CAUSE_UNKNOWN",stage);
+    }
+    public static Failure artifactFailure(java.io.IOException error,String stage) {
+        return acknowledged(Json.MAPPER.valueToTree(failure(error,stage)),stage);
+    }
+    public static Failure acknowledged(com.fasterxml.jackson.databind.JsonNode diagnostic,String fallbackStage) {
+        String stage=diagnostic.path("stage").asText();
+        if (!stage.matches("[a-z][a-z0-9-]{0,79}")) stage=fallbackStage;
+        String code=diagnostic.path("code").asText();
+        var status=diagnostic.path("httpStatus");
+        var failure=new Failure(REMEDIES.containsKey(code) || DocumentDiagnostics.CODES.contains(code) ? code : "OPERATION_CAUSE_UNKNOWN",stage,
+            status.isIntegralNumber() && status.canConvertToInt() ? status.intValue() : null);
+        var fields=new TreeMap<String,Object>();
+        if(Set.of("create-pending","write-pending","flush-pending","atomic-replace").contains(diagnostic.path("artifactAction").asText()))
+            fields.put("artifactAction",diagnostic.path("artifactAction").asText());
+        var attempts=diagnostic.path("artifactAttempts");
+        if(attempts.isIntegralNumber() && attempts.canConvertToInt() && attempts.intValue()>=1 && attempts.intValue()<=5)
+            fields.put("artifactAttempts",attempts.intValue());
+        if (Set.of("missing-total","partial-charge-only","invalid-total","unconfirmed-in-flight","previous-unobservable")
+            .contains(diagnostic.path("chargeObservation").asText()))
+            fields.put("chargeObservation",diagnostic.path("chargeObservation").asText());
+        if (Set.of("source-keyset-page-v1","source-keyset-page-v2").contains(diagnostic.path("templateId").asText()))
+            fields.put("templateId",diagnostic.path("templateId").asText());
+        for (String name:List.of("gremlinStatus","sourceStatus","sourceSubstatus")) {
+            var value=diagnostic.path(name);
+            int max=name.equals("gremlinStatus") ? 999 : name.equals("sourceStatus") ? 599 : Integer.MAX_VALUE;
+            int min=name.equals("sourceSubstatus") ? 0 : 100;
+            if (value.isIntegralNumber() && value.canConvertToInt() && value.intValue()>=min && value.intValue()<=max)
+                fields.put(name,value.intValue());
+        }
+        for (String name:List.of("ruBudget","ruConsumed","ruRemaining","ruPerSecond")) {
+            var value=diagnostic.path(name);
+            if (value.isTextual() && value.asText().matches("[0-9]{1,30}(?:\\.[0-9]{1,20})?"))
+                fields.put(name,value.asText());
+        }
+        failure.sourceStatus=Map.copyOf(fields);return failure;
+    }
+}

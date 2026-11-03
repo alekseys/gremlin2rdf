@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "gremlin": {
+      "type": "string",
+      "maxLength": 65536
+    },
+    "translation": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "number",
+          "const": 1
+        },
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "sparql": {
+          "type": "string",
+          "maxLength": 16777216
+        },
+        "shape": {
+          "type": "string",
+          "enum": ["vertex", "edge", "value", "projection", "count"]
+        },
+        "comparison": {
+          "type": "string",
+          "enum": ["set", "multiset", "sequence"]
+        },
+        "resultVariables": {
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          }
+        }
+      },
+      "required": ["schemaVersion", "fingerprint", "sparql", "shape", "comparison", "resultVariables"],
+      "additionalProperties": false
+    },
+    "expected": {
+      "maxItems": 100000,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "additionalProperties": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": ["iri", "literal"]
+            },
+            "lexical": {
+              "type": "string",
+              "maxLength": 1048576
+            },
+            "datatype": {
+              "type": ["string", "null"]
+            },
+            "language": {
+              "type": ["string", "null"]
+            }
+          },
+          "required": ["kind", "lexical", "datatype", "language"],
+          "additionalProperties": false
+        }
+      }
+    }
+  },
+  "required": ["gremlin", "translation", "expected"],
+  "additionalProperties": false,
+  "$id": "urn:gremlin2rdf:schema:v1:query-fixture"
+}

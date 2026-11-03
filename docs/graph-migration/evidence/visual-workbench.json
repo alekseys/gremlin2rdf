@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "scope": "Graphical project page and publication of accumulated local implementation; not release acceptance",
+  "changes": [
+    "Theme-aware source-to-target bridge and numbered migration sequence overview",
+    "Required connection fields and core phase cards highlighted with icons and text",
+    "Optional adaptation, evidence import and advanced tools collapsed with muted styling",
+    "Persisted status badges and next unfinished step; no automatic execution",
+    "All operation, authorization and artifact controls preserved",
+    "Fork repository, homepage and issue metadata corrected"
+  ],
+  "designReview": {
+    "verdict": "passed-after-one-revision",
+    "scope": "independent static design/accessibility review",
+    "browserRenderedReview": "not-executed"
+  },
+  "validation": {
+    "localizationExitCode": 0,
+    "completeFormattingExitCode": 0,
+    "completeLintExitCode": 0,
+    "typescriptBuildExitCode": 0,
+    "typescriptTargets": 3,
+    "targetedUiTests": { "files": 2, "passed": 13, "exitCode": 0 },
+    "standaloneSkill": { "passed": 434, "skipped": 2, "failed": 0, "exitCode": 0 },
+    "fullUnitSuite": "incomplete: bounded runs stopped after initialization stalled without completed test-file results",
+    "recovery": [
+      "Corrected unsupported Griffel logical border shorthands and nonexistent palette token; build then passed",
+      "Stopped default full-suite runner rather than allowing unbounded execution",
+      "Corrected Windows concurrently escaping of --maxWorkers=4 by using separate argument tokens",
+      "Four-worker full-suite attempt also stalled during initialization and was stopped; not a passing gate"
+    ],
+    "benchmarksSoakLiveOperations": "not-executed"
+  },
+  "package": {
+    "command": "npm run package",
+    "exitCode": 0,
+    "path": "vscode-cosmosdb-0.39.0.vsix",
+    "bytes": 76038798,
+    "sha256": "ee366d64ad33c2a03757015474cec2d3c21febd5a3e7ea4d770a78f0b1bed258",
+    "workbenchChunk": "extension/GraphMigrationWorkbench-DAIy-pOz.js",
+    "verified": [
+      "Graphical controls and required/optional labels in compiled webview",
+      "Root README and bundled workbench documentation match current source",
+      "Fork repository metadata included",
+      "All embedded Java workers match manifest hashes and current resource bytes",
+      "Private evidence excluded"
+    ],
+    "userProfileModified": false
+  },
+  "publication": "User explicitly authorized pushing the committed implementation and using GitHub CI for remaining validation; no more local full-suite runs. Draft PR remains unmerged."
+}

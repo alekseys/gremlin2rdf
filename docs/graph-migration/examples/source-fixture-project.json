@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "migrationKind": "cosmos-gremlin-to-jena",
+  "baselineRepositorySha": "22e3f2cccbfcc6622cacbf1873b9c620acba085e",
+  "runId": "offline-fixture",
+  "protocolVersion": 1,
+  "workerVersion": "0.1.0",
+  "mapping": {
+    "schemaVersion": 1,
+    "baseIri": "urn:gremlin2rdf:entity:",
+    "vocabulary": "urn:gremlin2rdf:domain:",
+    "labels": {},
+    "properties": {},
+    "edges": {},
+    "exclusions": [],
+    "derivedRelationships": true,
+    "provenance": true,
+    "fidelity": "strict"
+  },
+  "source": {
+    "scope": "offline-example-source",
+    "host": "localhost",
+    "port": 443,
+    "database": "example-database",
+    "container": "pre-existing-dedicated-test-container",
+    "partitionKeyPath": "/pk",
+    "authenticationRef": null,
+    "extractionStrategy": "verified-identity-manifest",
+    "identityManifest": "source-fixture.ndjson.identities.ndjson",
+    "identityManifestHash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "compatibilityEvidence": "artifacts/source-compatibility.json",
+    "ruBudget": "100000",
+    "customCaRef": null,
+    "syntheticTestContainer": true
+  },
+  "target": null,
+  "limits": {
+    "batchRecords": 100,
+    "batchBytes": 1048576,
+    "maxRecordBytes": 262144,
+    "requestTimeoutMillis": 30000,
+    "maxRetries": 3,
+    "queueCapacity": 100,
+    "writerConcurrency": 1,
+    "minimumFreeDiskBytes": 104857600
+  },
+  "consistency": "quiesced",
+  "phases": {},
+  "approvals": [],
+  "applicationHashes": {},
+  "artifacts": []
+}

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "status": "succeeded",
+  "mode": "smoke",
+  "testkitSha256": "a578228fa464f93edfffee51d10df152e9191bf8cf690091b4b51fe507f44c11",
+  "configurationSha256": "2c1dc946132b9595ec0ad847a08f36f7b4f8d955577b5bed494eb9636549e043",
+  "reportSha256": "0f2cfcf50a8b005d72933fc35e64343387a775c503b040f7756f11421c7a3f32",
+  "finishedAt": "2026-10-31T23:31:09.823Z",
+  "reportPath": "java/graph-testkit/target/reference-smoke-dXQjjG/output/report.json",
+  "immutableSnapshot": true,
+  "liveEndpointsUsed": false,
+  "loadAcceptance": "blocked-profile-or-memory-gate",
+  "soakAcceptance": "blocked-duration-not-executed"
+}

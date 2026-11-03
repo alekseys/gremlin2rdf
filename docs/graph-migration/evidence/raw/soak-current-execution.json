@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "status": "succeeded",
+  "mode": "soak",
+  "testkitSha256": "095401a89d07dc7a5fb469ad6c1e598daec51b52cd9be100a3f396d1a3a12136",
+  "configurationSha256": "35adb696b4352b7a162814e14e2a244502b8d5615a0d4f11366d83c387b85701",
+  "reportSha256": "e2088985929ae6bfec04d48a14720ac045671d793dade915a868539a3445787f",
+  "finishedAt": "2026-11-01T01:36:41.089Z",
+  "reportPath": "java/graph-testkit/target/reference-soak-FlFfux/output/report.json",
+  "immutableSnapshot": true,
+  "liveEndpointsUsed": false,
+  "loadAcceptance": "blocked-profile-or-memory-gate",
+  "soakAcceptance": "succeeded"
+}

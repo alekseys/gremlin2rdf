@@ -1,4 +1,7 @@
 {
+  "cosmosdb.command.ageMigration.open": "Open Gremlin to PostgreSQL AGE Migration (Experimental)",
+  "cosmosdb.command.graphMigration.open": "Open Gremlin to RDF Migration (Experimental)",
+  "cosmosdb.configuration.experimental.graphMigration.enabled": "Enable Gremlin migration workbenches for Apache Jena and PostgreSQL/Apache AGE. Jena requires Java 21 or newer; AGE currently supports Windows x64 extension hosts. Target writes require scoped authorization.",
   "cosmosdb.command.account.create": "Create Azure Cosmos DB…",
   "cosmosdb.command.account.create.description": "NoSQL database for your web apps",
   "cosmosdb.command.account.delete": "Delete Account…",

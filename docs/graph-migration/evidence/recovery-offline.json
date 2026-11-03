@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "status": "succeeded",
+  "scope": "current-source-private-loopback-recovery-and-approved-input-regression",
+  "recoveryCases": 11,
+  "actualHttpCasesIncludingExecutionRollback": 13,
+  "sourcePopulationCases": 8,
+  "testExecution": "shell-124-exit-0",
+  "lockFaults": ["before-update-503", "after-confirmed-backend-update-503", "marker-read-503"],
+  "releaseFaults": ["before-update-503", "after-confirmed-backend-update-503", "marker-read-503"],
+  "batchFaults": [
+    "before-update-503",
+    "after-confirmed-backend-update-503",
+    "after-confirmed-backend-update-disconnect",
+    "before-update-timeout",
+    "after-confirmed-backend-update-timeout"
+  ],
+  "reconciliation403": {
+    "status": "passed",
+    "batchMutationAttempts": 1,
+    "checkpointCreated": false,
+    "canonicalDataInserted": false,
+    "exception": "QueryExceptionHTTP"
+  },
+  "partialOrConflictingLockPreserved": true,
+  "expiredApprovalAcquisitionDenied": true,
+  "deadSameHostOwnerRecoveryAndForeignReleaseRefusal": true,
+  "midOperationCanonicalInputReplacement": {
+    "sourcePopulation": "only-original-approved-records-written; no-success-report",
+    "targetLoad": "only-original-approved-batches-written; no-success-report",
+    "approvedSnapshotsRemovedOnClose": true
+  },
+  "liveSourceCompatibility": "blocked-no-authorized-live-endpoint",
+  "deployedTargetTransactionAndFencing": "not-observed-private-fixture-only",
+  "editorRestartAcceptance": "pending-M6",
+  "reproduction": "Set a non-live GRAPH_TEST_APPROVAL_KEY; java\\mvnw.cmd -f java\\pom.xml -pl migration-engine,cosmos-gremlin-source -am -Dtest=RecoveryTest,HttpFailureTest,PopulationTest -Dsurefire.failIfNoSpecifiedTests=false test -q"
+}

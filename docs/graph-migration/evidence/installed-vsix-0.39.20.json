@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "version": "0.39.20",
+  "baselineCommit": "819c51c349fe32ae3276768327dade98bc064c47",
+  "scope": "Actual installed VS Code extension and Cosmos .NET SDK against an owned loopback TLS fixture and local in-memory Fuseki; not the user's live project or account",
+  "package": {
+    "file": "vscode-cosmosdb-0.39.20.vsix",
+    "bytes": 155722821,
+    "sha256": "f2b8d6cc4ed8251bd0c48153a01417d8ee6d71d545c376c0bfe596b68cb93e0e",
+    "zipCrcVerified": true,
+    "nestedJarsVerified": 3,
+    "documentRuntimeFilesVerified": 212,
+    "runtimePlatform": "win-x64"
+  },
+  "reportedFailure": {
+    "observed": "User screenshot retains old succeeded phases and an unsaved-edits notice after clicking restart",
+    "exactUserMachineRejection": "Not established from screenshot; no user project files, credentials or endpoints were accessed",
+    "reproducedDefects": [
+      "The form replaced an existing best-effort consistency choice with a blank value that cannot be saved",
+      "Fresh restart unnecessarily opened and hashed the old inventory before creating the new one; unavailable old inventory blocked restart",
+      "Generic action handling hid specific save failures away from the restart control"
+    ]
+  },
+  "installedAcceptance": {
+    "command": "$env:GRAPH_E2E_SOURCE_MODE='cosmos-documents'; npm run graph:test:vsix",
+    "exitCode": 0,
+    "verifiedControls": [
+      "Existing best-effort consistency remains selected in the form",
+      "Owned fixture project.pending causes a precise, visible, focused inline PROJECT_PENDING_EXISTS diagnostic",
+      "Rejected save preserves the old run, edited document-source selection and existing pending bytes; no restart is claimed",
+      "Only the fixture-owned pending sentinel is explicitly removed by the harness, not by production code",
+      "Restart succeeds with an unavailable old identity inventory and creates a fresh inventory and run ID",
+      "Success acknowledgement identifies the new run, clears old phase state and starts read-only Step 1",
+      "Reviewed budget stop, separately reviewed retry, inventory reconciliation and adoption",
+      "Strict conversion blocks unobservable details; approved observed-values conversion remains separately scoped",
+      "Extraction, approved target load, canonical comparison, endpoint resolution, SHACL and golden queries",
+      "Readiness and strict Gremlin semantic equivalence remain blocked",
+      "Registered artifact checksums verified"
+    ],
+    "vertices": 3,
+    "edges": 3,
+    "httpGetAttempts": 52,
+    "documentPages": 16,
+    "syntheticRequestCharge": 16,
+    "sourceMutations": 0,
+    "unrecognizedRoutes": 0,
+    "pageErrors": 0,
+    "coreMigration": "succeeded",
+    "productionReadiness": "blocked",
+    "validationScope": "observed-document-canonical-only",
+    "strictInputFidelity": false
+  },
+  "otherChecks": {
+    "targetedSetupPersistenceHostAndWorkbench": { "exitCode": 0, "passed": 85, "skipped": 1 },
+    "localization": "succeeded",
+    "formatting": "succeeded",
+    "lint": "succeeded",
+    "allThreeTypeScriptBuilds": "succeeded",
+    "packaging": "succeeded",
+    "firstInstalledAttempt": "Restart rejection and restart success both passed; later enumeration timed out against the single-threaded local TLS fixture",
+    "fixtureCorrection": "ThreadingHTTPServer accepts parallel SDK connections; summary counters and writes are synchronized. No production transport, timeout or security setting changed.",
+    "finalInstalledAttempt": "Complete local SDK migration passed",
+    "broadUnitSuite": "Not rerun as directed; the earlier unchanged AccountOverview focus failure remains reported, not waived or fixed"
+  },
+  "limitations": [
+    "The user's exact rejected-save condition cannot be inferred from the screenshot",
+    "Existing pending or locked project files still require explicit ownership and recovery review; they are not silently removed",
+    "Real account read permissions, storage layouts, continuation behavior and RU charges remain unverified",
+    "No performance or cost improvement is established by synthetic charges",
+    "Original production dependency, application, CRUD, performance and strict-equivalence gates remain blocked",
+    "Experimental offline-verified preview, not production certification"
+  ],
+  "noLiveSourceRequests": true,
+  "noProductionWrites": true,
+  "noPublishingOrPush": true
+}

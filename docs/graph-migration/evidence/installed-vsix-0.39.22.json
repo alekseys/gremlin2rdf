@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "version": "0.39.22",
+  "baselineCommit": "842bc7b05e0a46d6c06d51f2c41bd474efa87785",
+  "scope": "Installed VS Code extension, real Cosmos .NET SDK and local in-memory Fuseki against an owned loopback TLS fixture; not the user's account",
+  "package": {
+    "file": "vscode-cosmosdb-0.39.22.vsix",
+    "bytes": 155728960,
+    "sha256": "96cc8e5df1ea008e1ad6e87b3dcf823a76f1434577911e9487514d973f2016a0",
+    "zipCrcVerified": true,
+    "nestedJarsVerified": 3,
+    "documentRuntimeFilesVerified": 212,
+    "runtimePlatform": "win-x64"
+  },
+  "installedAcceptance": {
+    "command": "$env:GRAPH_E2E_SOURCE_MODE='cosmos-documents'; npm run graph:test:vsix",
+    "exitCode": 0,
+    "verifiedControls": [
+      "Prior restart, endpoint normalization, budget-stop and explicit retry/adoption recovery checks remain exercised",
+      "After explicit start, assessment and strict source compatibility run without additional Run clicks",
+      "Strict source compatibility still blocks with actual unobservable-detail reasons",
+      "Explicit reduced selection/save preserves inventory and requires separately scoped approval",
+      "Input-free source compatibility, mapping and extraction continue after that approval",
+      "Target load still requires explicit authorization and execution",
+      "Structural validation and golden queries continue after successful load",
+      "Required phase titles and status tags occur once in section summaries",
+      "Completed data migration is shown independently of optional readiness",
+      "Optional readiness does not run automatically",
+      "Manually evaluated readiness shows yellow Warning without Blocked or a duplicated inner heading",
+      "Persisted readiness and unexecuted production gates remain blocked",
+      "No publication approval is present",
+      "Registered artifact checksums verified",
+      "Final screenshot inspected for single colored summary tags and yellow optional readiness"
+    ],
+    "vertices": 3,
+    "edges": 3,
+    "httpGetAttempts": 52,
+    "documentPages": 16,
+    "syntheticRequestCharge": 16,
+    "sourceMutations": 0,
+    "unrecognizedRoutes": 0,
+    "pageErrors": 0,
+    "coreMigration": "succeeded",
+    "productionReadiness": "blocked",
+    "validationScope": "observed-document-canonical-only",
+    "strictInputFidelity": false
+  },
+  "otherChecks": {
+    "targetedWorkbenchAndHost": { "exitCode": 0, "passed": 67 },
+    "finalStatusAndAutomaticFlowRecheck": { "exitCode": 0, "passed": 6, "notSelected": 35 },
+    "publicationRefusalRegression": { "exitCode": 0, "passed": 1, "notSelected": 26 },
+    "localization": "succeeded",
+    "scopedFormatting": "succeeded",
+    "lint": "succeeded",
+    "allThreeTypeScriptBuilds": "succeeded",
+    "packaging": "succeeded",
+    "firstInstalledAttempt": "A newly added readiness assertion was placed before report execution inside the harness phase loop; harness placement corrected",
+    "installedRecheck": "Complete installed SDK migration passed",
+    "finalInstalledAttempt": "Repackaged single-status-tag UI passed complete installed SDK migration",
+    "broadUnitSuite": "Not rerun as directed; earlier unchanged AccountOverview focus failure remains reported, not waived or fixed"
+  },
+  "workflowBoundaries": {
+    "automaticOperations": [
+      "preflight",
+      "assess",
+      "source-compatibility",
+      "mapping",
+      "extract",
+      "validate",
+      "functional"
+    ],
+    "requiresExplicitStart": true,
+    "panelOpenStartsOperations": false,
+    "manualBoundaries": ["enumeration-budget-review", "scoped-approvals", "target-load", "optional-readiness"],
+    "stopConditions": ["operator-stop", "pause", "cancellation", "failure", "blocked-phase", "unapproved-run-change"],
+    "unsavedEditsSuspendProgression": true,
+    "backendPublicationGuardUnchanged": true
+  },
+  "limitations": [
+    "Yellow Warning is a readiness presentation distinction, not a passing production report or publication authorization",
+    "Actual execution, authorization, integrity or state errors remain red Blocked",
+    "Reduced document conversion does not establish exact Gremlin semantics, strict fidelity or application equivalence",
+    "No live source requests, account permissions, service layouts or actual request charges verified by this fixture",
+    "No speed or cost improvement is established by synthetic charges",
+    "Application inventory/build, CRUD, dependencies, performance and strict-equivalence readiness gates remain blocked",
+    "Experimental offline-verified preview, not production certification"
+  ],
+  "noLiveSourceRequests": true,
+  "noProductionWrites": true,
+  "noPublishingOrPush": true
+}

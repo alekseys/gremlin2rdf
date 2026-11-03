@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "scope": "Actual SDK and VS Code processes against private loopback TLS document and GraphSON fixtures plus transactional in-memory Fuseki; not a live Cosmos account or production cutover",
+  "version": "0.39.18",
+  "baselineCommit": "20c30773a64041467059854db72b851b0e814174",
+  "package": {
+    "file": "vscode-cosmosdb-0.39.18.vsix",
+    "bytes": 155716616,
+    "sha256": "5d3c7d0b51b1c2b25b48c22801390b5752db440ae960b441ed8d8fd25a8f7b46",
+    "zipCrcVerified": true,
+    "nestedJarsVerified": 3,
+    "documentRuntimeFilesVerified": 212,
+    "runtimePlatform": "win-x64"
+  },
+  "documentSourceExecution": {
+    "command": "$env:GRAPH_E2E_SOURCE_MODE='cosmos-documents'; npm run graph:test:vsix",
+    "exitCode": 0,
+    "sdk": "Microsoft.Azure.Cosmos 3.58.0",
+    "api": "GetItemQueryStreamIterator with null query, read feed and SDK continuations",
+    "profile": "property-bags-v1",
+    "vertices": 3,
+    "edges": 3,
+    "httpGetAttempts": 52,
+    "documentPages": 16,
+    "syntheticRequestCharge": 16,
+    "sourceMutations": 0,
+    "unrecognizedFixtureRoutes": 0,
+    "pageErrors": 0,
+    "coreMigration": "succeeded",
+    "productionReadiness": "blocked",
+    "target": "Jena 6.2.0 transactional in-memory Fuseki",
+    "validationScope": "observed-document-canonical-only",
+    "strictInputFidelity": false,
+    "verifiedControls": [
+      "Explicit workspace trust through normal VS Code UI, never disabled",
+      "Reviewed request-limit stop and new bounded retry without resetting preserved state",
+      "Edited retry settings remain mounted through running and succeeded connection rechecks",
+      "Two-feed inventory reconciliation and automatic adoption of three vertices and three edges",
+      "Persisted legacy stale-adoption recovery with zero additional source requests",
+      "Strict conversion blocks required unobservable document fidelity",
+      "Reduced conversion is separately selected and signed through scoped approval",
+      "Current owned document evidence, canonical checksum and mode approvals gate extraction and target validation",
+      "Actual SDK extraction, scoped target-write approval, target load, exact canonical comparison, endpoint checks, SHACL and golden queries",
+      "Gremlin semantic compatibility and strict equivalence remain blocked",
+      "All registered artifact checksums verify"
+    ]
+  },
+  "retainedGremlinExecution": {
+    "command": "npm run graph:test:vsix",
+    "exitCode": 0,
+    "driverVersion": "3.4.13",
+    "serializer": "GraphSONMessageSerializerV2d0",
+    "vertices": 3,
+    "edges": 3,
+    "coreMigration": "succeeded",
+    "productionReadiness": "blocked",
+    "pageErrors": 0,
+    "verifiedControls": [
+      "Existing bounded enumeration, adopted inventory, local recovery and immediate sequential continuation",
+      "Missing system attachment metadata produces SOURCE_SYSTEM_METADATA_UNOBSERVABLE at source-record-system-attachments",
+      "Blocked source record read preserves inventory and run; clearing only the fixture fault permits a reviewed retry",
+      "No automatic source-mode fallback"
+    ]
+  },
+  "otherChecks": {
+    "publishedDocumentSelfTest": { "status": "succeeded", "assertions": 69, "liveEndpointAccessed": false },
+    "documentSelfTestCoverage": [
+      "Actual SDK continuation forwarding and multiple feed ranges",
+      "Durable page and request-charge accounting, 429 retry-after and unknown-spend restart rejection",
+      "Normal property-bag and FlatSchema profiles, repeated values with distinct observed IDs, endpoints and partitions",
+      "Raw numeric lexicals, missing occurrence metadata, unknown shapes and duplicate identity rejection",
+      "External sorting of 2105 documents with bounded fan-in"
+    ],
+    "targetedJavaValidationAndReadiness": { "status": "succeeded", "tests": 10 },
+    "targetedWorkbenchAndProjectState": { "status": "succeeded", "tests": 34 },
+    "finalWorkbenchScopeExplanation": { "status": "succeeded", "tests": 31 },
+    "localization": "succeeded",
+    "formatting": "succeeded",
+    "lint": "succeeded",
+    "allThreeTypeScriptBuilds": "succeeded",
+    "lastBroadUnitRun": {
+      "status": "failed",
+      "passed": 6044,
+      "skipped": 5,
+      "failed": 1,
+      "failure": "Unchanged AccountOverview.test.tsx:722 focus assertion for Serverless metric deep-link redirect",
+      "disposition": "Reported, not waived or modified; further work used brief feature-targeted checks as directed"
+    }
+  },
+  "blockedOrUnverified": [
+    "Live account SDK read permission, raw storage profile, Cosmos continuation behavior and actual RU charges",
+    "Gremlin semantic and native runtime-type equivalence for document observations",
+    "Production dependency approval, deployed target guarantees, application/CRUD migration and performance gates",
+    "No speed or cost improvement is established by these synthetic fixture charges",
+    "The latest broad unit run was not green; this package is an offline-verified experimental preview, not a fully certified release"
+  ],
+  "noLiveSourceRequests": true,
+  "noProductionWrites": true,
+  "noPublishingOrPush": true
+}

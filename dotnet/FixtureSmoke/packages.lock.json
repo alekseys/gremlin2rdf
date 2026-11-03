@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0": {
+      "Gremlin.Net": {
+        "type": "Transitive",
+        "resolved": "3.4.13",
+        "contentHash": "E6CvFHNYARoTgGx6/LIwknAQnTmpw4JMHQE1dZEop6QAJ1jp96cFNTMuikCSK3poUJOOsl/7HNkzcaGiYKM9Ww==",
+        "dependencies": {
+          "Newtonsoft.Json": "11.0.2",
+          "Polly": "7.2.0"
+        }
+      },
+      "Microsoft.CodeAnalysis.Analyzers": {
+        "type": "Transitive",
+        "resolved": "3.11.0",
+        "contentHash": "v/EW3UE8/lbEYHoC2Qq7AR/DnmvpgdtAMndfQNmpuIMx/Mto8L5JnuCfdBYtgvalQOtfNCnxFejxuRrryvUTsg=="
+      },
+      "Microsoft.CodeAnalysis.Common": {
+        "type": "Transitive",
+        "resolved": "5.0.0",
+        "contentHash": "ZXRAdvH6GiDeHRyd3q/km8Z44RoM6FBWHd+gen/la81mVnAdHTEsEkO5J0TCNXBymAcx5UYKt5TvgKBhaLJEow==",
+        "dependencies": {
+          "Microsoft.CodeAnalysis.Analyzers": "3.11.0"
+        }
+      },
+      "Microsoft.CodeAnalysis.CSharp": {
+        "type": "Transitive",
+        "resolved": "5.0.0",
+        "contentHash": "5DSyJ9bk+ATuDy7fp2Zt0mJStDVKbBoiz1DyfAwSa+k4H4IwykAUcV3URelw5b8/iVbfSaOwkwmPUZH6opZKCw==",
+        "dependencies": {
+          "Microsoft.CodeAnalysis.Analyzers": "3.11.0",
+          "Microsoft.CodeAnalysis.Common": "[5.0.0]"
+        }
+      },
+      "Microsoft.Extensions.DependencyInjection.Abstractions": {
+        "type": "Transitive",
+        "resolved": "10.0.0",
+        "contentHash": "L3AdmZ1WOK4XXT5YFPEwyt0ep6l8lGIPs7F5OOBZc77Zqeo01Of7XXICy47628sdVl0v/owxYJTe86DTgFwKCA=="
+      },
+      "Microsoft.Extensions.Logging.Abstractions": {
+        "type": "Transitive",
+        "resolved": "10.0.0",
+        "contentHash": "FU/IfjDfwaMuKr414SSQNTIti/69bHEMb+QKrskRb26oVqpx3lNFXMjs/RC9ZUuhBhcwDM2BwOgoMw+PZ+beqQ==",
+        "dependencies": {
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.0"
+        }
+      },
+      "Newtonsoft.Json": {
+        "type": "Transitive",
+        "resolved": "13.0.4",
+        "contentHash": "pdgNNMai3zv51W5aq268sujXUyx7SNdE2bj1wZcWjAQrKMFZV260lbqYop1d2GM67JI1huLRwxo9ZqnfF/lC6A=="
+      },
+      "Npgsql": {
+        "type": "Transitive",
+        "resolved": "10.0.0",
+        "contentHash": "xZAYhPOU2rUIFpV48xsqhCx9vXs6Y+0jX2LCoSEfDFYMw9jtAOUk3iQsCnDLrFIv9NT3JGMihn7nnuZsPKqJmA==",
+        "dependencies": {
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.0"
+        }
+      },
+      "Polly": {
+        "type": "Transitive",
+        "resolved": "7.2.0",
+        "contentHash": "fbtSRyqVSd5AS7O4Pm2Mnw7zKKJk7Z3rOfNnKSTfPkTxM8Z1JJFZzzjqLAOTG6AyUkormSWMO2AhdlygF/384Q=="
+      },
+      "ageworker": {
+        "type": "Project",
+        "dependencies": {
+          "Gremlin.Net": "[3.4.13, )",
+          "Microsoft.CodeAnalysis.CSharp": "[5.0.0, )",
+          "Newtonsoft.Json": "[13.0.4, )",
+          "Npgsql": "[10.0.0, )"
+        }
+      }
+    }
+  }
+}

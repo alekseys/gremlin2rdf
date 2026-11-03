@@ -46,6 +46,8 @@
     "bundle-analysis",
     "coverage",
     "dist",
+    "docs/graph-migration/evidence/raw",
+    "docs/graph-migration/release",
     "l10n/bundle.l10n.*.json",
     "out",
     "node_modules",

@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "migrationKind": "cosmos-gremlin-to-jena",
+  "baselineRepositorySha": "22e3f2cccbfcc6622cacbf1873b9c620acba085e",
+  "specification": "Microsoft Scout: Azure Cosmos DB for Gremlin to Apache Jena Fuseki",
+  "milestones": {
+    "M0": {
+      "status": "succeeded",
+      "evidence": ["docs/graph-migration/compatibility.md"],
+      "blockers": []
+    },
+    "M1": {
+      "status": "succeeded",
+      "evidence": [
+        "schemas/graph-migration",
+        "java/migration-engine/src/test/java/io/github/gremlin2rdf/ProtocolTest.java"
+      ],
+      "blockers": []
+    },
+    "M2": {
+      "status": "succeeded",
+      "evidence": ["java/migration-engine/src/test/java/io/github/gremlin2rdf/MappingTest.java"],
+      "blockers": []
+    },
+    "M3": {
+      "status": "succeeded",
+      "evidence": [
+        "java/cosmos-gremlin-source/src/test/java/io/github/gremlin2rdf/source/SourceCodecTest.java",
+        "java/cosmos-gremlin-source/src/test/java/io/github/gremlin2rdf/source/ExtractionTest.java",
+        "java/cosmos-gremlin-source/src/test/java/io/github/gremlin2rdf/source/SourceTlsTest.java",
+        "java/cosmos-gremlin-source/src/test/java/io/github/gremlin2rdf/source/PopulationTest.java",
+        "java/cosmos-gremlin-source/src/test/java/io/github/gremlin2rdf/source/ParentOwnershipTest.java",
+        "src/services/graphMigration/WorkerBridge.test.ts",
+        "docs/graph-migration/source-extraction.md",
+        "docs/graph-migration/evidence/source-offline.json",
+        "dotnet/DocumentSource/contract.json",
+        "docs/graph-migration/document-source.md",
+        "docs/graph-migration/evidence/installed-vsix-0.39.18.json",
+        "docs/graph-migration/evidence/installed-vsix-0.39.19.json",
+        "docs/graph-migration/evidence/installed-vsix-0.39.20.json",
+        "docs/graph-migration/evidence/installed-vsix-0.39.21.json",
+        "docs/graph-migration/evidence/installed-vsix-0.39.22.json"
+      ],
+      "blockers": [
+        "Live endpoint configuration, compatibility evidence and authorization not supplied.",
+        "Actual Cosmos population/property-ID/meta-property writes, system metadata queries, RU accounting and remote cleanup remain unverified."
+      ]
+    },
+    "M4": {
+      "status": "succeeded",
+      "evidence": [
+        "java/migration-engine/src/test/java/io/github/gremlin2rdf/RecoveryTest.java",
+        "java/migration-engine/src/test/java/io/github/gremlin2rdf/HttpFailureTest.java",
+        "java/migration-engine/src/test/java/io/github/gremlin2rdf/DeadlineHttpClientTest.java",
+        "java/migration-engine/src/test/java/io/github/gremlin2rdf/ValidationTest.java",
+        "docs/graph-migration/recovery.md"
+      ],
+      "blockers": ["Deployed target transaction/fencing behavior remains live-only."]
+    },
+    "M5": {
+      "status": "succeeded",
+      "evidence": [
+        "java/migration-engine/src/test/java/io/github/gremlin2rdf/FunctionalTest.java",
+        "java/migration-engine/src/test/java/io/github/gremlin2rdf/CrudTest.java",
+        "java/migration-engine/src/test/java/io/github/gremlin2rdf/RewriteTest.java",
+        "java/migration-engine/src/test/java/io/github/gremlin2rdf/FixturesTest.java",
+        "java/examples-before",
+        "java/examples-after",
+        "docs/graph-migration/application-migration.md",
+        "docs/graph-migration/evidence/application-offline.json"
+      ],
+      "blockers": [
+        "Only the declared supplied Java count fixture patterns are automated; ambiguous/general patterns remain explicit blockers.",
+        "Live Cosmos and deployed-target atomicity evidence remain unverified."
+      ]
+    },
+    "M6": {
+      "status": "succeeded",
+      "evidence": [
+        "src/panels/graphMigration/GraphMigrationTab.test.ts",
+        "src/webviews/cosmosdb/GraphMigration/GraphMigrationWorkbench.tsx",
+        "docs/graph-migration/workbench.md",
+        "docs/graph-migration/evidence/editor-offline.json",
+        "docs/graph-migration/evidence/worker-smoke.json",
+        "src/services/graphMigration/GraphProjectService.test.ts",
+        "docs/graph-migration/evidence/installed-vsix-0.39.18.json",
+        "docs/graph-migration/evidence/installed-vsix-0.39.19.json",
+        "docs/graph-migration/evidence/installed-vsix-0.39.20.json",
+        "docs/graph-migration/evidence/installed-vsix-0.39.21.json",
+        "docs/graph-migration/evidence/installed-vsix-0.39.22.json"
+      ],
+      "blockers": [
+        "Existing project save lock/pending crash artifacts require explicit reviewed manual repair, not automatic adoption.",
+        "Live source/target compatibility remains separately blocked."
+      ]
+    },
+    "M7": {
+      "status": "running",
+      "evidence": [
+        "scripts/run-reference-graph-benchmark.mjs",
+        "scripts/benchmark-graph-paths.mjs",
+        "scripts/audit-graph-release.mjs",
+        "java/migration-engine/src/test/java/io/github/gremlin2rdf/ReadinessTest.java",
+        "java/migration-engine/src/test/java/io/github/gremlin2rdf/SafeFilesTest.java",
+        ".github/workflows/graph-migration.yml",
+        "docs/graph-migration/evidence/tdb2-smoke.json",
+        "docs/graph-migration/evidence/raw/tdb2-current.json",
+        "docs/graph-migration/evidence/raw/tdb2-current-execution.json",
+        "docs/graph-migration/evidence/raw/paths-current.json",
+        "docs/graph-migration/evidence/finalization.json",
+        "docs/graph-migration/release/dependency-report.json",
+        "docs/graph-migration/benchmarks/reference-load.json",
+        "docs/graph-migration/benchmarks/reference-soak.json"
+      ],
+      "blockers": [
+        "Live compatibility and deployed-target resource measurements require authorized endpoints.",
+        "Full load is still running. Current two-hour semantic-profile soak passed with 11,870 CRUD operations and zero equivalence/corruption failures. Earlier cancellation evidence is preserved; cancelled private payload cleanup was explicitly authorized.",
+        "Dependency audit executed and is blocked by known advisories and a missing license declaration.",
+        "Linux and Windows remote offline CI passed after executable-mode correction. Dependency collection succeeds but release findings block its gate. Draft review and installable preview are delivered."
+      ]
+    }
+  }
+}

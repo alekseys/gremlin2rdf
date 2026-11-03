@@ -1,0 +1,1716 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+// @vitest-environment jsdom
+
+import { AriaLiveAnnouncer, FluentProvider, webLightTheme } from '@fluentui/react-components';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { type PropsWithChildren } from 'react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { type GraphEvent } from '../../../panels/graphMigration/graphRouter';
+import { graphProjectSchema, inputHash } from '../../../services/graphMigration/contracts';
+import { GraphDiagnosticError, hostDiagnostic } from '../../../services/graphMigration/diagnostics';
+import { GraphMigrationWorkbench } from './GraphMigrationWorkbench';
+
+const mocks = vi.hoisted(() => ({
+    load: vi.fn(),
+    create: vi.fn(),
+    save: vi.fn(),
+    saveSetup: vi.fn(),
+    run: vi.fn(),
+    approve: vi.fn(),
+    credentials: vi.fn(),
+    cancel: vi.fn(),
+    pause: vi.fn(),
+    openArtifact: vi.fn(),
+    importEvidence: vi.fn(),
+    subscribe: vi.fn(),
+    preparation: vi.fn(),
+    prepareSource: vi.fn(),
+    resumePreparation: vi.fn(),
+}));
+vi.mock('@microsoft/vscode-ext-webview/react', () => ({
+    useTrpcClient: () => client,
+}));
+const client = {
+    load: { query: mocks.load },
+    create: { mutate: mocks.create },
+    save: { mutate: mocks.save },
+    saveSetup: { mutate: mocks.saveSetup },
+    run: { mutate: mocks.run },
+    approve: { mutate: mocks.approve },
+    credentials: { mutate: mocks.credentials },
+    cancel: { mutate: mocks.cancel },
+    pause: { mutate: mocks.pause },
+    openArtifact: { mutate: mocks.openArtifact },
+    importEvidence: { mutate: mocks.importEvidence },
+    events: { subscribe: mocks.subscribe },
+    preparation: { query: mocks.preparation },
+    prepareSource: { mutate: mocks.prepareSource },
+    resumePreparation: { mutate: mocks.resumePreparation },
+};
+const project = graphProjectSchema.parse({
+    schemaVersion: 1,
+    migrationKind: 'cosmos-gremlin-to-jena',
+    baselineRepositorySha: '22e3f2cccbfcc6622cacbf1873b9c620acba085e',
+    runId: 'fixture',
+    protocolVersion: 1,
+    workerVersion: '0.1.0',
+    source: null,
+    target: null,
+    mapping: {
+        schemaVersion: 1,
+        baseIri: 'urn:fixture:',
+        vocabulary: 'urn:domain:',
+        labels: {},
+        properties: {},
+        edges: {},
+        exclusions: [],
+        derivedRelationships: true,
+        provenance: true,
+        fidelity: 'strict',
+    },
+    limits: {
+        batchRecords: 100,
+        batchBytes: 1048576,
+        maxRecordBytes: 262144,
+        requestTimeoutMillis: 1000,
+        maxRetries: 0,
+        queueCapacity: 100,
+        writerConcurrency: 1,
+        minimumFreeDiskBytes: 0,
+    },
+    consistency: 'immutable',
+    phases: {},
+    approvals: [],
+    applicationHashes: {},
+    artifacts: [],
+});
+let listener: (event: GraphEvent) => void;
+function bootstrapProject() {
+    const source = {
+        scope: 'fixture',
+        host: 'localhost',
+        port: 443,
+        database: 'db',
+        container: 'graph',
+        partitionKeyPath: '/pk',
+        authenticationRef: null,
+        extractionStrategy: 'verified-identity-manifest',
+        identityManifest: 'identities.ndjson',
+        identityManifestHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+        compatibilityEvidence: 'artifacts/fidelity.json',
+        ruBudget: '1000',
+        customCaRef: null,
+        syntheticTestContainer: false,
+    };
+    const configured = graphProjectSchema.parse({ ...project, source });
+    const passed = { status: 'succeeded', inputHash: inputHash(configured), evidence: [], blockers: [] };
+    return graphProjectSchema.parse({
+        ...configured,
+        phases: {
+            preflight: passed,
+            assess: passed,
+            mapping: passed,
+            'source-enumerate': {
+                status: 'blocked',
+                inputHash: inputHash(configured),
+                evidence: [],
+                blockers: ['source-operation (ARTIFACT_MISSING): Missing local artifact.'],
+            },
+            'source-compatibility': { status: 'stale', inputHash: '0'.repeat(64), evidence: [], blockers: [] },
+        },
+    });
+}
+beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.run.mockReset();
+    mocks.load.mockResolvedValue({ project, trusted: true });
+    mocks.saveSetup.mockResolvedValue({ status: 'saved', runId: 'fixture' });
+    mocks.subscribe.mockImplementation((_: unknown, options: { onData: typeof listener }) => {
+        listener = options.onData;
+        return { unsubscribe: vi.fn() };
+    });
+});
+function Wrapper({ children }: PropsWithChildren) {
+    return (
+        <FluentProvider theme={webLightTheme}>
+            <AriaLiveAnnouncer>{children}</AriaLiveAnnouncer>
+        </FluentProvider>
+    );
+}
+function renderWorkbench() {
+    const rendered = render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+    // Existing boundary tests exercise the advanced controls, not the simplified initial view.
+    void screen.findByText('Advanced configuration and mapping').then((summary) => {
+        act(() => {
+            for (const details of summary.closest('main')?.querySelectorAll('details') ?? []) {
+                details.setAttribute('open', '');
+            }
+        });
+    });
+    return rendered;
+}
+describe('graph workbench boundaries and keyboard access', () => {
+    it('shows missing optional readiness evidence as a yellow warning without changing persisted readiness', async () => {
+        const configured = bootstrapProject();
+        const hash = inputHash(configured);
+        configured.phases.report = {
+            status: 'blocked',
+            inputHash: hash,
+            evidence: ['artifacts/readiness.json'],
+            blockers: ['readiness-application (READINESS_EVIDENCE_REQUIRED): Missing application evidence.'],
+        };
+        mocks.load.mockResolvedValue({ project: configured, trusted: true, currentInputHash: hash });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        const summary = await screen.findByText(/^Step 10 \(optional\): Evaluate readiness/);
+        expect(summary).toHaveTextContent('Warning');
+        expect(summary).not.toHaveTextContent('Blocked');
+        expect(screen.queryByRole('heading', { name: 'Evaluate readiness' })).not.toBeInTheDocument();
+        expect(
+            within(screen.getByLabelText('Required migration steps')).queryByText(/Evaluate readiness/),
+        ).not.toBeInTheDocument();
+        expect(configured.phases.report.status).toBe('blocked');
+        expect(screen.getByText(/Publication remains prohibited/)).toBeVisible();
+        const warning = within(summary).getByText('Warning');
+        const blocked = screen.getAllByText('Blocked').find((element) => element.className.includes('fui') === false);
+        expect(warning.className).toBeTruthy();
+        expect(warning.className).not.toBe(blocked?.className);
+        expect(mocks.run).not.toHaveBeenCalled();
+    });
+    it('keeps readiness execution errors red and blocked rather than downgrading them to warnings', async () => {
+        const configured = bootstrapProject();
+        const hash = inputHash(configured);
+        configured.phases.report = {
+            status: 'blocked',
+            inputHash: hash,
+            evidence: ['artifacts/error.json'],
+            blockers: ['report (ARTIFACT_ACCESS): Preserve evidence.'],
+        };
+        mocks.load.mockResolvedValue({ project: configured, trusted: true, currentInputHash: hash });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        const summary = await screen.findByText(/^Step 10 \(optional\): Evaluate readiness/);
+        expect(summary).toHaveTextContent('Blocked');
+        expect(summary).not.toHaveTextContent('Warning');
+    });
+    it('automatically advances successful input-free checks once, stops for target approval, and never starts on open', async () => {
+        const configured = bootstrapProject();
+        configured.source!.identityManifestHash = '1'.repeat(64);
+        const hash = inputHash(configured);
+        const passed = { status: 'succeeded' as const, inputHash: hash, evidence: [], blockers: [] };
+        configured.phases = { preflight: passed, assess: passed, 'source-enumerate': passed };
+        const evidence = 'artifacts/fidelity.json';
+        configured.phases['source-compatibility'] = { ...passed, evidence: [evidence] };
+        configured.artifacts = [
+            { relativePath: evidence, ownerRunId: configured.runId, sha256: '2'.repeat(64), sensitive: true },
+        ];
+        let current = configured;
+        mocks.load.mockImplementation(async () => ({ project: current, trusted: true, currentInputHash: hash }));
+        mocks.run.mockImplementation(async ({ operation }: { operation: string }) => {
+            current = graphProjectSchema.parse({
+                ...current,
+                phases: { ...current.phases, [operation]: passed },
+            });
+        });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        const mapping = await screen.findByRole('button', { name: 'Run for Validate mapping' });
+        expect(mocks.run).not.toHaveBeenCalled();
+        expect(mapping.closest('details')!.querySelector('h4')).toBeNull();
+        await userEvent.setup().click(mapping);
+        await waitFor(() =>
+            expect(mocks.run.mock.calls.map(([value]) => value.operation)).toEqual(['mapping', 'extract']),
+        );
+        expect(screen.getByRole('button', { name: 'Authorize for Load approved target graphs' })).toBeVisible();
+        expect(mocks.approve).not.toHaveBeenCalled();
+        act(() => listener({ type: 'project', project: current, currentInputHash: hash }));
+        expect(mocks.run).toHaveBeenCalledTimes(2);
+    });
+    it('stops automatic progression on failure without retrying or running optional readiness', async () => {
+        const configured = bootstrapProject();
+        const hash = inputHash(configured);
+        configured.phases = {};
+        let current = configured;
+        mocks.load.mockImplementation(async () => ({ project: current, trusted: true, currentInputHash: hash }));
+        mocks.run.mockImplementation(async () => {
+            current = graphProjectSchema.parse({
+                ...current,
+                phases: {
+                    preflight: {
+                        status: 'blocked',
+                        inputHash: hash,
+                        evidence: [],
+                        blockers: ['source (READ_DENIED): Stop.'],
+                    },
+                },
+            });
+        });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        await userEvent
+            .setup()
+            .click(await screen.findByRole('button', { name: 'Run for Check read-only connections' }));
+        await waitFor(() =>
+            expect(screen.queryByRole('button', { name: 'Stop automatic progression' })).not.toBeInTheDocument(),
+        );
+        expect(mocks.run).toHaveBeenCalledTimes(1);
+        expect(mocks.run).not.toHaveBeenCalledWith(expect.objectContaining({ operation: 'report' }));
+    });
+    it('waits for a current reduced-fidelity approval before automatically starting a source probe', async () => {
+        const configured = bootstrapProject();
+        configured.mapping.fidelity = 'reduced';
+        configured.source!.sourceMode = 'cosmos-documents';
+        configured.source!.documentEndpoint = 'https://fixture.documents.azure.com/';
+        configured.source!.documentProfile = 'auto-v1';
+        configured.source!.identityManifestHash = '1'.repeat(64);
+        const hash = inputHash(configured);
+        const passed = { status: 'succeeded' as const, inputHash: hash, evidence: [], blockers: [] };
+        configured.phases = { preflight: passed, 'source-enumerate': passed };
+        let current = configured;
+        mocks.load.mockImplementation(async () => ({ project: current, trusted: true, currentInputHash: hash }));
+        mocks.run.mockImplementation(async ({ operation }: { operation: string }) => {
+            current = graphProjectSchema.parse({
+                ...current,
+                phases: {
+                    ...current.phases,
+                    [operation]:
+                        operation === 'assess'
+                            ? passed
+                            : { status: 'running', inputHash: hash, evidence: [], blockers: [] },
+                },
+            });
+        });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        await userEvent.setup().click(await screen.findByRole('button', { name: 'Run for Assess application' }));
+        const approvalButtons = await screen.findAllByRole('button', { name: 'Authorize reduced document fidelity' });
+        expect(approvalButtons.filter((button) => !button.hasAttribute('disabled'))).toHaveLength(1);
+        expect(mocks.run.mock.calls.map(([value]) => value.operation)).toEqual(['assess']);
+        const grant = {
+            schemaVersion: 1 as const,
+            runId: current.runId,
+            operation: 'reduced-fidelity',
+            resources: ['2'.repeat(64)],
+            inputHash: hash,
+            expiresAt: '2099-01-01T00:00:00.000Z',
+            keyRef: 'env:GRAPH_APPROVAL_KEY',
+            signature: '3'.repeat(64),
+        };
+        act(() =>
+            listener({
+                type: 'project',
+                project: { ...current, approvals: [{ ...grant, inputHash: '0'.repeat(64) }] },
+                currentInputHash: hash,
+            }),
+        );
+        expect(mocks.run).toHaveBeenCalledTimes(1);
+        current = { ...current, approvals: [grant] };
+        act(() => listener({ type: 'project', project: current, currentInputHash: hash }));
+        await waitFor(() =>
+            expect(mocks.run.mock.calls.map(([value]) => value.operation)).toEqual(['assess', 'source-compatibility']),
+        );
+        expect(mocks.approve).not.toHaveBeenCalled();
+    });
+    it('allows automatic progression to be stopped while waiting for input, without cancelling or approving anything', async () => {
+        const configured = bootstrapProject();
+        const hash = inputHash(configured);
+        configured.phases = {};
+        let current = configured;
+        mocks.load.mockImplementation(async () => ({ project: current, trusted: true, currentInputHash: hash }));
+        mocks.run.mockImplementation(async () => {
+            current = graphProjectSchema.parse({
+                ...current,
+                phases: { preflight: { status: 'running', inputHash: hash, blockers: [], evidence: [] } },
+            });
+        });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        const user = userEvent.setup();
+        await user.click(await screen.findByRole('button', { name: 'Run for Check read-only connections' }));
+        const stop = await screen.findByRole('button', { name: 'Stop automatic progression' });
+        expect(stop).toHaveAccessibleName('Stop automatic progression');
+        await user.click(stop);
+        current = graphProjectSchema.parse({
+            ...current,
+            phases: { preflight: { status: 'succeeded', inputHash: hash, blockers: [], evidence: [] } },
+        });
+        act(() => listener({ type: 'project', project: current, currentInputHash: hash }));
+        expect(mocks.run).toHaveBeenCalledTimes(1);
+        expect(mocks.cancel).not.toHaveBeenCalled();
+        expect(mocks.approve).not.toHaveBeenCalled();
+    });
+    it('reopens editable Step 2 settings after an active run hits its request ceiling without renewing the old run', async () => {
+        const configured = bootstrapProject();
+        configured.source!.ruPerSecond = '400';
+        configured.limits.maximumOperationMillis = 1800000;
+        const hash = inputHash(configured);
+        for (const phase of Object.values(configured.phases)) phase.inputHash = hash;
+        configured.phases['source-enumerate'] = { status: 'running', inputHash: hash, evidence: [], blockers: [] };
+        mocks.load.mockResolvedValue({ project: configured, trusted: true, currentInputHash: hash });
+        mocks.preparation.mockResolvedValue({
+            partitions: ['fixture'],
+            origins: [],
+            notices: [],
+            coverage: 'unverified-candidates',
+        });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        expect(
+            await screen.findByRole('button', { name: 'Run for Enumerate read-only source identities' }),
+        ).toBeDisabled();
+        const blocked = graphProjectSchema.parse({
+            ...configured,
+            phases: {
+                ...configured.phases,
+                'source-enumerate': {
+                    status: 'blocked',
+                    inputHash: hash,
+                    evidence: ['artifacts/request-limit.json'],
+                    blockers: [
+                        'source-enumeration (SOURCE_ENUMERATION_REQUEST_LIMIT): Reviewed request ceiling reached.',
+                    ],
+                },
+            },
+        });
+        act(() => listener({ type: 'project', project: blocked, currentInputHash: hash }));
+        const requests = await screen.findByRole('spinbutton', { name: 'Maximum reserved request attempts' });
+        expect(requests).not.toBeDisabled();
+        expect(requests).toHaveValue(null);
+        expect(requests).toHaveAccessibleDescription(/stopped run exhausted its reviewed request allowance/i);
+        const review = screen.getByRole('button', { name: 'Review run settings' });
+        expect(review).toHaveTextContent('Review run settings');
+        expect(review).toHaveAccessibleName('Review run settings');
+        expect(review).not.toBeDisabled();
+        const user = userEvent.setup();
+        await user.click(review);
+        expect(screen.getByRole('spinbutton', { name: 'Maximum duration (seconds)' })).toHaveValue(1800);
+        expect(screen.getByRole('textbox', { name: 'Migration source pacing (RU/s)' })).toHaveValue('400');
+        expect(screen.getByRole('textbox', { name: 'Total source RU allowance per run' })).toHaveValue('1000');
+        const start = screen.getByRole('button', { name: 'Start bounded read-only preparation' });
+        expect(start).toBeDisabled();
+        await user.type(requests, '40000');
+        await user.click(screen.getByRole('checkbox', { name: /I confirm source writes are paused/ }));
+        expect(start).not.toBeDisabled();
+        await user.click(screen.getByRole('button', { name: 'Evidence 1 for Enumerate read-only source identities' }));
+        expect(mocks.openArtifact).toHaveBeenCalledWith('artifacts/request-limit.json');
+        await user.click(start);
+        expect(mocks.prepareSource).toHaveBeenCalledWith({
+            partitions: ['fixture'],
+            maximumRequests: 40000,
+            maximumDurationSeconds: 1800,
+            ruBudget: '1000',
+            ruPerSecond: '400',
+            confirmStableSource: true,
+        });
+        expect(mocks.resumePreparation).not.toHaveBeenCalled();
+        expect(mocks.save).not.toHaveBeenCalled();
+        expect(mocks.run).not.toHaveBeenCalled();
+        expect(blocked.phases['source-enumerate'].evidence).toEqual(['artifacts/request-limit.json']);
+    });
+    it('keeps stopped Step 2 review accessible when an earlier connection check needs rerunning', async () => {
+        const configured = bootstrapProject();
+        configured.phases.preflight.status = 'blocked';
+        mocks.load.mockResolvedValue({ project: configured, trusted: true, currentInputHash: inputHash(configured) });
+        mocks.preparation.mockResolvedValue({
+            partitions: ['fixture'],
+            origins: [],
+            notices: [],
+            coverage: 'unverified-candidates',
+        });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        const review = await screen.findByRole('button', { name: 'Review run settings' });
+        expect(review.closest('details')).toHaveAttribute('open');
+        expect(review).not.toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Run for Enumerate read-only source identities' })).toBeDisabled();
+        await userEvent.setup().click(review);
+        expect(await screen.findByRole('spinbutton', { name: 'Maximum reserved request attempts' })).not.toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Start bounded read-only preparation' })).toBeDisabled();
+        expect(mocks.prepareSource).not.toHaveBeenCalled();
+    });
+    it('does not hide stopped-run limits when local partition discovery fails', async () => {
+        const configured = bootstrapProject();
+        mocks.load.mockResolvedValue({ project: configured, trusted: true, currentInputHash: inputHash(configured) });
+        mocks.preparation.mockRejectedValue(new Error('Fixture local discovery failure'));
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        await userEvent.setup().click(await screen.findByRole('button', { name: 'Review run settings' }));
+        const requests = await screen.findByRole('spinbutton', { name: 'Maximum reserved request attempts' });
+        expect(requests).not.toBeDisabled();
+        await userEvent.setup().clear(requests);
+        await userEvent.setup().type(requests, '30000');
+        expect(requests).toHaveValue(30000);
+        expect(screen.getByRole('button', { name: 'Start bounded read-only preparation' })).toBeDisabled();
+        expect(await screen.findByText(/operation could not complete/)).toBeInTheDocument();
+        expect(mocks.prepareSource).not.toHaveBeenCalled();
+    });
+    it('focuses already-open review controls and exposes pending host confirmation instead of appearing inert', async () => {
+        const configured = bootstrapProject();
+        configured.source!.ruPerSecond = '400';
+        const hash = inputHash(configured);
+        for (const phase of Object.values(configured.phases)) phase.inputHash = hash;
+        mocks.load.mockResolvedValue({ project: configured, trusted: true, currentInputHash: hash });
+        mocks.preparation.mockResolvedValue({
+            partitions: ['fixture'],
+            origins: [],
+            notices: [],
+            coverage: 'unverified-candidates',
+        });
+        let cancelReview: () => void = () => {};
+        mocks.prepareSource.mockImplementation(
+            () =>
+                new Promise<void>((resolve) => {
+                    cancelReview = resolve;
+                }),
+        );
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        const user = userEvent.setup();
+        const review = await screen.findByRole('button', { name: 'Review run settings' });
+        await user.click(review);
+        const requests = await screen.findByRole('spinbutton', { name: 'Maximum reserved request attempts' });
+        await user.clear(requests);
+        await user.type(requests, '40000');
+        await user.click(review);
+        expect(requests).toHaveFocus();
+        expect(requests).toHaveValue(40000);
+        await user.click(screen.getByRole('checkbox', { name: /I confirm source writes are paused/ }));
+        await user.click(screen.getByRole('button', { name: 'Start bounded read-only preparation' }));
+        expect(
+            await screen.findByText(/Waiting for confirmation in the VS Code dialog outside this panel/),
+        ).toBeInTheDocument();
+        await act(async () => cancelReview());
+        expect(screen.queryByText(/Waiting for confirmation in the VS Code dialog outside this panel/)).toBeNull();
+        expect(screen.getByRole('button', { name: 'Start bounded read-only preparation' })).not.toBeDisabled();
+    });
+    it('does not silently restart an expired run with the hidden 120-second default and opens distinct evidence buttons', async () => {
+        const configured = bootstrapProject();
+        configured.limits.maximumOperationMillis = 120000;
+        for (const phase of Object.values(configured.phases))
+            if (phase.status === 'succeeded') phase.inputHash = inputHash(configured);
+        configured.phases['source-enumerate'] = {
+            status: 'paused',
+            inputHash: inputHash(configured),
+            blockers: [
+                'worker-control (OPERATION_DEADLINE_PARTIAL_STATE_PRESERVED): The configured overall operation time limit was reached.',
+            ],
+            evidence: ['artifacts/source-enumerate-worker.json', 'artifacts/source-enumerate-host-stop-fixture.json'],
+        };
+        mocks.load.mockResolvedValue({ project: configured, trusted: true, currentInputHash: inputHash(configured) });
+        mocks.preparation.mockResolvedValue({
+            partitions: ['fixture'],
+            origins: [],
+            notices: [],
+            coverage: 'unverified-candidates',
+        });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        const user = userEvent.setup();
+        const first = await screen.findByRole('button', {
+            name: 'Evidence 1 for Enumerate read-only source identities',
+        });
+        const second = screen.getByRole('button', { name: 'Evidence 2 for Enumerate read-only source identities' });
+        expect(first).toHaveAccessibleDescription('Worker-produced report for this step.');
+        expect(second).toHaveAccessibleDescription(/Extension-host stop report/);
+        await user.click(first);
+        await user.click(second);
+        expect(mocks.openArtifact.mock.calls).toEqual([
+            ['artifacts/source-enumerate-worker.json'],
+            ['artifacts/source-enumerate-host-stop-fixture.json'],
+        ]);
+        await user.click(screen.getByRole('button', { name: 'Run for Enumerate read-only source identities' }));
+        const duration = await screen.findByRole('spinbutton', { name: 'Maximum duration (seconds)' });
+        expect(duration).toHaveValue(null);
+        expect(duration).toHaveAccessibleDescription(/previous run reached its time limit/i);
+        expect(screen.getByText(/Previous configured overall limit: 120 seconds/)).toBeInTheDocument();
+        await user.click(screen.getByRole('checkbox', { name: /I confirm source writes are paused/ }));
+        const rate = screen.getByRole('textbox', { name: 'Migration source pacing (RU/s)' });
+        await user.type(rate, '400');
+        const start = screen.getByRole('button', { name: 'Start bounded read-only preparation' });
+        expect(start).toBeDisabled();
+        await user.type(duration, '1800');
+        expect(start).not.toBeDisabled();
+        await user.click(start);
+        expect(mocks.prepareSource).toHaveBeenCalledWith(expect.objectContaining({ maximumDurationSeconds: 1800 }));
+        expect(mocks.resumePreparation).not.toHaveBeenCalled();
+    });
+    it('retains the saved reviewed duration when opening a nonexpired preparation instead of reverting to 120 seconds', async () => {
+        const configured = bootstrapProject();
+        configured.limits.maximumOperationMillis = 1800000;
+        for (const phase of Object.values(configured.phases)) phase.inputHash = inputHash(configured);
+        mocks.load.mockResolvedValue({ project: configured, trusted: true, currentInputHash: inputHash(configured) });
+        mocks.preparation.mockResolvedValue({
+            partitions: ['fixture'],
+            origins: [],
+            notices: [],
+            coverage: 'unverified-candidates',
+        });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        await userEvent
+            .setup()
+            .click(await screen.findByRole('button', { name: 'Run for Enumerate read-only source identities' }));
+        expect(await screen.findByRole('spinbutton', { name: 'Maximum duration (seconds)' })).toHaveValue(1800);
+        const stopped = graphProjectSchema.parse({
+            ...configured,
+            phases: {
+                ...configured.phases,
+                'source-enumerate': {
+                    status: 'paused',
+                    inputHash: inputHash(configured),
+                    evidence: [],
+                    blockers: [
+                        'worker-control (OPERATION_DEADLINE): The configured overall operation time limit was reached.',
+                    ],
+                },
+            },
+        });
+        act(() => listener({ type: 'project', project: stopped, currentInputHash: inputHash(stopped) }));
+        await waitFor(() =>
+            expect(screen.getByRole('spinbutton', { name: 'Maximum duration (seconds)' })).toHaveValue(null),
+        );
+    });
+    it('shows bounded live activity inside its step, retains it when paused, and exposes paused evidence', async () => {
+        const configured = bootstrapProject();
+        configured.phases['source-enumerate'] = {
+            status: 'running',
+            inputHash: inputHash(configured),
+            evidence: [],
+            blockers: [],
+        };
+        mocks.load.mockResolvedValue({ project: configured, trusted: true, currentInputHash: inputHash(configured) });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        await screen.findByRole('textbox', { name: 'Graph project JSON' });
+        const frame = {
+            protocolVersion: 1 as const,
+            runId: configured.runId,
+            operationId: 'owned',
+            sequence: 1,
+            timestamp: new Date().toISOString(),
+            phase: 'source-enumerate',
+        };
+        act(() =>
+            listener({
+                type: 'worker',
+                message: {
+                    ...frame,
+                    type: 'progress',
+                    payload: {
+                        type: 'source-progress',
+                        stage: 'source-enumeration-edge-page',
+                        vertices: 100,
+                        edges: 200,
+                        reservedRequests: 300,
+                        elapsedMillis: 120000,
+                    },
+                },
+            }),
+        );
+        const log = await screen.findByRole('log', {
+            name: 'Recent activity for Enumerate read-only source identities',
+        });
+        const output = within(log).getByRole('textbox', {
+            name: 'Recent activity for Enumerate read-only source identities',
+        });
+        if (!(output instanceof HTMLTextAreaElement)) throw new Error('Expected native read-only activity textarea');
+        expect(output.value).toContain('Reading an outgoing-edge identity page');
+        expect(output.value).toContain('Enumerated vertices: 100; edges: 200');
+        output.focus();
+        act(() => {
+            for (let index = 0; index < 25; index++)
+                listener({
+                    type: 'worker',
+                    message: {
+                        ...frame,
+                        type: 'progress',
+                        sequence: index + 2,
+                        payload: {
+                            type: 'source-progress',
+                            stage: 'source-enumeration-edge-page',
+                            vertices: 100,
+                            edges: 200,
+                            reservedRequests: 301 + index,
+                            elapsedMillis: 121000 + index * 1000,
+                        },
+                    },
+                });
+        });
+        expect(output.value).toContain('reserved request attempts: 325');
+        expect(output.value).toContain('reserved request attempts: 300');
+        expect(output.value.split('\n')).toHaveLength(20);
+        expect(output).toHaveFocus();
+        act(() =>
+            listener({
+                type: 'activity-snapshot',
+                phase: 'source-enumerate',
+                messages: [300, 324, 325].map((attempt, index) => ({
+                    ...frame,
+                    type: 'progress' as const,
+                    sequence: 100 + index,
+                    payload: {
+                        type: 'source-progress',
+                        stage: 'source-enumeration-edge-page',
+                        vertices: 100,
+                        edges: 200,
+                        reservedRequests: attempt,
+                        elapsedMillis: 120000 + index * 1000,
+                    },
+                })),
+            }),
+        );
+        expect(output.value.split('\n')).toHaveLength(3);
+        expect(output.value.split('\n').slice(-2).join(' ')).toContain('reserved request attempts: 324');
+        expect(output.value.split('\n').at(-1)).toContain('reserved request attempts: 325');
+        expect(output).toHaveFocus();
+        act(() =>
+            listener({
+                type: 'worker',
+                message: {
+                    ...frame,
+                    sequence: 2,
+                    type: 'progress',
+                    payload: {
+                        type: 'source-progress',
+                        stage: 'source-enumeration-edge-page',
+                        vertices: 100,
+                        edges: 200,
+                        reservedRequests: 300,
+                        elapsedMillis: 120000,
+                        query: 'private-query',
+                    },
+                },
+            }),
+        );
+        expect(screen.queryByText(/private-query/)).not.toBeInTheDocument();
+        const paused = graphProjectSchema.parse({
+            ...configured,
+            phases: {
+                ...configured.phases,
+                'source-enumerate': {
+                    status: 'paused',
+                    inputHash: inputHash(configured),
+                    evidence: ['artifacts/stopped.json'],
+                    blockers: [
+                        'worker-control (OPERATION_DEADLINE): The configured overall operation time limit was reached.',
+                    ],
+                },
+            },
+        });
+        act(() => listener({ type: 'project', project: paused, currentInputHash: inputHash(paused) }));
+        expect(output.value).toContain('Enumerated vertices: 100; edges: 200');
+        const evidence = screen.getByRole('button', { name: 'Evidence 1 for Enumerate read-only source identities' });
+        expect(evidence).toHaveTextContent('Evidence 1');
+        expect(evidence).not.toBeDisabled();
+        await userEvent.setup().click(evidence);
+        expect(mocks.openArtifact).toHaveBeenCalledWith('artifacts/stopped.json');
+        expect(mocks.run).not.toHaveBeenCalled();
+    });
+    it('shows total-run spend separately from RU/s in safe blocked evidence', async () => {
+        renderWorkbench();
+        await screen.findByRole('textbox', { name: 'Graph project JSON' });
+        act(() =>
+            listener({
+                type: 'worker',
+                message: {
+                    protocolVersion: 1,
+                    type: 'result',
+                    runId: 'fixture',
+                    operationId: 'owned',
+                    sequence: 1,
+                    timestamp: new Date().toISOString(),
+                    phase: 'complete',
+                    payload: {
+                        status: 'blocked',
+                        code: 'SOURCE_RU_BUDGET_EXHAUSTED',
+                        stage: 'source-enumeration-vertex-page',
+                        remediation: 'Waiting does not replenish the total-run allowance.',
+                        templateId: 'source-keyset-page-v2',
+                        ruBudget: '1000',
+                        ruConsumed: '1001.5',
+                        ruRemaining: '0',
+                        ruPerSecond: '400',
+                    },
+                },
+            }),
+        );
+        const alert = await screen.findByRole('alert');
+        expect(alert).toHaveTextContent('total allowance 1000 RU');
+        expect(alert).toHaveTextContent('consumed 1001.5 RU');
+        expect(alert).toHaveTextContent('remaining 0 RU');
+        expect(alert).toHaveTextContent('pacing 400 RU/s');
+        expect(mocks.run).not.toHaveBeenCalled();
+        expect(mocks.approve).not.toHaveBeenCalled();
+    });
+    it('renders safe unknown-charge reason without suggesting a higher RU limit will fix it', async () => {
+        renderWorkbench();
+        await screen.findByRole('textbox', { name: 'Graph project JSON' });
+        act(() =>
+            listener({
+                type: 'worker',
+                message: {
+                    protocolVersion: 1,
+                    type: 'result',
+                    runId: 'fixture',
+                    operationId: 'owned',
+                    sequence: 1,
+                    timestamp: new Date().toISOString(),
+                    phase: 'complete',
+                    payload: {
+                        status: 'blocked',
+                        code: 'SOURCE_RU_UNOBSERVABLE',
+                        stage: 'source-enumeration-edge-page',
+                        remediation:
+                            'A complete request charge could not be established. Raising RU limits cannot fix this.',
+                        templateId: 'source-keyset-page-v2',
+                        chargeObservation: 'missing-total',
+                        ruBudget: '999999',
+                        ruPerSecond: '5000',
+                    },
+                },
+            }),
+        );
+        const alert = await screen.findByRole('alert');
+        expect(alert).toHaveTextContent('source-enumeration-edge-page');
+        expect(alert).toHaveTextContent('missing-total');
+        expect(alert).toHaveTextContent('Raising RU limits cannot fix this.');
+        expect(alert).not.toHaveTextContent('consumed 0 RU');
+        expect(mocks.run).not.toHaveBeenCalled();
+    });
+    it('collapses finished steps, highlights and scrolls to the next, and retains manually reopened evidence', async () => {
+        const configured = graphProjectSchema.parse({ ...bootstrapProject(), phases: {} });
+        const hash = inputHash(configured);
+        mocks.load.mockResolvedValue({ project: configured, trusted: true, currentInputHash: hash });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        const connection = await screen.findByRole('button', { name: 'Run for Check read-only connections' });
+        const required = screen.getByLabelText('Required migration steps');
+        const cards = Array.from(required.querySelectorAll('details')).filter(
+            (card) => card.parentElement === required,
+        );
+        expect(cards[0]).toHaveAttribute('open');
+        expect(cards.slice(1).every((card) => !card.open)).toBe(true);
+        expect(screen.queryByText('Next unfinished step')).not.toBeInTheDocument();
+        const scroll = vi.fn();
+        cards[1].scrollIntoView = scroll;
+        expect(connection).not.toBeDisabled();
+        expect(
+            within(required)
+                .getAllByRole('button', { hidden: true })
+                .filter((button) => !button.hasAttribute('disabled')),
+        ).toEqual([connection]);
+        const passed = {
+            status: 'succeeded' as const,
+            inputHash: hash,
+            evidence: ['artifacts/connections.json'],
+            blockers: [],
+        };
+        const connected = graphProjectSchema.parse({ ...configured, phases: { preflight: passed } });
+        act(() => listener({ type: 'project', project: connected, currentInputHash: hash }));
+        expect(connection).toBeDisabled();
+        expect(cards[0]).not.toHaveAttribute('open');
+        expect(cards[1]).toHaveAttribute('open');
+        expect(cards[1].querySelector('summary')).toHaveAttribute('aria-current', 'step');
+        expect(cards[1]).toHaveAttribute('data-active', 'true');
+        expect(cards[1]).toHaveFocus();
+        expect(scroll).toHaveBeenCalledWith({ block: 'start', behavior: 'instant' });
+        expect(cards[1].className).not.toBe(cards[0].className);
+        await userEvent.setup().click(cards[0].querySelector('summary')!);
+        expect(screen.getByRole('button', { name: 'Evidence 1 for Check read-only connections' })).not.toBeDisabled();
+        act(() => listener({ type: 'project', project: connected, currentInputHash: hash }));
+        expect(cards[0]).toHaveAttribute('open');
+        expect(
+            screen.getByRole('button', { name: 'Run for Enumerate read-only source identities' }),
+        ).not.toBeDisabled();
+        expect(mocks.run).not.toHaveBeenCalled();
+        const adopted = graphProjectSchema.parse({
+            ...connected,
+            source: { ...connected.source!, identityManifestHash: '1'.repeat(64) },
+            phases: {
+                preflight: passed,
+                'source-enumerate': { ...passed, evidence: ['artifacts/enumeration.json'] },
+                assess: passed,
+            },
+        });
+        act(() => listener({ type: 'project', project: adopted, currentInputHash: hash }));
+        const fidelity = screen.getByRole('button', { name: 'Run for Probe read-only source compatibility' });
+        expect(fidelity).not.toBeDisabled();
+        expect(
+            screen.getByRole('button', { name: 'Run for Enumerate read-only source identities', hidden: true }),
+        ).toBeDisabled();
+        const checked = graphProjectSchema.parse({
+            ...adopted,
+            phases: {
+                ...adopted.phases,
+                'source-compatibility': { ...passed, evidence: ['artifacts/fidelity.json'] },
+                mapping: passed,
+            },
+            artifacts: [
+                {
+                    relativePath: 'artifacts/fidelity.json',
+                    ownerRunId: adopted.runId,
+                    sha256: '2'.repeat(64),
+                    sensitive: true,
+                },
+            ],
+        });
+        mocks.load.mockResolvedValue({ project: checked, trusted: true, currentInputHash: hash });
+        await userEvent.setup().click(screen.getByRole('button', { name: 'Reload persisted state' }));
+        const extract = screen.getByRole('button', { name: 'Run for Extract read-only source' });
+        await waitFor(() => expect(extract).not.toBeDisabled());
+        expect(fidelity).toBeDisabled();
+        expect(
+            screen.getByRole('button', { name: 'Run for Load approved target graphs', hidden: true }),
+        ).toBeDisabled();
+        act(() => listener({ type: 'project', project: checked, currentInputHash: 'f'.repeat(64) }));
+        expect(extract).toBeDisabled();
+        expect(connection).not.toBeDisabled();
+        expect(mocks.approve).not.toHaveBeenCalled();
+    });
+    it('shows adopted inventory as current and directs continuation to the enabled connection recheck', async () => {
+        const configured = bootstrapProject();
+        configured.source!.identityManifestHash = '1'.repeat(64);
+        const hash = inputHash(configured);
+        const receipt = `artifacts/adopted-inventory-${configured.runId}.json`;
+        configured.phases = {
+            preflight: {
+                status: 'stale',
+                inputHash: '0'.repeat(64),
+                evidence: ['artifacts/old-preflight.json'],
+                blockers: [],
+            },
+            'source-enumerate': {
+                status: 'succeeded',
+                inputHash: hash,
+                evidence: [receipt, 'artifacts/original-enumeration.json'],
+                blockers: [],
+            },
+        };
+        configured.artifacts = [
+            { relativePath: receipt, ownerRunId: configured.runId, sha256: '2'.repeat(64), sensitive: true },
+        ];
+        mocks.load.mockResolvedValue({ project: configured, trusted: true, currentInputHash: hash });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        const next = await screen.findByRole('button', { name: 'Go to next unfinished step' });
+        const connections = screen.getByRole('button', { name: 'Run for Check read-only connections' });
+        expect(connections).not.toBeDisabled();
+        expect(
+            screen.getByText(
+                'Your verified inventory is saved. Recheck connections for the new run; do not repeat enumeration.',
+            ),
+        ).toBeVisible();
+        const enumeration = screen.getByRole('button', {
+            name: 'Run for Enumerate read-only source identities',
+            hidden: true,
+        });
+        expect(enumeration).toBeDisabled();
+        expect(enumeration.closest('details')?.querySelector('summary')).toHaveTextContent('Succeeded');
+        expect(screen.getByText(/Verified inventory adopted for this run/)).not.toBeVisible();
+        await userEvent.setup().click(enumeration.closest('details')!.querySelector('summary')!);
+        expect(screen.getByText(/Verified inventory adopted for this run/)).toBeVisible();
+        connections.scrollIntoView = vi.fn();
+        expect(next).toBeEnabled();
+        await userEvent.setup().click(next);
+        expect(next).toBeEnabled();
+        expect(next.isConnected).toBe(true);
+        expect(connections.isConnected).toBe(true);
+        expect(connections.scrollIntoView).toHaveBeenCalled();
+        expect(connections).toHaveFocus();
+        expect(mocks.run).not.toHaveBeenCalled();
+        await userEvent.setup().click(connections);
+        expect(mocks.run).toHaveBeenCalledWith(expect.objectContaining({ operation: 'preflight' }));
+    });
+    it('explains a document-policy block and focuses its setting without changing policy, restarting or approving', async () => {
+        const configured = bootstrapProject();
+        configured.source = {
+            ...configured.source!,
+            sourceMode: 'cosmos-documents',
+            documentEndpoint: 'https://fixture.documents.azure.com:443/',
+            documentProfile: 'auto-v1',
+            identityManifestHash: '1'.repeat(64),
+        };
+        const hash = inputHash(configured);
+        const passed = { status: 'succeeded' as const, inputHash: hash, evidence: [], blockers: [] };
+        configured.phases = {
+            preflight: passed,
+            'source-enumerate': passed,
+            assess: passed,
+            'source-compatibility': {
+                status: 'blocked',
+                inputHash: hash,
+                evidence: ['artifacts/strict-block.json'],
+                blockers: ['source-fidelity (DOCUMENT_FIDELITY_UNOBSERVABLE): Required details are unobservable.'],
+            },
+        };
+        mocks.load.mockResolvedValue({ project: configured, trusted: true, currentInputHash: hash });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        const review = await screen.findByRole('button', { name: 'Review source-detail policy' });
+        expect(review).toHaveTextContent('Review source-detail policy');
+        expect(review).toHaveAccessibleName('Review source-detail policy');
+        const configuration = screen
+            .getAllByText('Configuration and mapping')
+            .find((element) => element.tagName === 'SUMMARY')!
+            .closest('details')!;
+        const user = userEvent.setup();
+        if (configuration.open) await user.click(configuration.querySelector('summary')!);
+        await user.click(review);
+        expect(configuration.open).toBe(true);
+        const policy = screen.getByRole('combobox', { name: 'When source details cannot be verified' });
+        expect(policy).toHaveFocus();
+        expect(policy).toHaveValue('strict');
+        expect(screen.getByText(/this is not an endpoint or RU-limit error/)).toBeVisible();
+        expect(screen.getByText(/Your inventory is retained; no restart is needed/)).toBeVisible();
+        expect(mocks.run).not.toHaveBeenCalled();
+        expect(mocks.approve).not.toHaveBeenCalled();
+        expect(mocks.saveSetup).not.toHaveBeenCalled();
+        await user.selectOptions(policy, 'reduced');
+        await user.click(screen.getByRole('button', { name: 'Save connection settings' }));
+        expect(mocks.saveSetup).toHaveBeenCalledWith(expect.objectContaining({ documentFidelity: 'reduced' }));
+        expect(mocks.saveSetup.mock.calls[0][0].restart).toBeUndefined();
+        expect(mocks.approve).not.toHaveBeenCalled();
+        expect(mocks.run).not.toHaveBeenCalled();
+    });
+    it('preserves opened document retry settings across the required connection recheck', async () => {
+        const configured = bootstrapProject();
+        configured.source = {
+            ...configured.source!,
+            sourceMode: 'cosmos-documents',
+            documentEndpoint: 'https://fixture.documents.azure.com/',
+            documentProfile: 'property-bags-v1',
+            ruPerSecond: '1000',
+        };
+        const hash = inputHash(configured);
+        configured.phases = {
+            preflight: {
+                status: 'blocked',
+                inputHash: hash,
+                evidence: [],
+                blockers: ['source-connectivity (SOURCE_ACCESS_DENIED): fixture'],
+            },
+            'source-enumerate': {
+                status: 'blocked',
+                inputHash: hash,
+                evidence: [],
+                blockers: ['source-request (SOURCE_SPEND_UNKNOWN): fixture'],
+            },
+        };
+        let listener: (event: GraphEvent) => void = () => {
+            throw new Error('Subscription was not registered');
+        };
+        mocks.subscribe.mockImplementation((_input, { onData }) => {
+            listener = onData;
+            return { unsubscribe: vi.fn() };
+        });
+        mocks.load.mockResolvedValue({ project: configured, trusted: true, currentInputHash: hash });
+        mocks.preparation.mockResolvedValue({ partitions: [], notices: [] });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        const user = userEvent.setup();
+        await user.click(await screen.findByRole('button', { name: 'Review run settings' }));
+        const requests = screen.getByRole('spinbutton', { name: 'Maximum reserved request attempts' });
+        await user.clear(requests);
+        await user.type(requests, '200');
+        act(() =>
+            listener({
+                type: 'project',
+                project: {
+                    ...configured,
+                    phases: {
+                        ...configured.phases,
+                        preflight: { status: 'running', inputHash: hash, evidence: [], blockers: [] },
+                    },
+                },
+                currentInputHash: hash,
+            }),
+        );
+        act(() =>
+            listener({
+                type: 'project',
+                project: {
+                    ...configured,
+                    phases: {
+                        ...configured.phases,
+                        preflight: { status: 'succeeded', inputHash: hash, evidence: [], blockers: [] },
+                    },
+                },
+                currentInputHash: hash,
+            }),
+        );
+        expect(screen.getByRole('button', { name: 'Review document-feed preparation' })).toBeVisible();
+        expect(screen.getByRole('spinbutton', { name: 'Maximum reserved request attempts' })).toHaveValue(200);
+    });
+    it('routes the next enumeration step to guided review and preserved resume, never the default raw plan', async () => {
+        const current = bootstrapProject();
+        mocks.load.mockResolvedValue({ project: current, trusted: true, currentInputHash: inputHash(current) });
+        mocks.preparation.mockResolvedValue({
+            partitions: ['fixture'],
+            origins: [],
+            notices: [],
+            coverage: 'unverified-candidates',
+            resume: { plan: 'artifacts/enumeration-plan-fixture.json', output: 'artifacts/source-enumeration-fixture' },
+        });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        const review = await screen.findByRole('button', { name: 'Run for Enumerate read-only source identities' });
+        expect(review).toHaveTextContent('Run');
+        expect(review).not.toBeDisabled();
+        await userEvent.setup().click(review);
+        expect(mocks.run).not.toHaveBeenCalled();
+        await userEvent
+            .setup()
+            .click(await screen.findByRole('button', { name: 'Resume preserved read-only preparation' }));
+        expect(mocks.resumePreparation).toHaveBeenCalledOnce();
+        expect(mocks.prepareSource).not.toHaveBeenCalled();
+        expect(mocks.run).not.toHaveBeenCalled();
+    });
+    it('has one sequential enumeration card and no duplicate raw control in all phases', async () => {
+        const current = bootstrapProject();
+        mocks.load.mockResolvedValue({ project: current, trusted: true, currentInputHash: inputHash(current) });
+        mocks.preparation.mockResolvedValue({
+            partitions: [],
+            origins: [],
+            notices: [],
+            coverage: 'unverified-candidates',
+        });
+        renderWorkbench();
+        const button = await screen.findByRole('button', {
+            name: 'Run for Enumerate read-only source identities',
+        });
+        expect(screen.getAllByRole('button', { name: 'Run for Enumerate read-only source identities' })).toHaveLength(
+            1,
+        );
+        await userEvent.setup().click(button);
+        await screen.findByRole('button', { name: 'Find partition candidates' });
+        expect(mocks.run).not.toHaveBeenCalled();
+        expect(mocks.prepareSource).not.toHaveBeenCalled();
+        expect(mocks.resumePreparation).not.toHaveBeenCalled();
+        expect(screen.queryByLabelText('Run-relative source enumeration plan path')).toBeNull();
+    });
+    it('keeps bounded preparation disabled until candidate, ceilings and stable-source review are supplied', async () => {
+        const current = bootstrapProject();
+        mocks.load.mockResolvedValue({ project: current, trusted: true, currentInputHash: inputHash(current) });
+        mocks.preparation.mockResolvedValue({
+            partitions: ['fixture'],
+            origins: [],
+            notices: [],
+            coverage: 'unverified-candidates',
+        });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        await userEvent
+            .setup()
+            .click(await screen.findByRole('button', { name: 'Run for Enumerate read-only source identities' }));
+        const start = await screen.findByRole('button', { name: 'Start bounded read-only preparation' });
+        expect(start).toBeDisabled();
+        await userEvent.setup().clear(screen.getByRole('spinbutton', { name: 'Maximum reserved request attempts' }));
+        await userEvent
+            .setup()
+            .type(screen.getByRole('spinbutton', { name: 'Maximum reserved request attempts' }), '20');
+        await userEvent.setup().clear(screen.getByRole('spinbutton', { name: 'Maximum duration (seconds)' }));
+        const duration = screen.getByRole('spinbutton', { name: 'Maximum duration (seconds)' });
+        expect(duration).toHaveAttribute('max', '86400');
+        await userEvent.setup().type(duration, '1800');
+        expect(screen.getByText(/including identity pages and all count reconciliation/)).toBeInTheDocument();
+        await userEvent.setup().click(screen.getByRole('checkbox', { name: /I confirm source writes are paused/ }));
+        const total = screen.getByRole('textbox', { name: 'Total source RU allowance per run' });
+        const rate = screen.getByRole('textbox', { name: 'Migration source pacing (RU/s)' });
+        expect(total).toHaveValue('1000');
+        expect(rate).toHaveValue('');
+        expect(start).toBeDisabled();
+        await userEvent.setup().clear(total);
+        await userEvent.setup().type(total, '120000');
+        await userEvent.setup().type(rate, '400');
+        expect(start).not.toBeDisabled();
+        await userEvent.setup().click(start);
+        expect(mocks.prepareSource).toHaveBeenCalledWith({
+            partitions: ['fixture'],
+            maximumRequests: 20,
+            maximumDurationSeconds: 1800,
+            ruBudget: '120000',
+            ruPerSecond: '400',
+            confirmStableSource: true,
+        });
+        expect(mocks.run).not.toHaveBeenCalled();
+        expect(mocks.resumePreparation).not.toHaveBeenCalled();
+    });
+    it('uses the host input snapshot to enable extraction only for current owned fidelity', async () => {
+        const supplied = graphProjectSchema.parse({
+            ...project,
+            source: {
+                scope: 'fixture',
+                host: 'localhost',
+                port: 443,
+                database: 'db',
+                container: 'graph',
+                partitionKeyPath: '/pk',
+                authenticationRef: null,
+                extractionStrategy: 'verified-identity-manifest',
+                identityManifest: 'identities.ndjson',
+                identityManifestHash: '1'.repeat(64),
+                compatibilityEvidence: 'artifacts/fidelity.json',
+                ruBudget: null,
+                customCaRef: null,
+                syntheticTestContainer: false,
+            },
+        });
+        const current = graphProjectSchema.parse({
+            ...supplied,
+            phases: {
+                preflight: { status: 'succeeded', inputHash: inputHash(supplied), blockers: [], evidence: [] },
+                assess: { status: 'succeeded', inputHash: inputHash(supplied), blockers: [], evidence: [] },
+                mapping: { status: 'succeeded', inputHash: inputHash(supplied), blockers: [], evidence: [] },
+                'source-compatibility': {
+                    status: 'succeeded',
+                    inputHash: inputHash(supplied),
+                    blockers: [],
+                    evidence: ['artifacts/fidelity.json'],
+                },
+            },
+            artifacts: [
+                {
+                    relativePath: 'artifacts/fidelity.json',
+                    ownerRunId: supplied.runId,
+                    sha256: '2'.repeat(64),
+                    sensitive: true,
+                },
+            ],
+        });
+        mocks.load.mockResolvedValue({ project: current, trusted: true, currentInputHash: inputHash(current) });
+        renderWorkbench();
+        const button = await screen.findByRole('button', { name: 'Run for Extract read-only source' });
+        expect(button).not.toBeDisabled();
+        act(() => listener({ type: 'project', project: current, currentInputHash: '0'.repeat(64) }));
+        expect(button).toBeDisabled();
+        expect(button).toHaveAccessibleDescription(/current, succeeded source fidelity/);
+        expect(mocks.run).not.toHaveBeenCalled();
+    });
+    it('shows a safe failed substep and concrete remedy from the worker acknowledgement', async () => {
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        await screen.findByRole('button', { name: 'Run for Check read-only connections' });
+        act(() =>
+            listener({
+                type: 'worker',
+                message: {
+                    protocolVersion: 1,
+                    type: 'result',
+                    runId: 'fixture',
+                    operationId: 'owned',
+                    sequence: 1,
+                    timestamp: new Date().toISOString(),
+                    phase: 'complete',
+                    payload: {
+                        status: 'blocked',
+                        diagnostics: [
+                            {
+                                status: 'blocked',
+                                code: 'ENDPOINT_AUTHENTICATION',
+                                stage: 'target-connectivity',
+                                remediation: 'Renew the configured credential securely.',
+                            },
+                        ],
+                    },
+                },
+            }),
+        );
+        expect(await screen.findByRole('alert')).toHaveTextContent('target-connectivity (ENDPOINT_AUTHENTICATION)');
+        expect(screen.getByRole('alert')).toHaveTextContent('Renew the configured credential securely.');
+    });
+    it('retains safe HTTP status in current diagnostics and presents stale results only as history', async () => {
+        mocks.load.mockResolvedValue({
+            project: {
+                ...project,
+                phases: {
+                    preflight: {
+                        status: 'stale',
+                        inputHash: '0'.repeat(64),
+                        evidence: [],
+                        blockers: [
+                            'target-query (TARGET_ENDPOINT_NOT_FOUND, HTTP 404): Verify the existing dataset query path.',
+                        ],
+                    },
+                },
+            },
+            trusted: true,
+        });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        const summary = await screen.findAllByText('Previous result — not a current connection check');
+        expect(summary[0].closest('details')).not.toHaveAttribute('open');
+        expect(screen.getAllByText(/target-query \(TARGET_ENDPOINT_NOT_FOUND/)[0]).not.toBeVisible();
+        expect(mocks.run).not.toHaveBeenCalled();
+        act(() =>
+            listener({
+                type: 'worker',
+                message: {
+                    protocolVersion: 1,
+                    type: 'result',
+                    runId: 'fixture',
+                    operationId: 'owned',
+                    sequence: 1,
+                    timestamp: new Date().toISOString(),
+                    phase: 'complete',
+                    payload: {
+                        status: 'blocked',
+                        diagnostics: [
+                            {
+                                status: 'blocked',
+                                code: 'TARGET_ENDPOINT_NOT_FOUND',
+                                stage: 'target-query',
+                                httpStatus: 404,
+                                remediation: 'Verify the existing dataset query path.',
+                            },
+                        ],
+                    },
+                },
+            }),
+        );
+        expect(await screen.findByRole('alert')).toHaveTextContent('TARGET_ENDPOINT_NOT_FOUND, HTTP 404');
+        act(() => listener({ type: 'project', project }));
+        await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    });
+    it('keeps full JSON collapsed by default and saves the visible connection fields independently', async () => {
+        mocks.load.mockResolvedValue({
+            project,
+            trusted: true,
+            setup: {
+                values: {
+                    host: 'account.gremlin.cosmos.azure.com',
+                    database: 'db',
+                    container: 'graph',
+                    partitionKeyPath: '/tenant',
+                    datasetUrl: 'http://localhost:3030/graph',
+                    consistency: '',
+                },
+                origins: { host: '.env' },
+                notices: [],
+            },
+        });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        await waitFor(() =>
+            expect(screen.getByRole('combobox', { name: 'Source read mode' })).toHaveValue('cosmos-documents'),
+        );
+        expect(screen.getByText('Advanced configuration and mapping').closest('details')).not.toHaveAttribute('open');
+        expect(screen.getByLabelText('Graph project JSON')).not.toBeVisible();
+        const user = userEvent.setup();
+        await user.type(
+            screen.getByRole('textbox', { name: 'Cosmos .NET SDK document endpoint' }),
+            'https://account.documents.azure.com/',
+        );
+        await user.selectOptions(screen.getByRole('combobox', { name: 'Source consistency' }), 'quiesced');
+        await user.click(screen.getByRole('button', { name: 'Save connection settings' }));
+        expect(mocks.saveSetup).toHaveBeenCalledWith(
+            expect.objectContaining({
+                host: 'account.gremlin.cosmos.azure.com',
+                partitionKeyPath: '/tenant',
+                consistency: 'quiesced',
+                sourceMode: 'cosmos-documents',
+                documentEndpoint: 'https://account.documents.azure.com/',
+            }),
+        );
+        expect(mocks.run).not.toHaveBeenCalled();
+    });
+    it('restarts a blocked legacy run with edited document settings before executing connection checks', async () => {
+        const previous = bootstrapProject();
+        mocks.load.mockResolvedValue({ project: previous, trusted: true, currentInputHash: inputHash(previous) });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        await screen.findByRole('combobox', { name: 'Source read mode' });
+        const user = userEvent.setup();
+        const configurationSummary = screen.getByText('Configuration and mapping', { selector: 'summary' });
+        if (!configurationSummary.closest('details')?.open) await user.click(configurationSummary);
+        await user.selectOptions(screen.getByRole('combobox', { name: 'Source read mode' }), 'cosmos-documents');
+        await user.type(
+            screen.getByRole('textbox', { name: 'Cosmos .NET SDK document endpoint' }),
+            'https://account.documents.azure.com/',
+        );
+        expect(screen.getByRole('button', { name: 'Go to next unfinished step' })).toBeDisabled();
+        act(() =>
+            listener({
+                type: 'project',
+                project: structuredClone(previous),
+                currentInputHash: inputHash(previous),
+            }),
+        );
+        expect(screen.getByRole('combobox', { name: 'Source read mode' })).toHaveValue('cosmos-documents');
+        const restarted = graphProjectSchema.parse({
+            ...previous,
+            runId: 'restart-test',
+            phases: {},
+            source: {
+                ...previous.source,
+                sourceMode: 'cosmos-documents',
+                documentEndpoint: 'https://account.documents.azure.com/',
+                documentProfile: 'auto-v1',
+            },
+        });
+        mocks.saveSetup.mockImplementation(async () => {
+            mocks.load.mockResolvedValue({
+                project: restarted,
+                trusted: true,
+                currentInputHash: inputHash(restarted),
+            });
+            return { status: 'saved', runId: restarted.runId };
+        });
+        await user.click(screen.getByRole('button', { name: 'Save settings and restart migration' }));
+        await waitFor(() =>
+            expect(mocks.run).toHaveBeenCalledWith({
+                operation: 'preflight',
+                query: '',
+                sourcePath: '',
+                outputPath: '',
+            }),
+        );
+        expect(mocks.saveSetup).toHaveBeenCalledWith(
+            expect.objectContaining({
+                restart: true,
+                sourceMode: 'cosmos-documents',
+                documentEndpoint: 'https://account.documents.azure.com/',
+                documentProfile: 'auto-v1',
+            }),
+        );
+        expect(mocks.saveSetup.mock.invocationCallOrder[0]).toBeLessThan(mocks.run.mock.invocationCallOrder[0]);
+        expect(screen.getByRole('combobox', { name: 'Source read mode' })).toHaveValue('cosmos-documents');
+    });
+    it('shows a rejected restart beside its button without clearing edits or starting the old run', async () => {
+        const previous = bootstrapProject();
+        mocks.load.mockResolvedValue({ project: previous, trusted: true, currentInputHash: inputHash(previous) });
+        mocks.saveSetup.mockResolvedValue({
+            status: 'blocked',
+            diagnostic: hostDiagnostic(new GraphDiagnosticError('PROJECT_PENDING_EXISTS', 'project-save')),
+        });
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        await screen.findByRole('combobox', { name: 'Source read mode' });
+        const user = userEvent.setup();
+        const configurationSummary = screen.getByText('Configuration and mapping', { selector: 'summary' });
+        if (!configurationSummary.closest('details')?.open) await user.click(configurationSummary);
+        await user.type(screen.getByRole('textbox', { name: 'Cosmos DB database' }), '-edited');
+        await user.click(screen.getByRole('button', { name: 'Save settings and restart migration' }));
+        const inlineAlert = await screen.findByText(/project-save \(PROJECT_PENDING_EXISTS\)/, {
+            selector: 'div[role="alert"]',
+        });
+        expect(inlineAlert).toHaveFocus();
+        expect(inlineAlert).toHaveTextContent('Restart was not saved');
+        expect(screen.getByRole('textbox', { name: 'Cosmos DB database' })).toHaveValue('db-edited');
+        expect(
+            screen.getByText('These edits are not saved. Save them or restart before continuing migration steps.'),
+        ).toBeVisible();
+        expect(mocks.run).not.toHaveBeenCalled();
+        expect(mocks.load).toHaveBeenCalledTimes(1);
+    });
+    it('preserves advanced mapping edits on project events and requires saving before restarting', async () => {
+        renderWorkbench();
+        const editor = await screen.findByRole('textbox', { name: 'Graph project JSON' });
+        const user = userEvent.setup();
+        await user.click(editor);
+        await user.keyboard('{Control>}a{/Control}');
+        const edited = JSON.stringify({ ...project, mapping: { ...project.mapping, vocabulary: 'urn:edited:' } });
+        await user.paste(edited);
+        act(() => listener({ type: 'project', project: structuredClone(project) }));
+        expect(editor).toHaveValue(edited);
+        expect(screen.getByRole('button', { name: 'Save settings and restart migration' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Go to next unfinished step' })).toBeDisabled();
+        await user.click(screen.getByRole('button', { name: 'Save configuration' }));
+        expect(mocks.save).toHaveBeenCalledWith(expect.stringContaining('urn:edited:'));
+        expect(mocks.run).not.toHaveBeenCalled();
+    });
+    it('introduces the RDF migration workflow while keeping experimental and live-compatibility boundaries clear', async () => {
+        renderWorkbench();
+        expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Gremlin to RDF migration');
+        expect(screen.getByText('Experimental migration workbench')).toBeVisible();
+        expect(screen.getByText(/Move your Cosmos DB Gremlin graph/)).toHaveTextContent(
+            'preserving graph identity and repeated property values',
+        );
+        expect(screen.getByText(/Bring existing databases/)).toHaveTextContent(
+            'Local samples do not verify your live source',
+        );
+        await screen.findByRole('textbox', { name: 'Graph project JSON' });
+        expect(mocks.run).not.toHaveBeenCalled();
+        expect(mocks.approve).not.toHaveBeenCalled();
+    });
+    it('highlights core work while leaving optional tools collapsed and never starting a benchmark', async () => {
+        render(<GraphMigrationWorkbench />, { wrapper: Wrapper });
+        await screen.findByText('All phases and tools');
+        expect(screen.getByText('All phases and tools').closest('details')).not.toHaveAttribute('open');
+        expect(screen.getByText('Optional application adaptation').closest('details')).not.toHaveAttribute('open');
+        expect(screen.getByText('Optional reviewed evidence import').closest('details')).not.toHaveAttribute('open');
+        expect(screen.getByRole('navigation', { name: 'Migration sequence overview' })).toBeVisible();
+        expect(screen.getByRole('button', { name: 'Run for Check read-only connections' })).toBeVisible();
+        expect(screen.getByText('Run private two-hour mixed soak')).not.toBeVisible();
+        expect(screen.getByRole('textbox', { name: 'Cosmos .NET SDK document endpoint' })).toBeRequired();
+        expect(screen.getByRole('textbox', { name: 'Fuseki dataset URL' })).toBeRequired();
+        expect(screen.getByRole('combobox', { name: 'Source consistency' })).toBeRequired();
+        expect(mocks.run).not.toHaveBeenCalled();
+        expect(mocks.approve).not.toHaveBeenCalled();
+    });
+    it('labels configuration/review fields and dispatches only the selected operation by keyboard', async () => {
+        const current = bootstrapProject();
+        const supplied = graphProjectSchema.parse({
+            ...current,
+            source: { ...current.source!, identityManifestHash: '1'.repeat(64) },
+        });
+        const hash = inputHash(supplied);
+        mocks.load.mockResolvedValue({
+            project: {
+                ...supplied,
+                phases: {
+                    preflight: { status: 'succeeded', inputHash: hash, blockers: [], evidence: [] },
+                    assess: { status: 'succeeded', inputHash: hash, blockers: [], evidence: [] },
+                    'source-compatibility': {
+                        status: 'succeeded',
+                        inputHash: hash,
+                        blockers: [],
+                        evidence: ['artifacts/fidelity.json'],
+                    },
+                },
+                artifacts: [
+                    {
+                        relativePath: 'artifacts/fidelity.json',
+                        ownerRunId: supplied.runId,
+                        sha256: '2'.repeat(64),
+                        sensitive: true,
+                    },
+                ],
+            },
+            trusted: true,
+            currentInputHash: hash,
+        });
+        renderWorkbench();
+        expect(await screen.findByRole('textbox', { name: 'Graph project JSON' })).toBeVisible();
+        expect(screen.getByRole('textbox', { name: 'Restricted Gremlin read query' })).toBeVisible();
+        expect(screen.getByRole('textbox', { name: 'Workspace-relative Java source path' })).toBeVisible();
+        const button = screen.getByRole('button', { name: 'Run for Validate mapping' });
+        expect(button).toHaveTextContent('Run');
+        expect(button).toHaveAccessibleName('Run for Validate mapping');
+        button.focus();
+        await userEvent.setup().keyboard('{Enter}');
+        await waitFor(() =>
+            expect(mocks.run).toHaveBeenCalledWith({
+                operation: 'mapping',
+                query: 'g.V().count()',
+                sourcePath: '',
+                outputPath: 'artifacts/rewritten/GraphRepository.java',
+            }),
+        );
+        expect(mocks.approve).not.toHaveBeenCalled();
+    });
+    it('separates approval review from executing graph writes', async () => {
+        const current = bootstrapProject(),
+            hash = inputHash(current);
+        mocks.load.mockResolvedValue({
+            project: {
+                ...current,
+                source: { ...current.source!, identityManifestHash: '1'.repeat(64) },
+                phases: Object.fromEntries(
+                    ['preflight', 'assess', 'source-compatibility', 'mapping', 'extract'].map((phase) => [
+                        phase,
+                        { status: 'succeeded', inputHash: hash, blockers: [], evidence: ['artifacts/fidelity.json'] },
+                    ]),
+                ),
+                artifacts: [
+                    {
+                        relativePath: 'artifacts/fidelity.json',
+                        ownerRunId: current.runId,
+                        sha256: '2'.repeat(64),
+                        sensitive: true,
+                    },
+                ],
+            },
+            trusted: true,
+            currentInputHash: hash,
+        });
+        renderWorkbench();
+        const button = await screen.findByRole('button', { name: 'Authorize for Load approved target graphs' });
+        expect(button).toHaveTextContent('Authorize');
+        expect(button).toHaveAccessibleName('Authorize for Load approved target graphs');
+        await userEvent.setup().click(button);
+        expect(mocks.approve).toHaveBeenCalledWith('load');
+        expect(mocks.run).not.toHaveBeenCalled();
+    });
+    it('blocks executable actions in an untrusted workspace', async () => {
+        mocks.load.mockResolvedValue({ project, trusted: false });
+        renderWorkbench();
+        expect(await screen.findByRole('button', { name: 'Run for Load approved target graphs' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Store credentials securely' })).toBeDisabled();
+    });
+    it('announces worker failure with actionable recovery instead of a success state', async () => {
+        renderWorkbench();
+        await screen.findByRole('textbox', { name: 'Graph project JSON' });
+        act(() => listener({ type: 'diagnostic', code: 'WORKER_DISCONNECTED' }));
+        expect(await screen.findByRole('alert')).toHaveTextContent('Verify the owned checkpoints and RU journal');
+    });
+    it('dispatches read-only compatibility independently from target approval', async () => {
+        const supplied = graphProjectSchema.parse({
+            ...bootstrapProject(),
+            source: { ...bootstrapProject().source!, identityManifestHash: '1'.repeat(64) },
+        });
+        const hash = inputHash(supplied);
+        mocks.load.mockResolvedValue({
+            project: {
+                ...supplied,
+                phases: {
+                    preflight: { status: 'succeeded', inputHash: hash, blockers: [], evidence: [] },
+                    assess: { status: 'succeeded', inputHash: hash, blockers: [], evidence: [] },
+                },
+                source: {
+                    scope: 'fixture',
+                    host: 'localhost',
+                    port: 443,
+                    database: 'db',
+                    container: 'graph',
+                    partitionKeyPath: '/pk',
+                    authenticationRef: null,
+                    extractionStrategy: 'verified-identity-manifest',
+                    identityManifest: 'identities.ndjson',
+                    identityManifestHash: '1'.repeat(64),
+                    compatibilityEvidence: 'artifacts/compatibility.json',
+                    ruBudget: null,
+                    customCaRef: null,
+                    syntheticTestContainer: false,
+                },
+            },
+            trusted: true,
+            currentInputHash: hash,
+        });
+        renderWorkbench();
+        const button = await screen.findByRole('button', { name: 'Run for Probe read-only source compatibility' });
+        expect(button).toHaveTextContent('Run');
+        button.focus();
+        await userEvent.setup().keyboard('{Enter}');
+        await waitFor(() =>
+            expect(mocks.run).toHaveBeenCalledWith({
+                operation: 'source-compatibility',
+                query: 'g.V().count()',
+                sourcePath: '',
+                outputPath: 'artifacts/rewritten/GraphRepository.java',
+            }),
+        );
+        expect(mocks.approve).not.toHaveBeenCalled();
+    });
+    it('blocks empty-bootstrap fidelity after failed enumeration while keeping connections independently runnable', async () => {
+        mocks.load.mockResolvedValue({
+            project: {
+                ...project,
+                source: {
+                    scope: 'fixture',
+                    host: 'localhost',
+                    port: 443,
+                    database: 'db',
+                    container: 'graph',
+                    partitionKeyPath: '/pk',
+                    authenticationRef: null,
+                    extractionStrategy: 'verified-identity-manifest',
+                    identityManifest: 'identities.ndjson',
+                    identityManifestHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+                    compatibilityEvidence: 'artifacts/compatibility.json',
+                    ruBudget: null,
+                    customCaRef: null,
+                    syntheticTestContainer: false,
+                },
+                phases: {
+                    'source-enumerate': {
+                        status: 'blocked',
+                        inputHash: '1'.repeat(64),
+                        evidence: [],
+                        blockers: [
+                            'source-enumeration-vertex-page (SOURCE_SCRIPT_REJECTED, source-keyset-page-v1, Gremlin 597, source 400): Template rejection; exact cause unknown.',
+                        ],
+                    },
+                },
+            },
+            trusted: true,
+        });
+        renderWorkbench();
+        await screen.findByRole('button', { name: 'Run for Probe read-only source compatibility' });
+        expect(screen.getByRole('button', { name: 'Run for Probe read-only source compatibility' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Run for Extract read-only source' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Run for Extract read-only source' })).toHaveAccessibleDescription(
+            /current, succeeded source fidelity/,
+        );
+        expect(screen.getByRole('button', { name: 'Run for Check read-only connections' })).not.toBeDisabled();
+        expect(mocks.run).not.toHaveBeenCalled();
+        act(() =>
+            listener({
+                type: 'worker',
+                message: {
+                    protocolVersion: 1,
+                    type: 'result',
+                    runId: 'fixture',
+                    operationId: 'owned',
+                    sequence: 1,
+                    timestamp: new Date().toISOString(),
+                    phase: 'complete',
+                    payload: {
+                        status: 'blocked',
+                        diagnostics: [
+                            {
+                                status: 'blocked',
+                                code: 'SOURCE_SCRIPT_REJECTED',
+                                stage: 'source-enumeration-vertex-page',
+                                gremlinStatus: 597,
+                                sourceStatus: 400,
+                                sourceSubstatus: 1004,
+                                templateId: 'source-keyset-page-v2',
+                                remediation: 'Share only safe status evidence.',
+                            },
+                        ],
+                    },
+                },
+            }),
+        );
+        const diagnostic = await screen.findByRole('alert');
+        expect(diagnostic).toHaveTextContent('Gremlin 597, source 400, substatus 1004');
+        expect(diagnostic).toHaveTextContent('source-keyset-page-v2');
+    });
+    it('keeps reduced-fidelity and best-effort approvals separate from worker execution', async () => {
+        mocks.load.mockResolvedValue({
+            project: { ...project, mapping: { ...project.mapping, fidelity: 'reduced' }, consistency: 'best-effort' },
+            trusted: true,
+        });
+        renderWorkbench();
+        await userEvent.setup().click(await screen.findByRole('button', { name: 'Authorize reduced fidelity' }));
+        await userEvent.setup().click(screen.getByRole('button', { name: 'Authorize best-effort source' }));
+        expect(mocks.approve).toHaveBeenCalledWith('reduced-fidelity');
+        expect(mocks.approve).toHaveBeenCalledWith('best-effort-source');
+        expect(mocks.run).not.toHaveBeenCalled();
+    });
+    it('keeps source fixture writes separate from target writes and explicit approval', async () => {
+        renderWorkbench();
+        const label = 'Populate approved test container';
+        await userEvent.setup().click(await screen.findByRole('button', { name: `Authorize for ${label}` }));
+        expect(mocks.approve).toHaveBeenCalledWith('source-populate');
+        expect(mocks.run).not.toHaveBeenCalled();
+        await userEvent
+            .setup()
+            .click(screen.getByRole('button', { name: 'Run for Review bounded source population plan' }));
+        expect(mocks.run).toHaveBeenCalledWith({
+            operation: 'source-plan',
+            query: 'g.V().count()',
+            sourcePath: '',
+            outputPath: 'artifacts/rewritten/GraphRepository.java',
+        });
+    });
+    it('reviews exact new rewrite output separately from applying it and from fixture authorization', async () => {
+        renderWorkbench();
+        const output = await screen.findByRole('textbox', { name: 'Run-relative new Java output path' });
+        const user = userEvent.setup();
+        await user.clear(output);
+        await user.type(output, 'artifacts/rewritten/Reviewed.java');
+        await user.click(
+            screen.getByRole('button', { name: 'Authorize for Apply approved Java rewrite to new output' }),
+        );
+        expect(mocks.approve).toHaveBeenCalledWith({
+            operation: 'rewrite-apply',
+            outputPath: 'artifacts/rewritten/Reviewed.java',
+        });
+        expect(mocks.run).not.toHaveBeenCalled();
+        await user.click(screen.getByRole('button', { name: 'Run for Apply approved Java rewrite to new output' }));
+        expect(mocks.run).toHaveBeenCalledWith({
+            operation: 'rewrite-apply',
+            query: 'g.V().count()',
+            sourcePath: '',
+            outputPath: 'artifacts/rewritten/Reviewed.java',
+        });
+    });
+    it('imports a selected reviewed proof without running or authorizing a database operation', async () => {
+        renderWorkbench();
+        const user = userEvent.setup();
+        await user.type(
+            await screen.findByRole('textbox', { name: 'Run-relative reviewed report path' }),
+            'artifacts/build-report.json',
+        );
+        expect(screen.getByRole('combobox', { name: 'Imported evidence phase' })).toBeVisible();
+        await user.click(screen.getByRole('button', { name: 'Import reviewed evidence' }));
+        expect(mocks.importEvidence).toHaveBeenCalledWith({
+            relativePath: 'artifacts/build-report.json',
+            phase: 'application-build',
+        });
+        expect(mocks.run).not.toHaveBeenCalled();
+        expect(mocks.approve).not.toHaveBeenCalled();
+    });
+});

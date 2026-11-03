@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,80}$"
+    },
+    "inputHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "sourcePath": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "graph": {
+      "type": "string"
+    },
+    "artifacts": {
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["query", "mutation", "record-manifest"]
+          }
+        },
+        "required": ["path", "sha256", "kind"],
+        "additionalProperties": false
+      }
+    },
+    "sensitiveArtifact": {
+      "type": "boolean",
+      "const": true
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "runId",
+    "inputHash",
+    "sourcePath",
+    "sourceHash",
+    "graph",
+    "artifacts",
+    "sensitiveArtifact"
+  ],
+  "additionalProperties": false,
+  "$id": "urn:gremlin2rdf:schema:v1:fixture-catalog"
+}

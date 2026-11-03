@@ -210,6 +210,26 @@ export default ({ mode }) => {
                     },
                     { src: 'resources', dest: '.' },
                     {
+                        src: 'schemas/age-migration/*.json',
+                        dest: 'resources/age-migration/schemas',
+                        rename: { stripBase: true },
+                    },
+                    {
+                        src: 'docs/age-migration/*.md',
+                        dest: 'resources/age-migration/docs',
+                        rename: { stripBase: true },
+                    },
+                    {
+                        src: 'schemas/graph-migration/*.json',
+                        dest: 'resources/graph-migration/schemas',
+                        rename: { stripBase: true },
+                    },
+                    {
+                        src: 'docs/graph-migration/*.md',
+                        dest: 'resources/graph-migration/docs',
+                        rename: { stripBase: true },
+                    },
+                    {
                         src: 'package.json',
                         dest: '.',
                         transform: (content) => {

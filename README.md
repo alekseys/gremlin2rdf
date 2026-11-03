@@ -1,232 +1,153 @@
-# Azure Cosmos DB for VS Code
-
-<!-- region exclude-from-marketplace -->
-
-[![Build Status](https://dev.azure.com/msdata/CosmosDB/_apis/build/status%2FVSCode%20Extensions%2Fvscode-cosmosdb?repoName=microsoft%2Fvscode-cosmosdb&branchName=main)](https://dev.azure.com/msdata/CosmosDB/_build/latest?definitionId=51963&repoName=microsoft%2Fvscode-cosmosdb&branchName=main)
-[![License](https://img.shields.io/github/license/microsoft/vscode-cosmosdb)](LICENSE.md)
-
-<!-- endregion exclude-from-marketplace -->
-
-Connect to **Azure Cosmos DB for NoSQL** from VS Code to explore accounts, manage databases and containers, edit items, and run queries without leaving your editor. Work with Azure accounts, connection strings, or the local Azure Cosmos DB Emulator.
-
-[Install from the Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-cosmosdb) | [Read the documentation](https://learn.microsoft.com/azure/cosmos-db/) | [Report an issue](https://github.com/microsoft/vscode-cosmosdb/issues/new/choose)
-
-![Azure Cosmos DB Extension](resources/readme/overview.gif)
-
-## Get Started
-
-<!-- prettier-ignore -->
-1. Install the extension from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-cosmosdb) or search for **Azure Cosmos DB** in the VS Code Extensions view.
-2. Open the **Azure** view in the Activity Bar and choose how to connect:
-   - Sign in to Azure to browse Cosmos DB accounts across your subscriptions.
-   - Select **New Connection…** to attach an account with a connection string.
-   - Select **New Emulator Connection** under **Local Emulators** to use a local development instance.
-
-3. Expand an account, database, and container. Use the context menu to create or open items, import documents, or launch the Query Editor.
-4. Run a query such as `SELECT * FROM c`, then inspect the results as a table, JSON, or tree. Query metrics and index recommendations help you tune the request.
-
-> Don't have an account? [Create an Azure account](https://azure.microsoft.com/free/) or use the [Azure Cosmos DB Emulator](https://learn.microsoft.com/azure/cosmos-db/emulator) for local development.
-
-## Features
-
-| Capability                 | What you can do                                                                                         |
-| -------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Explore resources          | Browse subscriptions, accounts, databases, containers, items, and server-side scripts.                  |
-| Manage data                | Create, edit, delete, and import JSON documents with validation and syntax highlighting.                |
-| Build and optimize queries | Use completions and diagnostics, compare result views, inspect request charge, and review index advice. |
-| Monitor account health     | Review throughput, RU consumption, partitions, alerts, and recommendations from the account dashboard.  |
-| Work locally               | Attach the Azure Cosmos DB Emulator or a connection string without depending on subscription discovery. |
-| Use GitHub Copilot         | Generate, edit, and explain Azure Cosmos DB for NoSQL queries from natural-language requests.           |
-
-## Azure Cosmos DB Explorer
-
-The Azure Cosmos DB Explorer helps you find, view, and manage your Azure Cosmos DB databases.
-
-- **Discover Database Accounts**: Scan your Azure subscriptions for available database accounts and browse their resources.
-
-- **Open in Azure Portal**: Open an account directly in the Azure portal for service-level configuration.
-
-- **Manage Resources**: View, create, and delete databases, containers, stored procedures, triggers, and documents.
-
-- **Edit Documents and Scripts**: Open documents and stored procedures in the editor, then save changes to the service.
-
-- **Filter and Sort**: Narrow large resource trees and choose the order that best fits your workflow.
-
-- **Workspace Connections**: Attach database accounts with connection strings, including accounts that are not discoverable through your current Azure subscriptions.
-
-## Account Overview Dashboard
-
-The Account Overview Dashboard gives you an at-a-glance view of a Cosmos DB account: inventory, provisioned vs. normalized RU consumption, partition health, active alerts, and recommendations. Open **Account Overview → Overview** from an account node in the Explorer.
-
-The dashboard has three tabs: **Monitoring**, **Databases and Containers**, and **Advisories**. The Account Overview submenu also provides shortcuts to each monitoring metric and to Advisories. Metric shortcuts select the corresponding card and focus its chart in the existing Monitoring tab, preserving the time range and database scope; they do not open separate dashboards.
-
-Expand **Account details** for **View Cost**, **View JSON**, and **Additional account properties**. **View Cost** opens Azure Portal Cost Analysis scoped to the account in its Azure cloud. **View JSON** retrieves the account resource from Azure Resource Manager and opens formatted JSON in VS Code without requesting keys or connection strings. The action bar reuses the existing database/container creation wizards and account deletion confirmation. **Add container** uses the database selected in the header; with **All databases**, it first asks you to choose a database within this account, including empty databases. These creation/deletion actions require the corresponding Azure write permissions. **Try Data Modeler** opens the modeler for this account; it requires AI features enabled and available GitHub Copilot models.
-
-While **Add database** or **Add container** runs its native VS Code wizard, Overview is dimmed and unavailable to mouse and keyboard interaction. Cancel in the wizard to return without changes. After successful creation, Overview unlocks once inventory refresh finishes. Failures appear in a Fluent error message bar and are announced assertively to screen readers without moving focus.
-
-Overview loads on opening and does not auto-refresh, including when you return to the editor. **Refresh** reloads every section, including inventory metrics, the selected container's partition telemetry, alerts and advisories. Changing a filter reloads only the data that depends on it. The header shows the local date and time when the displayed metric charts were generated, to the left of the filters; this is not the freshness timestamp for every section or the latest Azure metric sample.
-
-The **Refresh** button shows a spinner for an explicit Refresh or a metric time/database-scope change, not for the initial load. Its label stays **Refresh**, with no separate updating text. Refresh and the header's database/time-range selectors are unavailable while data requests finish, including initial loading, so another filter change cannot overlap the current load. They become available again after completion or failure, retaining the selected values. Each section retains its own loading state. User-requested updates are announced to screen readers.
-
-Sections read Azure resource metadata, Monitor metrics/alerts, Advisor recommendations and configured diagnostic logs.
-When a source is unavailable, its section shows an explicit state rather than treating missing data as zero:
-
-- **No data** — no usable result is available for the selected window/source; this does not establish that the account is healthy.
-- **Not supported** — the section doesn't apply to this account's API (for example, inventory metrics are only available for NoSQL (Core) API accounts).
-- **Access required** — your Azure role doesn't grant permission to read the underlying data.
-
-### Required Azure roles
-
-Data is fetched with your Azure credentials. The table lists typical read roles; equivalent custom permissions
-and assignment scope also determine access. A permission failure is shown for the affected source while
-independent sections remain usable.
-
-| Dashboard section                                      | Typical read role               |
-| ------------------------------------------------------ | ------------------------------- |
-| Account header, inventory, throughput                  | Reader on the Cosmos DB account |
-| RU trends, partition health, Tier-1 derived advisories | Monitoring Reader               |
-| Tier-2 (log-based) derived advisories                  | Log Analytics Reader            |
-| Active alerts                                          | Monitoring Reader               |
-| Advisor recommendations                                | Reader on the subscription      |
-
-Tier-2 derived advisories (cross-partition query fan-out, shard-key misalignment, uncontrolled ingestion, and shared-throughput starvation) additionally read the account's resource-specific `CDB*` diagnostic-log tables. They require diagnostic-log collection and effective query access, such as [Log Analytics Reader](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/monitor#log-analytics-reader). Missing log evidence leaves successful independent findings visible and reports the gap as **Partial coverage**. See the [guide's log setup and permissions](./docs/account-overview-dashboard.md#permissions).
-
-Derived advisory explanations, suggested actions and threshold references highlight numeric evidence and its units on a subtle theme-aware background. Their underlying strings remain readable plain text: paired backticks mark a highlighted phrase (for example, `` `400 RU/s` ``), not HTML or general Markdown. Translations retain those delimiters around the complete value and unit in the translated word order. Literal backticks and backslashes in resource names or query text are escaped before interpolation. Highlights remain ordinary inline text for screen readers, without extra announcements or keyboard stops.
-
-Learn more about assigning roles in [Azure role-based access control](https://learn.microsoft.com/azure/role-based-access-control/overview).
-
-For explanations of health, charts, alerts and everyday use, read the [Account Overview guide](./docs/account-overview-dashboard.md).
-When implementing or changing Account Overview calculations, refresh behavior, actions or diagnostics, use the
-[implementation specification](./specs/account-overview.md) for exact rules, rationale and regression requirements.
-
-## Data Modeler
-
-**Data Modeler (Preview)** helps you choose partition keys for Azure Cosmos DB for NoSQL using GitHub Copilot.
-The `cosmosDB.experimental.dataModeler.enabled` setting defaults to `true`. Set it to `false` to hide the
-Command Palette entry and Account Overview promotion without disabling other AI features. Changes take effect immediately;
-existing modeler tabs and the command to delete saved modeler data remain available.
-Open it with **Try Data Modeler** in **Account Overview**, from an account in **Explorer**, or run
-**Data Modeling Wizard** from the Command Palette. Requires available
-GitHub Copilot models and AI features enabled.
-
-1. Choose a workload template or define your own schemas, queries, and scale estimates.
-2. Compare single-path partition-key recommendations, query routing, and warnings. Review assumptions before deploying.
-3. Deploy selected databases and containers directly, or export editable **Bicep**, **Terraform**, or **C# SDK** code.
-   Deployment requires resource-creation permissions and may incur Azure charges; it does not upload documents.
-
-Work is saved locally per account so you can resume later; saved sessions expire 30 days after their last save.
-To permanently clear local Data Modeler data for every account, run **Cosmos DB: Delete All Data Modeler Data**
-from the Command Palette and confirm. This closes all Data Modeler tabs and removes saved sessions, including legacy
-data. It does not delete deployed databases or containers, saved container schemas, or query history.
-See [modeling details](docs/data-modeler-scale.md) and the [telemetry inventory](docs/data-modeler-telemetry.md) for more.
-
-## Query Editor
-
-The Query Editor provides a focused workspace for writing, running, and tuning Azure Cosmos DB for NoSQL queries.
-
-- **Language Support**: Get syntax highlighting, completions, diagnostics, hover documentation, signature help, and formatting. Schema-aware suggestions include properties discovered in the active container.
-
-- **Query History**: Automatically saves previously executed queries, allowing you to open and reuse them later.
-
-- **Run Queries**: Execute queries and view results in Table, JSON, or Tree view.
-
-- **Export Results**: Provides options to copy query results as JSON or CSV or to save them to a file for later use.
-
-- **Pagination**: Adjust how many results are displayed at a time when working with large datasets.
-
-- **Query Insights and Index Advisor**: Review execution time, request charge, response size, activity ID, and indexing recommendations.
-
-- **Edit Documents**: Open, update, and save individual documents.
-
-- **Create New Documents**: Write and validate documents with syntax highlighting.
-
-![Query Editor result views](resources/readme/queryEditor.gif)
-
-### Keyboard Shortcuts
-
-The Azure Cosmos DB extension supports various keyboard shortcuts to improve your productivity when working with queries and documents.
-
-For a complete list of keyboard shortcuts, see [Keyboard Shortcuts](docs/hotkeys/01_keyboard_shortcuts.md).
-
-## AI-Powered Query Assistance (GitHub Copilot)
-
-The extension integrates with GitHub Copilot to help you write, edit, and understand Cosmos DB NoSQL queries using natural language.
-
-- **Generate Query**: Click the **AI** button in the Query Editor toolbar and select **Generate query** to describe your query in plain English. Copilot will generate a Cosmos DB NoSQL query for you.
-
-- **Explain Query**: Click the **AI** button and select **Explain query** to get a plain-English explanation of the current query in the editor.
-
-> **Requires** the [GitHub Copilot](https://marketplace.visualstudio.com/items?itemName=GitHub.copilot) extension and an active Copilot subscription.
-
-For more details, see the [AI Chat documentation](src/chat/README.md).
-
-## Migration Assistant (Preview)
-
-The Migration Assistant uses the `cosmosdb-relational-migration` Skill in GitHub Copilot Chat to guide relational database and application migrations. Phase actions open or resume Chat; the assistant tracks progress and validates the artifacts in `.cosmosdb-migration`.
-
-Migration projects started before the Skill was introduced can still be opened and inspected. Their existing artifacts need evidence validation before their phases can be treated as complete in the Skill workflow.
-
-Use `cosmosDB.experimental.migration.enabled` to show or hide the migration feature.
-
-## Import into Azure Cosmos DB
-
-The extension allows you to import documents into Azure Cosmos DB.
-
-- **Workspace Integration**: Use the context menu of a container or JSON document file to start an import.
-
-  ![Import documents](resources/readme/import_documents.gif)
-
-## Attach to the Azure Cosmos DB Emulator
-
-Attach the Azure Cosmos DB Emulator to work with a local instance of Azure Cosmos DB for development and testing purposes.
-
-- **Emulator Installation**: Install and run the [Azure Cosmos DB Emulator](https://learn.microsoft.com/azure/cosmos-db/emulator) on your local machine.
-
-- **New Emulator Connection**: Expand **Cosmos DB Accounts**, then **Local Emulators**, and select **New Emulator Connection** to attach the emulator to your workspace.
-
-For local setup instructions and connection details, see [Azure Cosmos DB Emulator](docs/cosmosdb-emulator.md).
-
-## Corporate proxies
-
-Normal Cosmos DB for NoSQL connections delegate proxy handling to VS Code. See
-[VS Code network configuration](https://code.visualstudio.com/docs/setup/network) for proxy, authentication,
-and certificate guidance.
-
-**Emulator exception:** local `localhost` and `127.0.0.1` emulators remain direct and retain their self-signed
-certificate handling. Emulator connections supply an explicit TLS agent, so `http.proxySupport: "on"` does not
-add proxy routing for them. A remotely hosted emulator requiring a proxy needs `fallback` or `override`
-and appropriate certificate trust.
-
-## Known Issues
-
-> [!WARNING]
-> Support for previously included features such as MongoDB, PostgreSQL, Graph (Gremlin), Table, Cassandra, and the Grammar Language Server has been removed from this extension.
->
-> - For MongoDB support, use the [DocumentDB Extension for VS Code](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-documentdb).
-> - For PostgreSQL support, use the [PostgreSQL Extension for VS Code](https://marketplace.visualstudio.com/items?itemName=ms-ossdata.vscode-pgsql).
-
-<!-- region exclude-from-marketplace -->
-
-## How to Contribute
-
-This project welcomes contributions and suggestions. To contribute, see these documents:
-
-- [Code of Conduct](./CODE_OF_CONDUCT.md)
-- [Security](./SECURITY.md)
-- [Contributing](./CONTRIBUTING.md)
-
-<!-- endregion exclude-from-marketplace -->
-
-## Telemetry
-
-Data Modeler template downloads report a `downloadCode` action with the template format, outcome
-(`success`, `cancelled`, or `error`), and whether the code was edited. These events use the existing Data Modeler
-telemetry context and do not include database names, filenames, paths, code contents, or raw error messages.
-
-VS Code collects usage data and sends it to Microsoft to help improve our products and services. Read our [privacy statement](https://go.microsoft.com/fwlink/?LinkID=521839) to learn more. If you don’t wish to send usage data to Microsoft, you can set the `telemetry.enableTelemetry` setting to `false`. If you want to disable feedback requests in VS Code, set `telemetry.feedback.enabled` to `false`. Learn more in our [FAQ](https://code.visualstudio.com/docs/supporting/faq#_how-to-disable-telemetry-reporting).
-
-**Data Collection.** The software may collect information about you and your use of the software and send it to Microsoft. Microsoft may use this information to provide services and improve our products and services. You may turn off the telemetry as described in the repository. There are also some features in the software that may enable you and Microsoft to collect data from users of your applications. If you use these features, you must comply with applicable law, including providing appropriate notices to users of your applications together with a copy of Microsoft’s privacy statement. Our privacy statement is located at https://go.microsoft.com/fwlink/?LinkID=521839. You can learn more about data collection and use in the help documentation and our privacy statement. Your use of the software operates as your consent to these practices.
-
-## License
-
-[MIT](LICENSE.md)
+# gremlin2rdf: migrate your Cosmos Gremlin project
+
+Move an existing **Azure Cosmos DB for Gremlin database and application** toward **Apache Jena/Fuseki**
+or **PostgreSQL with Apache AGE**, using one VS Code extension.
+
+Choose RDF/SPARQL with Jena, or a property graph/Cypher with AGE. Both preserve typed, partition-qualified
+identities, parallel edges, self-loops and individual property occurrences when the source exposes their fidelity.
+Unsupported or unobservable semantics are reported rather than guessed. This is an **experimental fork**,
+not a Microsoft Marketplace release.
+
+## Install and choose your target
+
+1. Install **`vscode-cosmosdb-0.39.17.vsix`** using VS Code's **Extensions > Install from VSIX**, then reload.
+   Stop active migrations before upgrading; this replaces the extension, not its saved projects.
+2. Open your application's folder as a trusted workspace and enable:
+
+   ```json
+   { "cosmosDB.experimental.graphMigration.enabled": true }
+   ```
+
+3. From the Command Palette, select **Open Gremlin to RDF Migration (Experimental)** for Jena or
+   **Open Gremlin to PostgreSQL AGE Migration (Experimental)** for AGE.
+
+Jena requires **Java 21+** on the extension host. AGE bundles its own independent, self-contained
+**Windows x64 .NET worker**; using that binary does not require installing .NET.
+Other AGE extension-host platforms are unsupported by this build. VS Code's installer may report `DEP0169`
+despite successful installation; that warning [belongs to the VS Code CLI](docs/graph-migration/workbench.md#installing-or-replacing-the-vsix).
+
+## Migrate in four steps
+
+1. **Connect existing databases.** Save your Cosmos Gremlin source and existing Fuseki dataset or PostgreSQL/AGE
+   target. Use **Store credentials securely**; never put passwords or keys in configuration JSON.
+2. **Prepare and review.** Confirm paused writes or an immutable source. For Jena, **Prepare your source**
+   checks source and target connections independently, discovers literal partition candidates from supported
+   local seed/config files, and runs explicitly bounded read-only enumeration. Live counts must reconcile;
+   candidates are not proof of coverage. The verified inventory/hash is selected automatically in a fresh run,
+   with prior artifacts retained and old approvals invalidated. Then check actual source fidelity and RDF/SHACL
+   mapping. AGE currently requires a reviewed inventory and endpoint observations, or a complete canonical input;
+   it does not use Java's enumeration adapter.
+3. **Approve and transfer.** Extract read-only source data, review the exact target/input, authorize the load,
+   then run it. Credentials are not write approval. Pause/cancel when needed and resume only from confirmed
+   state. Jena's interrupted enumeration can resume within the same reviewed remaining ceilings; new budgets
+   require a newly reviewed run. RU ceilings apply per run, not across separate preparation/extraction journals.
+4. **Validate and adapt.** Review RDF fidelity or AGE graph/ledger consistency and supported query results.
+   Preview supported Gremlin as SPARQL or Cypher, review the language-specific rewrite, and compare the adapted
+   application before deliberate manual cutover.
+
+The tool **does not provision services**, install/enable AGE, restart databases, change production routing,
+or open a deployed Fuseki server's live TDB2 files. Your AGE operator handles extension allowlisting,
+installation/session `LOAD` permissions, a dedicated graph, PostgreSQL privileges, networking and trusted TLS.
+Source writes, cleanup and publication require separate scoped approval.
+
+Projects stay separate: `.cosmosdb-graph-migration/` for Jena and `.cosmosdb-age-migration/` for AGE.
+Keep their artifacts and checkpoints local. Specific sanitized failures identify the failed substep and remedy;
+connection success alone does not establish source fidelity or live migration readiness.
+
+Version 0.39.16 makes repeated Step 2 review visibly focus the request limit, explains pending VS Code
+confirmation and exposes a read-only connection recheck when earlier evidence is stale. Historical step
+evidence remains checksum-verified and readable after inventory adoption. Readiness checks the actual owned
+extraction filename, rather than assuming `records.ndjson`; missing application/release proof still blocks cutover.
+The [installed-VSIX desktop harness](docs/graph-migration/workbench.md#installed-vsix-end-to-end-test) exercises
+the real workbench and packaged workers against private loopback fixtures, not your operational databases.
+
+Version 0.39.17 distinguishes successful inventory adoption from stale producer evidence. Existing adopted
+projects are repaired locally after receipt, manifest and identity-file checks, without repeating enumeration.
+A prominent continuation control focuses the enabled next step; connection checks must still be rerun for
+the new input-bound run. Inventories, journals and old evidence are not deleted or relabeled.
+The next step also waits for the previous worker process to exit, avoiding a ready-looking Run that the
+host still rejects as busy.
+
+For Fuseki, use an existing **dataset URL** such as `http://localhost:3030/ekg`, not just `http://localhost:3030`.
+If the intended dataset is absent, your operator must create or mount it separately; the extension does not.
+Save its actual query/update/graph-store paths (custom paths are in advanced settings), then rerun
+**Check read-only connections**. HTTP 404 identifies a missing/misconfigured endpoint, not proof every dataset
+is absent. **Stale** results are previous input-bound evidence, not a new connection failure.
+Version 0.39.3 fixes the extension-owned Gremlin driver pool constructor defect; inventory or credential edits
+cannot fix that defect in older builds.
+If enumeration is blocked, open its Evidence before checking fidelity. Version 0.39.4 retains the exact
+bounded enumeration substep and safe numeric Gremlin/source statuses, without exposing scripts or values.
+An empty bootstrap inventory cannot establish fidelity; a reconciled empty source is reported separately
+as empty, not as a successful capability check.
+Version 0.39.5 keeps failed enumeration in the main Prepare sequence and disables extraction until current
+source fidelity evidence exists. Connection, application assessment and mapping success alone do not authorize
+extraction. Evidence/checkpoints remain preserved; paging rejection reports the fixed adapter template ID.
+Version 0.39.8 keeps completed required steps/evidence expanded and execution-disabled, expands only the next
+unfinished step with an enabled Run, and collapses/disables future steps. Enumeration Run opens the bounded
+candidate review rather than submitting a default plan. Its v2 page template projects string IDs before natural
+ascending ordering, avoiding the prior comparator/modulator dialect risk while retaining keyset/count checks.
+The exact live rejection token and successful Cosmos acceptance still require a bounded rerun.
+Version 0.39.9 separates **Migration source pacing (RU/s)** from **Total source RU allowance per run**.
+The old 400/1000 setting was cumulative spend, not throughput, so waiting could not replenish it.
+Existing allowances and journals keep their meaning. Review both values when starting new bounded preparation;
+the extension never changes your database's provisioned throughput. See the [RU controls](docs/graph-migration/workbench.md#source-ru-rate-and-total-run-allowance).
+Version 0.39.10 fixes complete-request charge accounting: use the terminal **total** charge rather than a
+single response chunk's charge, accept bounded finite scientific notation, and preserve explicit zero charges.
+Unknown charges remain blocked with a safe observation reason. Old partial-accounting journals are preserved,
+not reinterpreted; review a new bounded preparation run. Increasing RU settings cannot fix an unknown charge.
+Version 0.39.11 shows safe activity inside each step: source counts/pages, checkpoint saves, pacing/retry
+waits, load batches and a worker elapsed-time heartbeat. Pauses retain evidence and state their reason;
+the editor no longer discards the worker's stop report when its overall time limit expires.
+Version 0.39.12 samples the first activity update, one meaningful summary per ten seconds and the final two,
+instead of streaming every record/request into the panel. Deadline pauses no longer claim the operator clicked
+Pause. Guided Prepare now allows an explicitly reviewed duration up to 86400 seconds, including reconciliation;
+existing runs retain their original bounds and journals. A known expired duration requires a newly reviewed run,
+not an automatic extension or a misleading Resume.
+Version 0.39.13 fixes the remaining duration-review defect: reopening Prepare no longer silently replaces
+a saved duration with 120 seconds. After a current deadline result the duration field requires explicit entry,
+with the previous configured limit shown. New host deadline evidence includes the actual configured limit
+and observed elapsed milliseconds. Installing a VSIX never changes existing execution budgets.
+Version 0.39.14 handles transient Windows access denials during atomic checkpoint/journal replacement with
+at most five local rename attempts (375 ms total waiting), without repeating source requests. Persistent
+failures preserve the old and pending files and report the safe storage substep/action/attempt count.
+An unacknowledged enumeration checkpoint disables Resume rather than silently adopting pending state.
+The earlier generic `ARTIFACT_ACCESS` report does not establish a permissions defect or the exact live cause.
+Version 0.39.15 keeps **Review run settings** available in stopped Step 2, independently of its Run gate.
+Request exhaustion automatically opens the limits for explicit new-run review; it never renews the old allowance.
+Settings remain editable even if partition discovery fails or an earlier step must be rerun; execution still
+requires the sequential prerequisites, valid candidates and explicit stable-source confirmation.
+
+## Start small
+
+Local fixtures and translation tools work without live credentials. They demonstrate canonical records and
+restricted queries, **not live Cosmos compatibility or verified PostgreSQL/AGE transactions**.
+
+Java/Jena rewriting and C#/AGE rewriting are separate. AGE's narrow Roslyn rewrite handles literal, one-argument
+`SubmitAsync` calls on explicitly declared `IGremlinClient` receivers into a **new reviewed file**, with
+`GraphAccess` and a cancellation token already declared. Dynamic queries, bindings, lifecycle/result-model
+changes and broader application conversion remain manual. Typed access layers cover only documented operations.
+
+## Guides and source builds
+
+| Guide                                                                       | Use it for                                                              |
+| --------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| [Jena workbench](docs/graph-migration/workbench.md)                         | Guided Prepare, RDF/SHACL mapping, approvals and artifacts              |
+| [Jena application migration](docs/graph-migration/application-migration.md) | Supported Java rewrites, SPARQL and typed access                        |
+| [AGE workflow and CLI](docs/age-migration/README.md)                        | Operator prerequisites, canonical input, Cypher, C# and recovery limits |
+| [Cutover and rollback](docs/graph-migration/cutover.md)                     | Operational review; reverse synchronization is not implemented          |
+
+Build the combined VSIX on Windows x64 with Node.js 24.15+, Java 21+ and the pinned **.NET SDK 10.0.403**:
+
+```powershell
+npm ci
+# If the pinned SDK is not on PATH:
+$env:AGE_DOTNET_SDK = "C:\path\to\dotnet.exe"
+npm run package
+```
+
+Packaging builds both independent workers; it does not establish live migration acceptance.
+Native PostgreSQL/AGE execution and live Cosmos extraction remain unverified for this AGE deliverable.
+
+[Report fork issues](https://github.com/alekseys/gremlin2rdf/issues).
+[Security policy](SECURITY.md) | [MIT license](LICENSE.md).
+Upstream attribution and VS Code telemetry/privacy controls remain applicable.

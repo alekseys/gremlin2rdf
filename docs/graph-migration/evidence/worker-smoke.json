@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "status": "succeeded",
+  "command": "node scripts/smoke-graph-worker.mjs",
+  "inputHash": "83becd3ce934713037d7ab5a733e0853818d1fa04cb9c0fb025a79706984aa53",
+  "checks": [
+    "Java/TypeScript canonical input hash parity",
+    "packaged worker stdio lifecycle",
+    "bounded monotonic frames",
+    "large result persisted instead of sent over stdio",
+    "producer-checked concrete artifact checksums and run ownership",
+    "1000 deterministic records",
+    "real Java catalog/query/mutation JSON accepted by strict editor schemas",
+    "actual Java rewrite plan accepted by strict editor schema",
+    "owned isolated private-testkit launch and checksummed resource-blocked acknowledgement (not a load/soak pass)"
+  ],
+  "liveCosmosCompatibility": "blocked-not-supplied",
+  "timestamp": "2026-11-03T03:14:10.110Z"
+}

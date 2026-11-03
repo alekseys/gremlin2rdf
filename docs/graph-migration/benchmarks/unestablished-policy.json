@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "minimumRecordsPerSecond": null,
+  "maximumP95BatchMillis": null,
+  "maximumErrorRate": null,
+  "maximumRequestCharge": null
+}

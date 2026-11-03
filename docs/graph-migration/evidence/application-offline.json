@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "status": "succeeded",
+  "scope": "supported-Java-fixtures-and-private-HTTP-canonical-query-CRUD-only",
+  "testExecution": "shell-131-exit-0",
+  "supportedApplicationFixtures": {
+    "before": "isolated-TinkerGraph-3.4.13",
+    "after": "compiled-generated-Jena-application-over-real-Fuseki-HTTP",
+    "vertices": 20,
+    "edges": 40,
+    "unrelatedMethodPreserved": true
+  },
+  "catalogTests": 4,
+  "goldenQueryFixtures": 26,
+  "declaredMutationSteps": 15,
+  "actualPrivateHttpQueriesAndCrud": "passed",
+  "canonicalAndDerivedPostMutationValidation": "passed",
+  "catalogDeterminism": "byte-identical-query-mutation-and-record-manifests",
+  "reapprovedFalseOracle": "rejected-before-mutations",
+  "missingFixtureAuthorization": "rejected-before-mutations",
+  "typedMismatchSamples": {
+    "preservedDifferentDatatypes": true,
+    "preservedOccurrenceMultiplicity": true,
+    "sequenceMismatchCount": 30,
+    "boundedExamples": 20
+  },
+  "rewriteApply": {
+    "newOutputOnly": true,
+    "exactPlanApprovalRequired": true,
+    "existingOutputPreserved": true,
+    "changedSourceRejected": true
+  },
+  "vertexEligibilityRegression": {
+    "diagnosis": "NOT EXISTS was reevaluated for every property/meta-property row at semantic scale",
+    "correction": "LIMIT-1 eligibility subquery inside the same server update",
+    "testRequestDeadlineMillis": 1000,
+    "deadlineWasExtended": false
+  },
+  "packagedAcceptance": "pending-current-integrated-package",
+  "liveCosmosCompatibility": "blocked-no-authorized-live-endpoint",
+  "deployedTargetAtomicity": "not-proven-private-fixture-only",
+  "generalJavaRewrite": "unsupported-outside-declared-fixture-pattern-set",
+  "reproduction": "Set a non-live GRAPH_TEST_APPROVAL_KEY; java\\mvnw.cmd -f java\\pom.xml -pl examples-before,examples-after -am -Dtest=GraphRepositoryTest,FixturesTest,RewriteTest,FunctionalTest,CrudTest -Dsurefire.failIfNoSpecifiedTests=false test -q"
+}

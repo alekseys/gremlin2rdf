@@ -1,0 +1,513 @@
+{
+  "schemaVersion": 1,
+  "status": "succeeded",
+  "profile": "semantic-not-streaming-load",
+  "warmups": 1,
+  "measuredRepetitions": 3,
+  "sourceSha256": "fc83125179e5b96800978817c1919f838a9f0b44432fbe90acf44d806e580f10",
+  "workerSha256": "ce0e4ad25c770924eb3f3bd2799d416fd248c23dc48c7687f51f455bf8877b61",
+  "testkitSha256": "095401a89d07dc7a5fb469ad6c1e598daec51b52cd9be100a3f396d1a3a12136",
+  "measurements": [
+    {
+      "warmup": true,
+      "mappingSerializationMillis": 12938.8337,
+      "mappingRecordsPerSecond": 77.28671866305848,
+      "canonicalTripleFrames": 38624,
+      "derivedTripleFrames": 800,
+      "loadingOnlyMillis": 7236.268599999999,
+      "rdfFramesPerSecond": 5448.111751960119,
+      "requestBodyBytes": 7875546,
+      "updateRequestP50Millis": 157.8117999999995,
+      "updateRequestP95Millis": 228.98019999999815,
+      "updateRequestP99Millis": 898.9679999999971,
+      "queryCrudEquivalenceMillis": 55929.2831,
+      "queryCases": 26,
+      "mutationSteps": [
+        {
+          "elapsedNanos": 267267000,
+          "index": 0,
+          "operation": "create",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 19970200,
+          "index": 1,
+          "operation": "lookup",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 185671600,
+          "index": 2,
+          "operation": "create",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 223827600,
+          "index": 3,
+          "operation": "create",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 440900700,
+          "index": 4,
+          "operation": "insertProperty",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 19804000,
+          "index": 5,
+          "operation": "insertProperty",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 367574200,
+          "index": 6,
+          "operation": "insertProperty",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 309147100,
+          "index": 7,
+          "operation": "replaceProperties",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 239950900,
+          "index": 8,
+          "operation": "removeProperty",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 42981000,
+          "index": 9,
+          "operation": "deleteVertex",
+          "status": "succeeded",
+          "verifiedExpectations": 2
+        },
+        {
+          "elapsedNanos": 112638700,
+          "index": 10,
+          "operation": "deleteEdge",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 12700000,
+          "index": 11,
+          "operation": "deleteEdge",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 133871500,
+          "index": 12,
+          "operation": "create",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 268367300,
+          "index": 13,
+          "operation": "deleteVertex",
+          "status": "succeeded",
+          "verifiedExpectations": 3
+        },
+        {
+          "elapsedNanos": 234963800,
+          "index": 14,
+          "operation": "deleteVertex",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        }
+      ],
+      "queryCrudTimingScope": "Java CLI startup, oracle, HTTP reads/mutations, postconditions and structural validation included"
+    },
+    {
+      "warmup": false,
+      "mappingSerializationMillis": 8933.110799999995,
+      "mappingRecordsPerSecond": 111.94308705988519,
+      "canonicalTripleFrames": 38624,
+      "derivedTripleFrames": 800,
+      "loadingOnlyMillis": 5288.176200000002,
+      "rdfFramesPerSecond": 7455.122240442743,
+      "requestBodyBytes": 7875546,
+      "updateRequestP50Millis": 125.69759999999951,
+      "updateRequestP95Millis": 155.05979999998817,
+      "updateRequestP99Millis": 186.26540000000386,
+      "queryCrudEquivalenceMillis": 83844.0746,
+      "queryCases": 26,
+      "mutationSteps": [
+        {
+          "elapsedNanos": 302193800,
+          "index": 0,
+          "operation": "create",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 18496300,
+          "index": 1,
+          "operation": "lookup",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 251382700,
+          "index": 2,
+          "operation": "create",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 195259700,
+          "index": 3,
+          "operation": "create",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 330322600,
+          "index": 4,
+          "operation": "insertProperty",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 25575800,
+          "index": 5,
+          "operation": "insertProperty",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 402082400,
+          "index": 6,
+          "operation": "insertProperty",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 482252800,
+          "index": 7,
+          "operation": "replaceProperties",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 391118000,
+          "index": 8,
+          "operation": "removeProperty",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 45353300,
+          "index": 9,
+          "operation": "deleteVertex",
+          "status": "succeeded",
+          "verifiedExpectations": 2
+        },
+        {
+          "elapsedNanos": 170205200,
+          "index": 10,
+          "operation": "deleteEdge",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 18625200,
+          "index": 11,
+          "operation": "deleteEdge",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 269475100,
+          "index": 12,
+          "operation": "create",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 348532300,
+          "index": 13,
+          "operation": "deleteVertex",
+          "status": "succeeded",
+          "verifiedExpectations": 3
+        },
+        {
+          "elapsedNanos": 343827800,
+          "index": 14,
+          "operation": "deleteVertex",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        }
+      ],
+      "queryCrudTimingScope": "Java CLI startup, oracle, HTTP reads/mutations, postconditions and structural validation included"
+    },
+    {
+      "warmup": false,
+      "mappingSerializationMillis": 21316.1912,
+      "mappingRecordsPerSecond": 46.91269611055093,
+      "canonicalTripleFrames": 38624,
+      "derivedTripleFrames": 800,
+      "loadingOnlyMillis": 17238.923299999995,
+      "rdfFramesPerSecond": 2286.9177682344007,
+      "requestBodyBytes": 7875546,
+      "updateRequestP50Millis": 405.23969999997644,
+      "updateRequestP95Millis": 580.4440999999933,
+      "updateRequestP99Millis": 705.3783999999869,
+      "queryCrudEquivalenceMillis": 80803.1796,
+      "queryCases": 26,
+      "mutationSteps": [
+        {
+          "elapsedNanos": 366688700,
+          "index": 0,
+          "operation": "create",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 32642600,
+          "index": 1,
+          "operation": "lookup",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 237419900,
+          "index": 2,
+          "operation": "create",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 296827600,
+          "index": 3,
+          "operation": "create",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 468422400,
+          "index": 4,
+          "operation": "insertProperty",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 24278300,
+          "index": 5,
+          "operation": "insertProperty",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 621448200,
+          "index": 6,
+          "operation": "insertProperty",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 708326800,
+          "index": 7,
+          "operation": "replaceProperties",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 494193900,
+          "index": 8,
+          "operation": "removeProperty",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 66656200,
+          "index": 9,
+          "operation": "deleteVertex",
+          "status": "succeeded",
+          "verifiedExpectations": 2
+        },
+        {
+          "elapsedNanos": 195924300,
+          "index": 10,
+          "operation": "deleteEdge",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 27810900,
+          "index": 11,
+          "operation": "deleteEdge",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 256629200,
+          "index": 12,
+          "operation": "create",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 397120200,
+          "index": 13,
+          "operation": "deleteVertex",
+          "status": "succeeded",
+          "verifiedExpectations": 3
+        },
+        {
+          "elapsedNanos": 485026100,
+          "index": 14,
+          "operation": "deleteVertex",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        }
+      ],
+      "queryCrudTimingScope": "Java CLI startup, oracle, HTTP reads/mutations, postconditions and structural validation included"
+    },
+    {
+      "warmup": false,
+      "mappingSerializationMillis": 11401.227499999979,
+      "mappingRecordsPerSecond": 87.70985404861028,
+      "canonicalTripleFrames": 38624,
+      "derivedTripleFrames": 800,
+      "loadingOnlyMillis": 7056.38890000002,
+      "rdfFramesPerSecond": 5586.993653368494,
+      "requestBodyBytes": 7875546,
+      "updateRequestP50Millis": 173.90030000003753,
+      "updateRequestP95Millis": 208.83319999999367,
+      "updateRequestP99Millis": 214.02549999998882,
+      "queryCrudEquivalenceMillis": 50313.45290000003,
+      "queryCases": 26,
+      "mutationSteps": [
+        {
+          "elapsedNanos": 220733500,
+          "index": 0,
+          "operation": "create",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 14054300,
+          "index": 1,
+          "operation": "lookup",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 181884100,
+          "index": 2,
+          "operation": "create",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 178997800,
+          "index": 3,
+          "operation": "create",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 305725300,
+          "index": 4,
+          "operation": "insertProperty",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 13101300,
+          "index": 5,
+          "operation": "insertProperty",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 373969500,
+          "index": 6,
+          "operation": "insertProperty",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 404859100,
+          "index": 7,
+          "operation": "replaceProperties",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 306389100,
+          "index": 8,
+          "operation": "removeProperty",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 31045200,
+          "index": 9,
+          "operation": "deleteVertex",
+          "status": "succeeded",
+          "verifiedExpectations": 2
+        },
+        {
+          "elapsedNanos": 158019300,
+          "index": 10,
+          "operation": "deleteEdge",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 12595300,
+          "index": 11,
+          "operation": "deleteEdge",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 174779200,
+          "index": 12,
+          "operation": "create",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        },
+        {
+          "elapsedNanos": 297906800,
+          "index": 13,
+          "operation": "deleteVertex",
+          "status": "succeeded",
+          "verifiedExpectations": 3
+        },
+        {
+          "elapsedNanos": 267780300,
+          "index": 14,
+          "operation": "deleteVertex",
+          "status": "succeeded",
+          "verifiedExpectations": 1
+        }
+      ],
+      "queryCrudTimingScope": "Java CLI startup, oracle, HTTP reads/mutations, postconditions and structural validation included"
+    }
+  ],
+  "extractionOnly": "blocked-no-opted-in-live-source",
+  "extractionToLoad": "blocked-no-opted-in-live-source",
+  "mixedRecoverySoak": "run-reference-graph-benchmark.mjs supplies separate measured acceptance",
+  "limits": {
+    "singleWriter": true,
+    "boundedSemanticRdfBytes": 16777216,
+    "requestBytes": 1048576
+  },
+  "heapScope": "Stage Java processes use -Xmx1g; portable path runner does not claim their after-GC retained-heap measurement"
+}
